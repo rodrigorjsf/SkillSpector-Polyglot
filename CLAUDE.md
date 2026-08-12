@@ -132,6 +132,20 @@ than reaching for it. `/upstream-sync` measures how far this fork has drifted fr
 Behavior Snapshot is correct rather than a regression. `/license-audit` measures this fork against
 Apache-2.0 §4 and fixes the drift, and it is the natural follow-up to a sync.
 
+`/upstream-sync` still has to be asked for, but nobody has to remember to notice the drift:
+`.github/workflows/upstream-drift.yml` re-runs its step-1 measurement weekly and opens — or edits —
+a single `Upstream drift:` issue whenever upstream is ahead. It only ever measures and reports.
+**It never merges, never pushes and never opens a pull request**, because the judgment in step 4 is
+not a machine's to make. It also never *closes* — close the drift issue yourself once the sync
+merges, or it keeps asserting a drift that is already gone.
+
+The schedule needs a human twice, not once. Like every workflow on this fork it stays dormant until
+someone clicks the Actions-tab enable button — and on a public repository GitHub disables a schedule
+again after 60 days with no repository activity, emailing the maintainer to re-enable it. That
+second one withdraws the cadence in exactly the circumstance `#105` describes, so treat a long quiet
+stretch as a reason to check the Actions tab rather than as evidence there is no drift.
+`workflow_dispatch` is the manual fallback.
+
 ## References
 
 - Domain glossary — use these terms, not their synonyms — `CONTEXT.md`
@@ -199,3 +213,5 @@ When something fails repeatedly, when User has to re-explain, or when a workarou
 - Upstream can add a fixture directory that is not a Skill; `NON_TARGET_DIRS` excludes it.
 - A dist-info may ship no LICENSE; read the tagged repo LICENSE instead.
 - `push --delete` saying "remote ref does not exist" means GitHub already deleted it.
+- The venv's installed version can fall below `pyproject.toml`'s floor; check before reading a dist-info.
+- `GH_REPO` steers `gh issue list` but not bare `gh repo view`; an `upstream` remote wins there.

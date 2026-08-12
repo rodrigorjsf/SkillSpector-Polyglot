@@ -34,6 +34,12 @@ the work — everything else merges itself.
 **Done when** you can name every upstream commit and every file on the conflict surface. If
 `$MB..upstream/main` is empty, the fork is current: say so and stop.
 
+`.github/workflows/upstream-drift.yml` re-runs this measurement weekly and opens — or edits — one
+`Upstream drift:` issue while `$MB..upstream/main` is non-empty, so the sync is triggered by the
+backlog rather than by someone noticing. **This section is the authority**: the workflow is a second
+spelling of these commands, and if the two ever disagree, the workflow is the bug. It stops here —
+steps 2 through 6 are the judgment it exists to hand to a human, not work to automate later.
+
 ## 2. Read the commits, not the diff
 
 An upstream commit that changes a Rule's behavior is the reason snapshots will move in step 5, and its
@@ -117,6 +123,12 @@ a dependency `THIRD_PARTY_NOTICES.md` does not know about.
 Open the PR against `main` with the step-5 mapping as its body, and say plainly that snapshots moved
 and why — a reviewer who sees a snapshot diff in this repository assumes a regression until told
 otherwise. **A human merges it.**
+
+Once it lands, **close the open `Upstream drift:` issue** if `.github/workflows/upstream-drift.yml`
+opened one. That workflow only ever opens and edits; it never closes. After the merge the
+measurement is zero, so its write step is skipped and the stale issue is never corrected — it would
+sit there asserting a drift that this sync just removed. Closing it is also what makes the next
+non-zero measurement open a fresh one rather than edit a resolved report.
 
 ## 7. The merge must keep the second parent
 

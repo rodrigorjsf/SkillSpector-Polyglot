@@ -1,0 +1,232 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 SkillSpector-Polyglot contributors
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# This workflow MEASURES drift from NVIDIA/SkillSpector and REPORTS it. It never
+# merges, never pushes a branch, and never opens a pull request — deliberately.
+# An upstream merge produced a design question on its first attempt, and the
+# judgment that `.claude/skills/upstream-sync/SKILL.md` step 4 exists to force
+# cannot be delegated to a scheduled job. The measurement is the part a machine
+# can be trusted with; the merge is not. Do not "finish" this workflow by adding
+# one.
+#
+# The measurement below is step 1 of `.claude/skills/upstream-sync/SKILL.md`,
+# re-spelled for a runner. **That skill is the authority**: if the two ever
+# disagree, the skill is right and this file is the bug.
+
+name: Upstream drift
+
+on:
+  # Weekly. Deliberately not on `push:` — the approved trigger is a clock, not a
+  # commit-count threshold on every push (issue #105, option 1 rather than 3).
+  #
+  # Two GitHub behaviours suspend this schedule, and both need a human:
+  #   1. A forked public repository has its scheduled workflows disabled until
+  #      someone clicks the enable button on the Actions tab, once.
+  #   2. On a public repository GitHub disables the schedule again after 60 days
+  #      with no repository activity, emailing the maintainer to re-enable it.
+  # The second is the awkward one: it withdraws the cadence in exactly the
+  # circumstance `#105` was filed about — nobody active, so nobody noticing the
+  # drift. `workflow_dispatch` below stays the manual fallback.
+  schedule:
+    - cron: "17 6 * * 1"
+  # So a human can run the measurement on demand, and so this file is testable
+  # at all: a `schedule:` trigger cannot be exercised any other way.
+  workflow_dispatch:
+
+# Least privilege: read the repository, write issues. Nothing else — no
+# `contents: write`, no `pull-requests: write`.
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  measure:
+    name: Measure drift from upstream
+    runs-on: ubuntu-latest
+    # A fork of this fork must not file issues on this repository.
+    if: github.repository == 'rodrigorjsf/SkillSpector-Polyglot'
+    env:
+      # `gh` on a fork resolves its base repository from git remotes, and a
+      # remote named `upstream` is one of the names it prefers — which is how a
+      # report about NVIDIA's repository turns into an issue filed *on* it.
+      # `.claude/rules/license-compliance.md` names that under "What never
+      # happens". Three independent defenses: this variable, `--repo` on every
+      # `gh` call, and the guard step below. None is redundant — `GH_REPO` was
+      # measured steering `gh issue list` but *not* bare `gh repo view`, so it
+      # is a default worth setting and not a thing to rely on alone.
+      GH_REPO: rodrigorjsf/SkillSpector-Polyglot
+      GH_TOKEN: ${{ github.token }}
+      TARGET_REPO: rodrigorjsf/SkillSpector-Polyglot
+      # Stable marker used to find the existing report so this job edits one
+      # issue instead of filing a new one every week. The title carries no
+      # commit count precisely so that it stays constant across runs.
+      #
+      # The *marker* is what identifies the issue, not the title: this job
+      # replaces a body wholesale, so matching on a human-readable title prefix
+      # would let it overwrite any issue a person happened to file under that
+      # prefix. Only an issue carrying this marker was written by this workflow.
+      # One variable feeds both the write and the match so the two cannot drift.
+      ISSUE_MARKER: "<!-- upstream-drift-report -->"
+      ISSUE_TITLE: "Upstream drift: NVIDIA/SkillSpector has commits this fork has not merged"
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          # Load-bearing: `git merge-base` and both `git diff --name-only`
+          # calls below need full history, not a shallow clone.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Measure the drift
+        id: measure
+        run: |
+          set -euo pipefail
+
+          # Fetch upstream by URL into a tracking ref rather than adding a
+          # remote: a `remote.upstream.url` in git config is exactly what makes
+          # `gh` resolve NVIDIA's repository as the base repo.
+          git fetch --quiet origin '+refs/heads/main:refs/remotes/origin/main'
+          git fetch --quiet https://github.com/NVIDIA/SkillSpector.git \
+            '+refs/heads/main:refs/remotes/upstream/main'
+
+          MB=$(git merge-base upstream/main origin/main)
+
+          # Two counts, two different questions. The skill's step 1 prints
+          # `rev-list --count $MB..origin/main` — how far the *fork* has gone,
+          # context for how hard the merge will be. The trigger is the skill's
+          # own "Done when": if `$MB..upstream/main` is empty, the fork is
+          # current. So the report fires on the upstream-ahead count.
+          UPSTREAM_AHEAD=$(git rev-list --count "$MB..upstream/main")
+          FORK_AHEAD=$(git rev-list --count "$MB..origin/main")
+
+          echo "merge_base=$MB" >> "$GITHUB_OUTPUT"
+          echo "upstream_ahead=$UPSTREAM_AHEAD" >> "$GITHUB_OUTPUT"
+          echo "fork_ahead=$FORK_AHEAD" >> "$GITHUB_OUTPUT"
+          echo "merge-base $MB: upstream ahead $UPSTREAM_AHEAD, fork ahead $FORK_AHEAD"
+
+          if [ "$UPSTREAM_AHEAD" -eq 0 ]; then
+            echo "fork is current with upstream/main; nothing to report"
+            exit 0
+          fi
+
+          git diff --name-only "$MB" upstream/main | sort > up.txt
+          git diff --name-only "$MB" origin/main | sort > fk.txt
+
+          # Every line of upstream-authored text (commit subjects, path names)
+          # reaches this file by redirection, never by command substitution into
+          # a shell string and never through `${{ }}`. It is fenced as code for
+          # the same reason: an unfenced `(#357)` renders as a cross-reference
+          # and would backlink an unrelated fork issue every week.
+          {
+            printf '%s\n\n' "$ISSUE_MARKER"
+            printf 'Upstream `NVIDIA/SkillSpector` has **%s commit(s)** this fork has not merged.\n' \
+              "$UPSTREAM_AHEAD"
+            printf 'The fork is **%s commit(s)** ahead of the same merge-base `%s`.\n\n' \
+              "$FORK_AHEAD" "$MB"
+            printf 'This is step 1 of `.claude/skills/upstream-sync/SKILL.md`, run by\n'
+            printf '`.github/workflows/upstream-drift.yml`. **Nothing has been merged.** Ask a\n'
+            printf 'human to run `/upstream-sync` — it is user-invoked, and step 4 exists to\n'
+            printf 'force a judgment a scheduled job must not make.\n\n'
+            printf '## What upstream did\n\n```\n'
+          } > body.md
+          git log --oneline "$MB..upstream/main" >> body.md
+          {
+            printf '```\n\n## Conflict surface\n\n'
+            printf 'Files both sides changed since the merge-base. Everything else merges\n'
+            printf 'itself; this list is the whole of the work.\n\n```\n'
+          } >> body.md
+          comm -12 up.txt fk.txt >> body.md
+          {
+            printf '```\n\n---\n\n'
+            printf '**Close this issue once the sync merges.** This job only ever opens and\n'
+            printf 'edits; it never closes. Left open, it keeps asserting a drift that no\n'
+            printf 'longer exists — after a sync the measurement is zero, so the write step\n'
+            printf 'is skipped and nothing here is corrected. The next non-zero measurement\n'
+            printf 'opens a fresh one.\n\n'
+            printf 'Re-measured weekly. This issue is edited in place rather than reopened,\n'
+            printf 'so its body always reflects the most recent run: %s\n' "$RUN_URL"
+          } >> body.md
+
+          cat body.md
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+      # Runs after the fetch, so it checks the invariant as it stands at write
+      # time rather than as it stood at checkout.
+      - name: Verify nothing points gh at upstream
+        run: |
+          set -euo pipefail
+
+          # `gh` picks its base repository from the git remotes, preferring one
+          # named `upstream`. The measurement above deliberately fetches by URL
+          # instead of adding that remote; this proves it stayed that way.
+          # Measured in this repository at gh 2.45.0: with an `upstream` remote
+          # present, bare `gh repo view` reports NVIDIA's repository even with
+          # `GH_REPO` set — `GH_REPO` is honoured by `gh issue list` but not by
+          # that resolution, so the remote itself is what has to stay absent.
+          if git config --get-regexp '^remote\..*\.url$' | grep -qi 'NVIDIA/SkillSpector'; then
+            echo "refusing to continue: a git remote points at upstream"
+            git config --get-regexp '^remote\..*\.url$'
+            exit 1
+          fi
+
+          resolved=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
+          if [ "$resolved" != "$TARGET_REPO" ]; then
+            echo "refusing to continue: gh resolved '$resolved', expected '$TARGET_REPO'"
+            exit 1
+          fi
+          echo "gh resolves $resolved"
+
+      - name: Open or update the drift issue
+        if: steps.measure.outputs.upstream_ahead != '0'
+        run: |
+          set -euo pipefail
+
+          # Matched on the body marker this job itself writes, so the wholesale
+          # body replacement below can only ever land on an issue this workflow
+          # authored. A title-prefix match would also select an issue a human
+          # filed under the same wording and overwrite it every week.
+          #
+          # Not `gh issue list --search`: its index lags, which would file a
+          # duplicate. Lowest number wins if a duplicate ever exists, so the job
+          # converges on one issue. The limit is generous because the list is
+          # newest-first: a low cap would push a long-lived drift issue off the
+          # end and file a duplicate beside it. Only *open* issues count — once a
+          # human closes this one after the sync, the next non-zero measurement
+          # opens a fresh one.
+          # The marker reaches jq through `--arg`, not by being spliced into the
+          # jq program text — the same rule this file applies to shell.
+          number=$(gh issue list --repo "$TARGET_REPO" --state open --limit 500 \
+            --json number,body \
+            | jq -r --arg marker "$ISSUE_MARKER" \
+              'map(select((.body // "") | startswith($marker))) | sort_by(.number) | .[0].number // empty')
+
+          if [ -n "$number" ]; then
+            # Replace the body; never append, or it grows without bound. Labels
+            # are left alone on purpose: a human may have moved the issue off
+            # `needs-triage`, and re-applying it would break the one-state rule
+            # in `docs/agents/triage-labels.md`.
+            jq -n --rawfile body body.md '{body: $body}' > payload.json
+            gh api --method PATCH "repos/$TARGET_REPO/issues/$number" \
+              --input payload.json --jq .html_url
+          else
+            gh issue create --repo "$TARGET_REPO" \
+              --title "$ISSUE_TITLE" \
+              --body-file body.md \
+              --label needs-triage
+          fi
