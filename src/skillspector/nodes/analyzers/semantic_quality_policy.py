@@ -31,6 +31,7 @@ from skillspector.inspection_ledger import (
 )
 from skillspector.llm_analyzer_base import (
     BatchExecutionResult,
+    BatchFailure,
     LLMAnalyzerBase,
     ledger_events_for_batches,
 )
@@ -171,8 +172,10 @@ def node(state: SkillspectorState) -> AnalyzerNodeResponse:
         model_config.get(ANALYZER_ID) or model_config.get("default") or _SKILLSPECTOR_DEFAULT_MODEL
     )
 
+    analyzer: LLMAnalyzerBase | None = None
+    batches = []
     try:
-        analyzer = LLMAnalyzerBase(base_prompt=ANALYZER_PROMPT, model=model)
+        analyzer = LLMAnalyzerBase(base_prompt=ANALYZER_PROMPT, model=model, node=ANALYZER_ID)
         batches = analyzer.get_batches(files, file_cache)
         results = run_async(analyzer.arun_batches(batches))
         outcome = getattr(analyzer, "_last_batch_outcome", BatchExecutionResult(successful=results))
@@ -186,19 +189,34 @@ def node(state: SkillspectorState) -> AnalyzerNodeResponse:
             "llm_call_log": [
                 llm_call_record(ANALYZER_ID, ok=bool(outcome.successful) or not outcome.failures)
             ],
+            "inference_usage": analyzer.inference_usage,
         }
-    except ValueError:
-        raise
     except Exception as exc:
+        post_response_value_error = (
+            isinstance(exc, ValueError) and analyzer is not None and analyzer.response_received
+        )
+        if isinstance(exc, ValueError) and not post_response_value_error:
+            raise
         logger.warning("%s failed: %s", ANALYZER_ID, exc)
+        if post_response_value_error:
+            events, status = ledger_events_for_batches(
+                ANALYZER_ID,
+                BatchExecutionResult(
+                    failures=[
+                        BatchFailure(batch=batch, error_class=type(exc).__name__)
+                        for batch in batches
+                    ]
+                ),
+            )
+        else:
+            events = []
+            status = analyzer_status_event(
+                analyzer_id=ANALYZER_ID, status=AnalyzerStatus.UNAVAILABLE
+            )
         return {
             "findings": [],
-            "inspection_ledger": [],
-            "analyzer_status_events": [
-                analyzer_status_event(
-                    analyzer_id=ANALYZER_ID,
-                    status=AnalyzerStatus.UNAVAILABLE,
-                )
-            ],
+            "inspection_ledger": events,
+            "analyzer_status_events": [status],
             "llm_call_log": [llm_call_record(ANALYZER_ID, ok=False, error=str(exc))],
+            "inference_usage": analyzer.inference_usage if analyzer is not None else [],
         }

@@ -1,3 +1,46 @@
+### 2.9.3 (Tuesday, August 11, 2026)
+### Features/Bug Fixes
+* fix(llm): surface invalid responses as degraded (skipped, non-fatal, incomplete)
+---
+### 2.9.2 (Monday, August 10, 2026)
+### Features/Bug Fixes
+* fix(llm): retry malformed structured responses
+---
+### 2.9.1 (Monday, August 10, 2026)
+### Features/Bug Fixes
+* fix(llm): add bounded connection retries
+---
+### 2.9.0 (Monday, August 10, 2026)
+### Features/Bug Fixes
+* fix(e2): allow targeted environment credential reads
+* fix: remediate nSpect High vulnerabilities
+* fix(yara): require local destructive autonomy evidence
+---
+### 2.8.2 (Friday, August 07, 2026)
+### Features/Bug Fixes
+* fix(mcp): retry malformed TP4 responses
+---
+### 2.8.1 (Thursday, August 06, 2026)
+### Features/Bug Fixes
+* fix(llm): isolate malformed structured responses per batch
+---
+### 2.8.0 (Thursday, August 06, 2026)
+### Features/Bug Fixes
+* fix(baseline): exclude selected baseline from scans
+---
+### 2.7.2 (Thursday, August 06, 2026)
+### Features/Bug Fixes
+* fix(pe3): distinguish OAuth access-token nouns from credential access
+---
+### 2.7.0 (Thursday, August 06, 2026)
+### Features/Bug Fixes
+* fix(telemetry): harden inference usage normalization
+---
+### 2.6.0 (Wednesday, August 05, 2026)
+### Features/Bug Fixes
+* feat(release): auto-generate versioned release notes like CHANGELOG
+* feat(telemetry): export provider inference usage
+---
 ### 2.5.3 (Tuesday, August 04, 2026)
 ### Features/Bug Fixes
 * fix(analyzers): share Python AST parsing for environment-read detection (#332)
