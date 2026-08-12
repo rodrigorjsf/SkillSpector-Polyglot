@@ -118,10 +118,23 @@ jobs:
         with:
           fetch-depth: 0
 
+      # Fetch upstream so the check below can tell a commit this fork authored
+      # from one it merely inherited. Failure is not fatal: `upstream_ok` stays
+      # empty, every commit is then required to be signed, and the check fails
+      # closed rather than exempting anything it could not verify.
+      - name: Fetch upstream for provenance
+        id: upstream
+        continue-on-error: true
+        run: |
+          git remote add upstream https://github.com/NVIDIA/SkillSpector.git
+          git fetch --quiet upstream main
+          echo "ok=1" >> "$GITHUB_OUTPUT"
+
       - name: Verify DCO sign-off on all commits
         run: |
           BASE=${{ github.event.pull_request.base.sha }}
           HEAD=${{ github.event.pull_request.head.sha }}
+          UPSTREAM_OK=${{ steps.upstream.outputs.ok }}
           # Iterate SHAs directly rather than piping `git log` into `while read`:
           # `git log` does not print a trailing newline after the final record,
           # so a read-loop silently skips the last commit — and for a one-commit
@@ -129,6 +142,18 @@ jobs:
           # commit pass. A for-loop over the SHA list checks every commit.
           status=0
           for sha in $(git log --format=%H "${BASE}..${HEAD}"); do
+            # A sync pull request carries NVIDIA's own release commits into the
+            # range, and at least one of them is unsigned upstream. They cannot
+            # be re-signed: rewriting them changes their SHAs, which destroys
+            # the `upstream/main` merge parent that the whole sync depends on
+            # (see `.claude/skills/upstream-sync/SKILL.md` step 7). DCO asks the
+            # *contributor* to certify what they submit; what this fork submits
+            # is the merge commit, and that one is still required to be signed
+            # like every other commit the fork authors.
+            if [ -n "$UPSTREAM_OK" ] && git merge-base --is-ancestor "$sha" upstream/main 2>/dev/null; then
+              echo "  inherited from upstream, exempt: $sha $(git log -1 --format=%s "$sha")"
+              continue
+            fi
             if ! git log -1 --format="%B" "$sha" | grep -q "^Signed-off-by:"; then
               echo "  missing Signed-off-by: $sha $(git log -1 --format=%s "$sha")"
               status=1
