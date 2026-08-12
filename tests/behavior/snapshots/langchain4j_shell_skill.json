@@ -381,7 +381,7 @@
       "finding": null,
       "intent": null,
       "matched_text": null,
-      "message": "A @Tool description carries instructions rather than describing the tool. The model reads this text as guidance, so it is a prompt-injection surface sitting in an annotation.",
+      "message": "A @Tool description carries instructions rather than describing the tool. The model reads this text as guidance, so it is a prompt-injection surface sitting in an annotation. The class OrderTools is attached to a Skill at src/main/java/com/example/ToolWiring.java:33.",
       "pattern": "Instruction-Carrying Tool Description",
       "remediation": "Rewrite the @Tool description so it says what the tool does and nothing more. Directives to the model belong in the Skill content, where they are reviewed as instructions.",
       "rule_id": "L4J-TOOL-DESC",
@@ -743,7 +743,7 @@
               }
             ],
             "message": {
-              "text": "A @Tool description carries instructions rather than describing the tool. The model reads this text as guidance, so it is a prompt-injection surface sitting in an annotation."
+              "text": "A @Tool description carries instructions rather than describing the tool. The model reads this text as guidance, so it is a prompt-injection surface sitting in an annotation. The class OrderTools is attached to a Skill at src/main/java/com/example/ToolWiring.java:33."
             },
             "properties": {
               "category": "LangChain4j Framework",
@@ -1060,7 +1060,7 @@
               {
                 "id": "L4J-TOOL-DESC",
                 "shortDescription": {
-                  "text": "A @Tool description carries instructions rather than describing the tool. The model reads this text as guidance, so it is a prompt-injection surface sitting in an annotation."
+                  "text": "A @Tool description carries instructions rather than describing the tool. The model reads this text as guidance, so it is a prompt-injection surface sitting in an annotation. The class OrderTools is attached to a Skill at src/main/java/com/example/ToolWiring.java:33."
                 }
               },
               {

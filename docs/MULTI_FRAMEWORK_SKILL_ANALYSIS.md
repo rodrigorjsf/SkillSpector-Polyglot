@@ -374,7 +374,7 @@ interpreter.
 | `Skill.builder().content(CONSTANT)` | Usually | Resolvable when the constant is a literal in the same compilation unit |
 | `Skill.builder().content(someVar)` — DB, remote API, runtime-generated | **No** | See below |
 | `SkillResource.builder().relativePath(…).content(…)` | Same rules as `Skill.builder()` | |
-| `skill.toBuilder().tools(new OrderTools())` | Yes | The class is named, so its `@Tool` annotations are read wherever the file holding them is scanned — by `L4J-TOOL-DESC`, per file. Which Skill was granted which tools is *not* attributed; see issue #94 |
+| `skill.toBuilder().tools(new OrderTools())` | Yes | The class is named, so its `@Tool` annotations are read wherever the file holding them is scanned — by `L4J-TOOL-DESC`, per file. Since issue #94 that rule's message also names the attachment site, joined across the scan's own `file_cache`: `new OrderTools()` names a *simple* name, so the join is declined outright unless the scan declares that name exactly once. Declared twice, in two packages, it would attribute the tool to a Skill it may never reach; declared nowhere, resolution has left the scan, and there is no annotation in view to have reported |
 | `skill.toBuilder().tools(someVariable)` | **No** | The tool set is assembled out of view, so the Scan cannot say what capability the Skill was granted. Reported as `L4J-UNRESOLVED` (issue #57) |
 | `skill.toBuilder().tools(new OrderTools(), runtimeTools)` | **No** | Per argument, not per call: one unreadable argument leaves the tool set unknown even though the other is named. Also `L4J-UNRESOLVED` |
 | `.toolProviders(McpToolProvider.builder()…)` | Yes | Presence and the absence of both `.filter(…)` and `.filterToolNames(…)` are visible |

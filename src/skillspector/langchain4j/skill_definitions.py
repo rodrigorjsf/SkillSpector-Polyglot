@@ -47,6 +47,7 @@ from skillspector.langchain4j import builder_chains, java_parser
 from skillspector.langchain4j.vocabulary import (
     CLASSPATH_SKILL_LOADER,
     LOADER_METHODS,
+    NAME_SETTER,
     SKILL_BUILDER,
     SKILL_BUILDERS,
     SKILL_LOADERS,
@@ -133,10 +134,18 @@ class AttachedTools:
     must not confuse: ``.tools(new A(), new B())`` names every class it attaches,
     while ``.tools(someVariable)`` names none. An empty tuple is a call that
     attaches nothing.
+
+    ``skill_name`` is the name the same chain gave the Skill, when it set one to
+    a resolvable literal. Usually it did not: the published spelling attaches
+    tools to an already-built Skill -- ``skill.toBuilder().tools(new X())`` --
+    where the name was set wherever that Skill was built. A report that has to
+    say which Skill gained a tool therefore cannot rely on this, and names the
+    attachment site as well.
     """
 
     line: int
     type_names: tuple[str | None, ...]
+    skill_name: str | None
 
     @property
     def opaque(self) -> bool:
@@ -245,6 +254,17 @@ def _skill_builder(invocation: Node) -> str | None:
     return receiver if receiver in SKILL_BUILDERS else None
 
 
+def _chain_key(invocation: Node) -> tuple[int, int]:
+    """The identity of the chain *invocation* belongs to, within one unit.
+
+    Chains are keyed by their own start position, so two Skills built in one
+    statement stay two Skills. One spelling rather than two, because reading a
+    ``.tools(...)`` call and a ``.name(...)`` call as one chain has to mean
+    exactly what grouping two setters into one Skill means.
+    """
+    return (invocation.start_point[0], builder_chains.chain_start(invocation))
+
+
 def find_skill_definitions(source: str) -> list[SkillDefinition]:
     """Every Skill-builder chain in *source*, with each text argument resolved."""
     root = java_parser.parse(source).root_node
@@ -264,9 +284,7 @@ def find_skill_definitions(source: str) -> list[SkillDefinition]:
         argument = builder_chains.sole_argument(node)
         if argument is None:
             continue
-        # Chains are keyed by their own start position, so two Skills built in
-        # one statement stay two Skills.
-        key = (node.start_point[0], builder_chains.chain_start(node))
+        key = _chain_key(node)
         builders[key] = builder
         argument_line = java_parser.line(argument)
         is_text_block = java_parser.text(argument).startswith(_TEXT_BLOCK_DELIMITER)
@@ -339,9 +357,30 @@ def _loader_directory(loader: str, invocation: Node, constants: dict[str, str]) 
     return directory
 
 
+def _chain_skill_names(root: Node, constants: dict[str, str]) -> dict[tuple[int, int], str]:
+    """The Skill name each builder chain in the unit set, where it set a readable one."""
+    names: dict[tuple[int, int], str] = {}
+    for node in java_parser.walk(root):
+        if node.type != "method_invocation":
+            continue
+        name_node = node.child_by_field_name("name")
+        if name_node is None or java_parser.text(name_node) != NAME_SETTER:
+            continue
+        if _skill_builder(node) is None:
+            continue
+        argument = builder_chains.sole_argument(node)
+        if argument is None:
+            continue
+        value = _resolve(argument, constants)
+        if value is not None:
+            names.setdefault(_chain_key(node), value)
+    return names
+
+
 def find_attached_tools(source: str) -> list[AttachedTools]:
     """Every ``.tools(...)`` call on a Skill-builder chain in *source*."""
     root = java_parser.parse(source).root_node
+    skill_names = _chain_skill_names(root, _string_constants(root))
 
     attached: list[AttachedTools] = []
     for node in java_parser.walk(root):
@@ -360,6 +399,7 @@ def find_attached_tools(source: str) -> list[AttachedTools]:
                     for argument in builder_chains.argument_list(node)
                     for name in _attached_types(argument)
                 ),
+                skill_name=skill_names.get(_chain_key(node)),
             )
         )
     return attached
