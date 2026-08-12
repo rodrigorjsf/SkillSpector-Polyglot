@@ -360,8 +360,8 @@ Contributions are welcome — open an issue or a pull request on
 [rodrigorjsf/SkillSpector-Polyglot](https://github.com/rodrigorjsf/SkillSpector-Polyglot).
 
 **This documentation is part of the change, not a follow-up to it.** A pull request that adds or
-alters a rule, a framework, a CLI flag, an environment variable, or an exit code updates this README
-in the *same* pull request. Concretely:
+alters a rule, a framework, a CLI flag, an environment variable, an exit code, an output format, or
+which stream a line is printed to updates this README in the *same* pull request. Concretely:
 
 | A change to… | …updates, in the same PR |
 |---|---|
@@ -371,7 +371,7 @@ in the *same* pull request. Concretely:
 | `--mcp-registry` behavior: an input shape, a check, a rejected flag, or the network rule | [Scanning the MCP Registry](#scanning-the-mcp-registry) and the walkthrough in [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) |
 | A domain term, or the meaning of one | [`CONTEXT.md`](CONTEXT.md) — the glossary is the vocabulary the prose, the docstrings and the test names are held to |
 | An environment variable | [Environment Variables](#environment-variables) and the [Configuration](#configuration) summary |
-| An exit code or an output format | [Integrating SkillSpector](#integrating-skillspector) |
+| An exit code, an output format, or which stream a line is printed to | [Integrating SkillSpector](#integrating-skillspector) — including [Which stream carries what](#which-stream-carries-what), the one rule every `console.print` in `cli.py` is held to — and the **Logging** bullet of [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md), which is where a contributor adding a print site reads which of the two consoles to use |
 | Anything that ships a designed-but-unbuilt capability | the **Status** column above, and [`docs/MULTI_FRAMEWORK_SKILL_ANALYSIS.md`](docs/MULTI_FRAMEWORK_SKILL_ANALYSIS.md) |
 | Any detection rule, again | [`docs/OWASP-AST10-COVERAGE.md`](docs/OWASP-AST10-COVERAGE.md) — the row the rule belongs to, or the gaps list where it belongs to none |
 | A redistributed dependency in `pyproject.toml`, added **or removed** — a runtime one, or one in the `mcp` extra | [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md), in the section matching the declaration — `## Runtime Dependencies` or `## Optional Dependencies (mcp extra)`; license and copyright read from the installed `dist-info`, not recalled; `tests/unit/test_third_party_notices.py` fails, per section, on a missing entry and on one that outlived its dependency. The `dev` extra declares the project's own toolchain rather than capability a consumer installs, and stays out |
@@ -635,6 +635,7 @@ and not helpfully so: it walks build output that `--repo-scan` skips.
 | `--baseline` | threaded through every skill | rejected, exit `2` — but **only** once the flag engages. Below the two-skill threshold it falls through to an ordinary scan and the baseline applies |
 | `--format sarif --output` | one valid SARIF log, one run per skill | several SARIF documents glued together with `--- path ---` separators — **not parseable as SARIF** |
 | `--format json --output` | per-skill bodies concatenated | one object: `multi_skill`, `skill_count`, `max_risk_score`, `execution_successful`, `skills` |
+| **No** `--output` | the report is written to stdout, in every format — but only `sarif` is one merged document; `json` and `markdown` are the same `--- path ---` concatenation as the row above ([#116](https://github.com/rodrigorjsf/SkillSpector-Polyglot/issues/116)) | no report at all — the combined body is only ever written to a file ([#114](https://github.com/rodrigorjsf/SkillSpector-Polyglot/issues/114)). With `--format terminal` stdout carries the summary table and nothing else; with `json`, `sarif` or `markdown` stdout is **empty** and the format flag is silently ignored. As with `--baseline`, **only** once the flag engages: below the two-skill threshold it falls through to an ordinary scan, which does write a report to stdout in the requested format |
 | Discovery roots | `--repo-scan-root`, repeatable | not configurable |
 
 Use `--recursive` only for the shape it was built for: a flat directory whose immediate children are
@@ -1217,6 +1218,100 @@ The top-level shape is (this example shows a full LLM-backed scan; with `--no-ll
 - The full per-issue shape is defined by `Finding.to_dict()` in [models.py](src/skillspector/models.py); rely on the fields above and treat any additional fields as best-effort.
 
 For CI/IDE tooling, `--format sarif` emits SARIF 2.1.0.
+
+### Which stream carries what
+
+One rule covers every line the CLI prints: **the report goes to stdout, everything else goes to
+stderr** — advisories, progress lines, `Report saved to:`, per-skill summary tables (with one
+argued exception, below), errors and tracebacks. So both of these are pipelines you can rely on,
+with nothing to redirect away:
+
+```bash
+skillspector scan ./my-skill/ --format json | jq .
+skillspector scan . --repo-scan --format sarif | jq '.runs | length'
+```
+
+Redirect stderr (`2>/dev/null`) only when you want the notes gone as well; the exit code is
+unaffected either way. Both pipelines above assume the scan found a skill to report on — see
+[What moved, and what that costs](#what-moved-and-what-that-costs) for the discovery cases where
+stdout is legitimately empty.
+
+The rule says which *stream* the report goes to, not that every format is one parseable document.
+With `--repo-scan` only `--format sarif` is merged — one SARIF log, one run per skill, which is why
+the example above uses it. `--format json` and `--format markdown` put the per-skill bodies on
+stdout concatenated behind `--- <path> ---` separators, exactly the shape the `--format json
+--output` row of the `--repo-scan` vs `--recursive` table in
+[Scanning a Whole Repository](#scanning-a-whole-repository) describes, and no JSON or Markdown
+consumer reads that as a single document. Merging them is
+[#116](https://github.com/rodrigorjsf/SkillSpector-Polyglot/issues/116); until then, use `sarif` for
+a `--repo-scan` pipeline, or scan each skill separately.
+
+`--recursive` is the one path where the distinction has to be argued rather than applied, because
+once it engages it writes its combined report **only** to `--output` — there is no report on stdout
+for the summary table to sit beside
+([#114](https://github.com/rodrigorjsf/SkillSpector-Polyglot/issues/114)). With `--format terminal`
+and no `--output`, that `═══ Multi-Skill Summary ═══` table is the whole of what the scan produced,
+so it *is* the report and stays on stdout, keeping
+`skillspector scan ./skills --recursive | less` worth running.
+
+That is the only case. Pass `--output` and the file becomes the report, the table drops to a digest
+of it, and it moves to stderr with everything else. Ask for `--format json`, `sarif` or `markdown`
+without an `--output` and there is no report anywhere, so stdout stays **empty** rather than
+carrying a table that `jq` cannot read — the rule above holds, and `#114` is what would put a report
+back on that stream.
+
+All of that describes `--recursive` **once it engages**, exactly as the comparison table's
+`--baseline` row does. The flag needs two or more immediate child skills; below that threshold it
+never engages at all, and the scan that runs instead is an ordinary one that prints its report to
+stdout in whatever format was asked for. So `skillspector scan ./skills --recursive -f json | jq` is
+safe on one child skill and silent on two — the difference is the threshold, not the flag.
+
+#### What moved, and what that costs
+
+This is a change in where output appears, not in what is produced. Previously **stdout** carried:
+
+- the multi-skill advisory, `Warning: Found N skills in this directory…`;
+- `--recursive`'s own `Multi-skill directory detected: N skills found`, its `[i/N] Scanning <name>`
+  progress lines and its per-skill `Score: X/100 (SEV)` lines;
+- `--repo-scan`'s `[i/N] Scanning …` progress lines, its summary table, and its
+  `Warning: no skill found under …` when discovery matched nothing;
+- `--verbose`'s `Running scan…` and the `baseline` command's `Scanning to build baseline…`;
+- every `Report saved to:` / `Combined report saved to:` note;
+- every `Error:` line and traceback, and the `baseline` command's
+  `Wrote baseline with N suppressed finding(s)`.
+
+All of them are on **stderr** now. One further line moved *conditionally*: `--recursive`'s
+`═══ Multi-Skill Summary ═══` table was always on stdout and is now on stdout in the single case
+argued above — `--format terminal` with no `--output`, where it is the report — and on stderr in
+every other.
+
+So a piped `--format json` or `--format sarif` report is parseable without redirecting anything.
+Nothing was removed and no exit code changed, and a script reading a combined stream (`2>&1`) still
+gets every line — though a *piped* combined stream may interleave the two differently, because a
+piped stdout is block-buffered while stderr is not. Order within either stream on its own is
+unchanged.
+
+For a script that reads **stdout alone**, this is strictly less noise on every path that puts a
+report there. Three cases are worth naming, because in them the noise that went away was carrying
+something:
+
+- **`--repo-scan` finding no skill at all** now exits `0` with completely empty stdout, where it
+  previously put an unparseable `Warning: no skill found under …` there. A gate that piped stdout
+  into `jq` used to fail loudly on a discovery miss; it now passes vacuously. Gate on the *content*
+  — `jq -e '.runs | length > 0'` — or watch stderr. Making that a designed signal rather than an
+  accident is [#115](https://github.com/rodrigorjsf/SkillSpector-Polyglot/issues/115).
+- **`--recursive` with `--format json`, `sarif` or `markdown` and no `--output`** is the same hazard
+  on a more common input, and it is the one shape closest to the pipeline this change exists to fix.
+  It never wrote a report to stdout ([#114](https://github.com/rodrigorjsf/SkillSpector-Polyglot/issues/114));
+  what it wrote there was the detection banner, the progress lines and the summary table, so
+  in `skillspector scan ./skills --recursive -f json | jq .` it was `jq` that failed, with a parse
+  error and its own exit `5` — the scanner exited `0` throughout. That stdout is now empty, so `jq`
+  succeeds on nothing and the pipeline exits `0` silently. The mitigation is the same:
+  pass `--output` and read the file, or gate on content with `jq -e`. #114 is what puts a report
+  back on that stream and removes the case.
+- **`skillspector scan ./skills --recursive | less`** now shows the `═══ Multi-Skill Summary ═══`
+  table alone, where it used to show the detection banner and the per-skill progress and score lines
+  above it. Every per-skill score is still there, in the table's own rows.
 
 ### Recommended gate mapping
 

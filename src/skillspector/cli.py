@@ -73,13 +73,26 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 
-console = Console()
-
+# One rule governs every line this module prints, and the two consoles below are
+# how it is expressed: **the report goes to stdout, everything else to stderr**.
+#
 # `--format json` and `--format sarif` write the report to stdout when no
 # `--output` is given, so `skillspector scan . -f json | jq` is a real pipeline.
-# An advisory printed to stdout lands ahead of the report and breaks it. This
-# one is advice about the *shape* of the scan, not part of the report, so it goes
-# to stderr where a pipe leaves it alone and a terminal still shows it.
+# Anything printed alongside the report lands *inside* it and breaks it.
+#
+# `console` therefore carries the report and nothing else -- plus `--version`,
+# which is itself the output that was asked for.
+console = Console()
+
+# `advice` carries everything that is a note *about* the scan rather than the
+# scan's product: advisories, progress lines, "Report saved to", per-skill
+# summaries that duplicate a report written elsewhere, errors and tracebacks. A
+# pipe leaves stderr alone and a terminal still shows it, so nothing is lost.
+#
+# The one line that has to be argued rather than classified is the Multi-Skill
+# Summary table; see `_scan_multi_skill`, which explains why that table *is* the
+# report of a `-f terminal --recursive` scan that was given no `--output`, and
+# only of that one.
 advice = Console(stderr=True)
 
 _FALLTHROUGH_PREFIX = (
@@ -207,10 +220,11 @@ def _write_result(
     report_body = _result_body(result)
     if output:
         Path(output).write_text(report_body, encoding="utf-8")
+        # The report is the file; this line is only a note that it exists.
         if format == FormatChoice.terminal:
-            console.print(f"\n[green]Report saved to:[/green] {output}")
+            advice.print(f"\n[green]Report saved to:[/green] {output}")
         else:
-            console.print(f"Report saved to: {output}")
+            advice.print(f"Report saved to: {output}")
     else:
         if format == FormatChoice.terminal:
             console.print(report_body)
@@ -366,20 +380,20 @@ def scan(
             or show_suppressed
             or yara_rules_dir is not None
         ):
-            console.print(
+            advice.print(
                 "[red]Error:[/red] --mcp-registry cannot be combined with "
                 "--recursive, --repo-scan, --baseline, --show-suppressed, or --yara-rules-dir"
             )
             raise typer.Exit(code=2)
         if format != FormatChoice.json:
-            console.print("[red]Error:[/red] --mcp-registry currently supports only --format json")
+            advice.print("[red]Error:[/red] --mcp-registry currently supports only --format json")
             raise typer.Exit(code=2)
         try:
             result = scan_registry(input_path)
             report = json.dumps(result, indent=2)
             if output:
                 output.write_text(report, encoding="utf-8")
-                console.print(f"Report saved to: {output}")
+                advice.print(f"Report saved to: {output}")
             else:
                 print(report)
             if result["risk_score"] > RISK_THRESHOLD:
@@ -387,7 +401,7 @@ def scan(
         except typer.Exit:
             raise
         except Exception as e:
-            console.print(f"[red]Error:[/red] {e}")
+            advice.print(f"[red]Error:[/red] {e}")
             raise typer.Exit(code=2) from e
         return
 
@@ -397,7 +411,7 @@ def scan(
     resolved_path = Path(input_path).resolve()
     if repo_scan:
         if not resolved_path.is_dir():
-            console.print("[red]Error:[/red] --repo-scan needs a directory to search")
+            advice.print("[red]Error:[/red] --repo-scan needs a directory to search")
             raise typer.Exit(code=2)
         _scan_repository(
             resolved_path,
@@ -416,7 +430,7 @@ def scan(
         detection = detect_skills(resolved_path)
         if detection.is_multi_skill:
             if baseline is not None:
-                console.print(
+                advice.print(
                     "[red]Error:[/red] --baseline is not supported for recursive "
                     "multi-skill scans; scan each sub-skill with its own baseline"
                 )
@@ -432,7 +446,12 @@ def scan(
     elif resolved_path.is_dir():
         detection = detect_skills(resolved_path)
         if detection.is_multi_skill:
-            console.print(
+            # #99: this predates the fall-through advisory below and used to print
+            # to stdout, landing ahead of a `-f json`/`-f sarif` report written
+            # there and making it unparseable. It is advice about the shape of the
+            # scan, not part of the report, so it belongs on the same stream as
+            # its sibling.
+            advice.print(
                 f"[yellow]Warning:[/yellow] Found {len(detection.skills)} skills in "
                 f"this directory. Use --recursive to scan each independently."
             )
@@ -454,7 +473,7 @@ def scan(
             show_suppressed=show_suppressed,
         )
         if verbose:
-            console.print("[dim]Running scan...[/dim]")
+            advice.print("[dim]Running scan...[/dim]")
         logger.debug(
             "Scan started: input_path=%s, format=%s, use_llm=%s",
             input_path,
@@ -473,13 +492,13 @@ def scan(
     except typer.Exit:
         raise
     except (FileNotFoundError, ValueError) as e:
-        console.print(f"[red]Error:[/red] {e}")
+        advice.print(f"[red]Error:[/red] {e}")
         raise typer.Exit(code=2) from e
     except Exception as e:
         if verbose:
-            console.print_exception()
+            advice.print_exception()
         else:
-            console.print(f"[red]Error:[/red] {e}")
+            advice.print(f"[red]Error:[/red] {e}")
         raise typer.Exit(code=2) from e
     finally:
         if result is not None:
@@ -512,16 +531,38 @@ def _scan_multi_skill(
     yara_rules_dir: Path | None,
     verbose: bool,
 ) -> None:
-    """Scan each detected sub-skill independently and produce a combined report."""
+    """Scan each detected sub-skill independently and produce a combined report.
+
+    Which stream each line goes to is decided by one question: *does stdout carry
+    the report here?* Unlike every other Scan path, this one writes the combined
+    report **only** to ``--output`` -- there is no ``print(body)`` fall-back, the
+    limitation issue #114 records -- so with ``-f terminal`` and no ``--output``
+    the Multi-Skill Summary table is not a digest of a report printed elsewhere.
+    It is the whole of what the Scan produced, and ``skillspector scan ./skills
+    --recursive | less`` has it or has nothing, so it goes to stdout.
+
+    That is the *only* case in which it does. ``--output`` makes the file the
+    report and demotes the table to a digest of it; and with ``-f json``,
+    ``-f sarif`` or ``-f markdown`` and no ``--output`` there is no report
+    anywhere -- printing a rich table to stdout would then leave a caller piping
+    to ``jq`` with exactly the unparseable stream issue #99 was filed about, so
+    stdout stays empty and the table goes to stderr with everything else. Fixing
+    #114 makes the table a digest on every path and collapses ``summary`` to
+    plain ``advice``.
+
+    Everything around it -- the detection banner, the per-skill progress and
+    score lines, a per-skill error, "Combined report saved to" -- is a note about
+    the Scan on every path, and goes to stderr always.
+    """
     skills = detection.skills
-    console.print(f"[bold]Multi-skill directory detected:[/bold] {len(skills)} skills found\n")
+    advice.print(f"[bold]Multi-skill directory detected:[/bold] {len(skills)} skills found\n")
 
     results: list[dict[str, object]] = []
     max_score = 0
     execution_failed = False
 
     for i, skill in enumerate(skills, 1):
-        console.print(
+        advice.print(
             f"  [{i}/{len(skills)}] Scanning [bold]{skill.name}[/bold] ({skill.relative_path}/)"
         )
         yara_dir = str(yara_rules_dir.resolve()) if yara_rules_dir else None
@@ -537,32 +578,38 @@ def _scan_multi_skill(
             if isinstance(score, int) and score > max_score:
                 max_score = score
             severity = result.get("risk_severity") or "LOW"
-            console.print(f"         Score: {score}/100 ({severity})\n")
+            advice.print(f"         Score: {score}/100 ({severity})\n")
         except Exception as e:
-            console.print(f"         [red]Error:[/red] {e}\n")
+            advice.print(f"         [red]Error:[/red] {e}\n")
             execution_failed = True
             results.append({"skill_name": skill.name, "error": str(e)})
 
-    console.print("\n[bold]═══ Multi-Skill Summary ═══[/bold]\n")
-    console.print(
+    # The predicate is "does stdout carry the report here?", and it is true in
+    # one case only: `-f terminal` with no `--output`, where this table is the
+    # entire product of the Scan. See this function's docstring, and #114 for the
+    # missing fall-back that makes the case exist at all.
+    summary = console if (output is None and format == FormatChoice.terminal) else advice
+
+    summary.print("\n[bold]═══ Multi-Skill Summary ═══[/bold]\n")
+    summary.print(
         f"  {'Skill':<30} {'Score':<8} {'Severity':<12} {'Findings':<10} {'Execution':<10}"
     )
-    console.print(f"  {'─' * 30} {'─' * 8} {'─' * 12} {'─' * 10} {'─' * 10}")
+    summary.print(f"  {'─' * 30} {'─' * 8} {'─' * 12} {'─' * 10} {'─' * 10}")
 
     for skill, result in zip(skills, results, strict=True):
         if "error" in result:
-            console.print(f"  {skill.name:<30} {'ERROR':<8} {'—':<12} {'—':<10} {'error':<10}")
+            summary.print(f"  {skill.name:<30} {'ERROR':<8} {'—':<12} {'—':<10} {'error':<10}")
             continue
         score = result.get("risk_score", 0)
         severity = result.get("risk_severity", "LOW")
         filtered = result.get("filtered_findings") or result.get("findings")
         finding_count = len(filtered) if isinstance(filtered, list) else 0
         execution = "failed" if result.get("execution_successful") is False else "successful"
-        console.print(
+        summary.print(
             f"  {skill.name:<30} {score:<8} {severity:<12} {finding_count:<10} {execution:<10}"
         )
 
-    console.print("")
+    summary.print("")
 
     if output and format == FormatChoice.json:
         combined: dict[str, object] = {
@@ -597,7 +644,7 @@ def _scan_multi_skill(
                 entry["execution_successful"] = result.get("execution_successful", True)
                 combined_skills.append(entry)
         Path(output).write_text(json.dumps(combined, indent=2), encoding="utf-8")
-        console.print(f"[green]Combined report saved to:[/green] {output}")
+        advice.print(f"[green]Combined report saved to:[/green] {output}")
     elif output:
         # concatenated non-JSON output: not merged SARIF
         sections = []
@@ -605,7 +652,7 @@ def _scan_multi_skill(
             if "error" not in result:
                 sections.append(f"--- {skill.relative_path} ---\n\n{_result_body(result)}")
         Path(output).write_text("\n\n".join(sections), encoding="utf-8")
-        console.print(f"[green]Combined report saved to:[/green] {output}")
+        advice.print(f"[green]Combined report saved to:[/green] {output}")
 
     if execution_failed:
         raise typer.Exit(code=2)
@@ -667,10 +714,18 @@ def _scan_repository(
     The alternative this replaces is not "no result" but a wrong one: a
     repository root declares no Skill, so an ordinary Scan reports the whole
     tree as one anonymous Skill with an empty Manifest and scores it as such.
+
+    Everything printed here except ``body`` goes to stderr. Unlike
+    ``_scan_multi_skill``, this path always writes the report -- to ``--output``
+    or, failing that, to stdout -- so its per-Skill table never has to stand in
+    for one: with ``-f sarif`` and no ``--output``, stdout carries a single
+    merged SARIF log that a progress line or a table would make unparseable, and
+    with ``-f terminal`` it carries every per-Skill report in full, of which the
+    table is a digest.
     """
     discovered = discover_skills(repository_root, roots=roots)
     if not discovered:
-        console.print(
+        advice.print(
             f"[yellow]Warning:[/yellow] no skill found under {repository_root}. "
             f"Searched these directory patterns at any depth: {', '.join(roots)}. "
             "Use --repo-scan-root for a layout that does not follow them."
@@ -684,7 +739,7 @@ def _scan_repository(
     execution_failed = False
 
     for index, skill in enumerate(discovered, start=1):
-        console.print(f"[{index}/{len(discovered)}] Scanning {skill.name} ({skill.relative_path}/)")
+        advice.print(f"[{index}/{len(discovered)}] Scanning {skill.name} ({skill.relative_path}/)")
         result = None
         try:
             state = _scan_state(
@@ -704,22 +759,22 @@ def _scan_repository(
             scanned.append((skill, dict(result)))
         except Exception as exception:  # one bad Skill must not lose the other results
             if verbose:
-                console.print_exception()
+                advice.print_exception()
             failures.append((skill, str(exception)))
             execution_failed = True
         finally:
             if result is not None:
                 cleanup_result(result)
 
-    console.print(f"\n{'Skill':<28} {'Score':>6} {'Severity':>10} {'Findings':>9}")
+    advice.print(f"\n{'Skill':<28} {'Score':>6} {'Severity':>10} {'Findings':>9}")
     for skill, result in scanned:
         findings = result.get("filtered_findings") or result.get("findings") or []
-        console.print(
+        advice.print(
             f"{skill.name[:28]:<28} {int(result.get('risk_score') or 0):>6} "
             f"{str(result.get('risk_severity') or ''):>10} {len(findings):>9}"
         )
     for skill, message in failures:
-        console.print(f"{skill.name[:28]:<28} {'ERROR':>6} {message[:40]}")
+        advice.print(f"{skill.name[:28]:<28} {'ERROR':>6} {message[:40]}")
 
     if format == FormatChoice.sarif:
         body = json.dumps(_merge_repository_sarif(scanned), indent=2)
@@ -729,7 +784,7 @@ def _scan_repository(
         )
     if output:
         Path(output).write_text(body, encoding="utf-8")
-        console.print(f"Report saved to: {output}")
+        advice.print(f"Report saved to: {output}")
     else:
         print(body)
 
@@ -779,7 +834,9 @@ def mcp(
 
         run_mcp(transport=transport.value, host=host, port=port)
     except ModuleNotFoundError as e:
-        console.print(f"[red]Error:[/red] {e}")
+        # The stdio transport owns stdout as its protocol channel, so this is the
+        # one command where a stray line on stdout is worse than unparseable.
+        advice.print(f"[red]Error:[/red] {e}")
         raise typer.Exit(code=2) from e
 
 
@@ -834,7 +891,7 @@ def baseline(
     try:
         if verbose:
             set_level("DEBUG")
-            console.print("[dim]Scanning to build baseline...[/dim]")
+            advice.print("[dim]Scanning to build baseline...[/dim]")
         # output_format is irrelevant here; we consume findings, not report_body.
         state = _scan_state(input_path, FormatChoice.json, no_llm)
         state["baseline_path"] = os.path.abspath(output.expanduser())
@@ -847,19 +904,19 @@ def baseline(
             scanner_version=__version__,
         )
         dump_baseline(data, output)
-        console.print(
+        advice.print(
             f"[green]Wrote baseline with {len(findings)} suppressed finding(s) to:[/green] {output}"
         )
     except typer.Exit:
         raise
     except (FileNotFoundError, ValueError) as e:
-        console.print(f"[red]Error:[/red] {e}")
+        advice.print(f"[red]Error:[/red] {e}")
         raise typer.Exit(code=2) from e
     except Exception as e:
         if verbose:
-            console.print_exception()
+            advice.print_exception()
         else:
-            console.print(f"[red]Error:[/red] {e}")
+            advice.print(f"[red]Error:[/red] {e}")
         raise typer.Exit(code=2) from e
     finally:
         if result is not None:

@@ -44,8 +44,8 @@ say so and ask — never guess.
 install, usage, configuration, transparency — and only then the inherited upstream README under the
 `# Inherited documentation` marker. **The fork sections above that marker are not a snapshot; they
 are a contract.** A pull request that adds or alters a rule, a framework, a CLI flag, an environment
-variable, an exit code or an output format updates them in the *same* pull request — never a
-follow-up. The README's own "Contributing, and keeping these docs true" table maps each kind of
+variable, an exit code, an output format, or which stream a line is printed to updates them in the
+*same* pull request — never a follow-up. The README's own "Contributing, and keeping these docs true" table maps each kind of
 change to the section it must update; keep that table correct too.
 
 Below the marker, keep the diff append-only and leave the `NVIDIA/skillspector` URLs alone — they
@@ -215,3 +215,10 @@ When something fails repeatedly, when User has to re-explain, or when a workarou
 - `push --delete` saying "remote ref does not exist" means GitHub already deleted it.
 - The venv's installed version can fall below `pyproject.toml`'s floor; check before reading a dist-info.
 - `GH_REPO` steers `gh issue list` but not bare `gh repo view`; an `upstream` remote wins there.
+- `result.output` folds both CLI streams; assert `result.stdout` and `result.stderr` apart.
+- A module-wide revert proves non-vacuity, not per-site coverage; mutate one site.
+- Below two child skills `--recursive` falls through; every claim about it needs that qualifier.
+- Rich folds a long path at width 80; set `COLUMNS` before asserting one.
+- Run the suite under a long `TMPDIR` too; a short `/tmp` hides width-dependent failures.
+- README's Contributing table, its own prose, and CLAUDE.md's list must enumerate one set.
+- Mutate every print site, not the changed ones; a docstring's universal claim binds all.
