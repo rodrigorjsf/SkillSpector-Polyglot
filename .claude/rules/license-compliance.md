@@ -61,15 +61,59 @@ it for the counts rather than reading a number here; the shortcut is what would 
 ## Third-party dependencies
 
 `THIRD_PARTY_NOTICES.md` is upstream's record of the licenses the distribution pulls in. **A pull
-request that adds a runtime dependency to `pyproject.toml` adds its entry to that file in the same
-pull request.** The fork's own additions — `tree-sitter` and `tree-sitter-java` — are recorded there
-as of `#95`; the four inherited ones the file had always omitted are recorded as of `#102`.
+request that adds a redistributed dependency to `pyproject.toml` adds its entry to that file in the
+same pull request.** The fork's own additions — `tree-sitter` and `tree-sitter-java` — are recorded
+there as of `#95`; the four inherited ones the file had always omitted are recorded as of `#102`;
+the `mcp` extra is recorded as of `#109`.
 
-`tests/unit/test_third_party_notices.py` enforces the rule in both directions: every name in
-`project.dependencies` has an entry, and no entry outlives its dependency. It compares normalised
-names as **sets** — a containment check would pass with `tree-sitter` deleted, because the string
-survives inside `tree-sitter-java`. It does **not** cover `project.optional-dependencies`; `mcp` is
-redistributed and remains unaudited, tracked as `#109`.
+The file carries one section per redistributed declaration, because the distribution has more than
+one audience. `## Runtime Dependencies` is what every install pulls in — `project.dependencies`.
+`## Optional Dependencies (<extra> extra)` is what `pip install skillspector[<extra>]` adds beyond
+that runtime set, redistributed on the same footing once a consumer asks for it; today the only such
+section is `mcp`. The `dev` extra is deliberately in **none** of them: it declares tooling for
+working *on* this project rather than capability a consumer installs to *use* the distribution, so
+listing it would overstate what the distribution contains. That is a disclosure policy, not a claim
+that the extra is uninstallable — the built distribution publishes `Provides-Extra: dev` like any
+other extra, and `skillspector[dev]` in fact pulls `mcp` in through `skillspector[mcp]`.
+
+Every section lists **directly declared** names only, never their transitive closure. That is the
+granularity the file discloses at: what *this distribution* declares. What each declared name in
+turn pulls in is chosen by the installer, varies with resolver, lockfile and platform, and is
+disclosed by that dependency's own notices. Measure the closure when an audit needs it (the
+`Requires-Dist` lines of the installed `dist-info`); never freeze a count into this prose.
+
+The one declared name a section never lists is **this distribution itself**. An extra composes
+another by naming it back — `skillspector[mcp]`, which is how `dev` obtains `mcp` — and that is a
+third party to nobody; the extra it names is disclosed by that extra's own section. The test
+subtracts it, which also settles what a `### skillspector` entry means: under an extra that composes
+another it used to be *accepted*, because the self-reference was a declared name; subtracted, it is
+stale under every extra alike, so the distribution cannot appear inside its own notices. The
+subtraction is blanket, which leaves one
+case to prose rather than to machinery: a consumer-facing extra composing `skillspector[dev]` would
+drop disclosure entirely, because `dev` has no section. Do not write one — the disclosure policy
+above already forbids a consumer-facing extra from delivering the project's own toolchain.
+
+`tests/unit/test_third_party_notices.py` enforces the rule in both directions, once per section:
+every declared name has an entry, and no entry outlives its dependency. Each section is compared
+against **its own** declaration — folding them together would make each section's names read as
+stale entries of the other. It compares normalised names as **sets** — a containment check would
+pass with `tree-sitter` deleted, because the string survives inside `tree-sitter-java`.
+
+Which extras get that pair of comparisons is **derived from the notices**, not listed in the test:
+the test scans `THIRD_PARTY_NOTICES.md` for `## Optional Dependencies (<extra> extra)` headings and
+generates a comparison pair per section it finds. An extra the disclosure policy above keeps out is
+named in the test's `_NOT_REDISTRIBUTED_EXTRAS` instead — that constant records that policy, so only
+an extra declaring tooling for working on this project belongs in it. The two places are
+**exclusive**: every declared extra belongs to exactly one, and the test fails on either error. An
+extra in **neither** would ship undisclosed with every comparison green, which is the shape of gap
+`#109` was filed for. An extra in **both** would carry a section contradicting the very record that
+says it has none — so doing both is not the cautious answer to the failure, and the only way to pass
+is to write its section (which is what generates its comparisons) *or* to record the exclusion
+explicitly.
+
+Because every section is located by the **first** heading that matches it, a duplicated heading
+would hide the entries beneath a second copy from both directions at once. The test rejects one
+outright rather than letting either comparison read past it.
 
 The license and copyright line for a new entry are **read, never recalled** — `#95` would have
 guessed two of two wrong. Read them from the installed `dist-info`: its license file, or its
@@ -78,6 +122,16 @@ guessed two of two wrong. Read them from the installed `dist-info`: its license 
 **installed version's tag** in the project's own repository, and say in the commit body that you
 did. Do not normalise a line to look like its neighbours: `langsmith`'s is
 `Copyright (c) 2023 LangChain`, without the `, Inc.` its three LangChain neighbours carry.
+
+**The installed version has to be one the distribution permits before its `dist-info` counts as the
+source of a §4 fact.** A venv drifts; `pyproject.toml` moves under it. Compare the `Version:` line of
+the installed `METADATA` against the specifier `pyproject.toml` declares, and when it falls outside,
+either refresh the venv (`uv pip install -e '.[dev]'`) or read the `LICENSE` at a tag *inside* the
+declared range — then say in the commit body which of the two you did. `#109` hit exactly this: the
+`mcp` entry was read from an installed `mcp` 1.28.0 while `pyproject.toml` declared
+`mcp>=1.29.0,<2.0.0`, and the line was confirmed identical at the `v1.29.0` tag rather than by
+re-resolving every other dependency. Nothing enforces this — `tests/unit/test_third_party_notices.py`
+compares names, never versions, and never opens a `dist-info`. Enforcing it is tracked as `#113`.
 
 ## What never happens
 

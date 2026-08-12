@@ -115,6 +115,29 @@ and project URL.
 - **Copyright:** Copyright (c) 2007-2022 The YARA Authors
 - **URL:** https://github.com/VirusTotal/yara-python
 
+## Optional Dependencies (mcp extra)
+
+Installed when a consumer asks for the `mcp` extra — `pip install
+skillspector[mcp]`, and the `dev` extra pulls it in as well — and redistributed
+on the same footing as the runtime dependencies above once they do. The `dev`
+extra itself is deliberately absent from these notices: it declares tooling for
+working *on* this project rather than capability a consumer installs to *use*
+the distribution, so listing it would overstate what the distribution contains.
+
+Like the section above, this lists the **directly declared** dependencies only —
+the names this distribution itself declares. What each of them in turn pulls in
+is chosen by the installer, varies with resolver, lockfile and platform, and is
+disclosed by that dependency's own notices rather than restated here. Where an
+extra composes another by naming this distribution back — `skillspector[mcp]`,
+which is how `dev` obtains it — that self-reference is not a third party and is
+listed nowhere: the extra it names is disclosed by its own section above.
+
+### mcp
+
+- **License:** MIT
+- **Copyright:** Copyright (c) 2024 Anthropic, PBC
+- **URL:** https://github.com/modelcontextprotocol/python-sdk
+
 ---
 
 ## License Texts
