@@ -35,12 +35,14 @@ from langchain_core.runnables import RunnableConfig
 from rich.console import Console
 
 from skillspector import __version__
+from skillspector.agent_skills_spec import SpecChecks
 from skillspector.cleanup import cleanup_result
 from skillspector.constants import RISK_THRESHOLD
 from skillspector.graph import graph
 from skillspector.logging_config import get_logger, set_level
 from skillspector.mcp_registry import scan_registry
 from skillspector.multi_skill import MultiSkillDetectionResult, detect_skills
+from skillspector.nodes.report import reported_findings
 from skillspector.repository_scan import DISCOVERY_ROOTS, DiscoveredSkill, discover_skills
 from skillspector.suppression import build_baseline_dict, dump_baseline, load_baseline
 
@@ -151,6 +153,63 @@ class TransportChoice(StrEnum):
     http = "http"
 
 
+# `--spec-checks` takes its values from `SpecChecks` rather than declaring a
+# third enum here. The two above exist only for the CLI; this one is also read
+# out of graph state by the Analyzer it gates, and a second spelling of the same
+# three values is a vocabulary this project would then have to keep aligned by
+# hand.
+_SPEC_CHECKS_HELP = (
+    "Agent Skills specification conformance: off (default) runs nothing, advisory "
+    "reports every rule but scores only the five with a runtime consequence, "
+    "strict scores all of them."
+)
+
+
+def _count_advisory(result: dict[str, object]) -> int:
+    """How many conformance findings of one scan were reported without being scored.
+
+    Read from the scan's own `unscored_rule_ids` -- the state key the gated
+    Analyzer publishes and `report._compute_risk_score` scores against -- so this
+    count and the score cannot disagree. Deriving it here from the catalogue
+    instead would be a second expression of one predicate, which is the defect
+    `.claude/rules/analyzers.md` cites ADR 0006 for. The key is absent whenever
+    no such Analyzer ran, so the count is then zero without a mode test.
+
+    Counted over `_reported_findings`, so a finding a baseline already accepted is
+    not announced on stderr while stdout does not carry it.
+    """
+    raw_unscored = result.get("unscored_rule_ids")
+    unscored = frozenset(raw_unscored) if isinstance(raw_unscored, list) else frozenset()
+    if not unscored:
+        return 0
+    return sum(1 for finding in reported_findings(result) if finding.rule_id in unscored)
+
+
+def _advise_on_advisory_findings(advisory: int) -> None:
+    """Say how many conformance findings were reported without being scored.
+
+    Only when there are some, and the count alone decides that: `_count_advisory`
+    reads `unscored_rule_ids`, which is empty in `strict` (every rule scores) and
+    absent in `off` (no rule ran), so a mode test here would be a second
+    expression of the same fact. It is a note about the scan rather than part of
+    it, so it goes to stderr like its siblings -- the report on stdout stays
+    parseable, which is the rule `test_cli_streams.py` holds every line here to.
+    `advice` and never the `summary` console a Multi-Skill Scan picks: that
+    console is stdout in one case, and this line is never part of a report.
+
+    *advisory* is a total rather than one scan's count, because `--recursive` and
+    `--repo-scan` invoke the graph once per discovered Skill and the note is
+    about the run. The wording is the same on every path -- one sentence to
+    learn, and the single-skill case is the one-scan reading of it.
+    """
+    if advisory <= 0:
+        return
+    advice.print(
+        f"Spec conformance: {advisory} advisory finding(s) reported without affecting "
+        "the risk score. Re-run with --spec-checks strict to score them."
+    )
+
+
 def version_callback(value: bool) -> None:
     """Print version and exit."""
     if value:
@@ -187,12 +246,17 @@ def _scan_state(
     yara_rules_dir: str | None = None,
     baseline: Path | None = None,
     show_suppressed: bool = False,
+    spec_checks: SpecChecks = SpecChecks.OFF,
 ) -> dict[str, object]:
     """Build initial graph state from scan CLI args."""
     state: dict[str, object] = {
         "input_path": input_path,
         "output_format": format.value,
         "use_llm": not no_llm,
+        # Always set, including at its default: an explicit "off" and an absent
+        # key mean the same thing to the analyzer, and writing it makes the mode
+        # a scan carried readable from the state a caller passed.
+        "spec_checks": spec_checks.value,
     }
     if yara_rules_dir is not None:
         state["yara_rules_dir"] = yara_rules_dir
@@ -341,6 +405,14 @@ def scan(
             "Repeatable. Each is matched as a path suffix at any depth.",
         ),
     ] = None,
+    spec_checks: Annotated[
+        SpecChecks,
+        typer.Option(
+            "--spec-checks",
+            help=_SPEC_CHECKS_HELP,
+            case_sensitive=False,
+        ),
+    ] = SpecChecks.OFF,
 ) -> None:
     """
     Scan a skill for security vulnerabilities.
@@ -379,10 +451,15 @@ def scan(
             or baseline is not None
             or show_suppressed
             or yara_rules_dir is not None
+            # A Registry Scan never invokes the graph, so no Analyzer runs and
+            # this flag could only be accepted and ignored. Issue #115 is this
+            # project's own complaint about a flag silently doing nothing here.
+            or spec_checks is not SpecChecks.OFF
         ):
             advice.print(
                 "[red]Error:[/red] --mcp-registry cannot be combined with "
-                "--recursive, --repo-scan, --baseline, --show-suppressed, or --yara-rules-dir"
+                "--recursive, --repo-scan, --baseline, --show-suppressed, "
+                "--yara-rules-dir, or --spec-checks"
             )
             raise typer.Exit(code=2)
         if format != FormatChoice.json:
@@ -423,6 +500,7 @@ def scan(
             baseline,
             show_suppressed,
             verbose,
+            spec_checks,
         )
         return
 
@@ -435,7 +513,9 @@ def scan(
                     "multi-skill scans; scan each sub-skill with its own baseline"
                 )
                 raise typer.Exit(code=2)
-            _scan_multi_skill(detection, format, output, no_llm, yara_rules_dir, verbose)
+            _scan_multi_skill(
+                detection, format, output, no_llm, yara_rules_dir, verbose, spec_checks
+            )
             return
         if not detection.has_root_skill:
             # Guarded on the *outcome*, not on an empty list. The old guard was
@@ -471,6 +551,7 @@ def scan(
             yara_rules_dir=yara_dir,
             baseline=baseline,
             show_suppressed=show_suppressed,
+            spec_checks=spec_checks,
         )
         if verbose:
             advice.print("[dim]Running scan...[/dim]")
@@ -484,6 +565,7 @@ def scan(
         result = graph.invoke(state, config=trace_config)
 
         _write_result(result, output, format)
+        _advise_on_advisory_findings(_count_advisory(result))
 
         if result.get("execution_successful") is False:
             raise typer.Exit(code=2)
@@ -530,6 +612,7 @@ def _scan_multi_skill(
     no_llm: bool,
     yara_rules_dir: Path | None,
     verbose: bool,
+    spec_checks: SpecChecks = SpecChecks.OFF,
 ) -> None:
     """Scan each detected sub-skill independently and produce a combined report.
 
@@ -566,7 +649,9 @@ def _scan_multi_skill(
             f"  [{i}/{len(skills)}] Scanning [bold]{skill.name}[/bold] ({skill.relative_path}/)"
         )
         yara_dir = str(yara_rules_dir.resolve()) if yara_rules_dir else None
-        state = _scan_state(str(skill.path), format, no_llm, yara_rules_dir=yara_dir)
+        state = _scan_state(
+            str(skill.path), format, no_llm, yara_rules_dir=yara_dir, spec_checks=spec_checks
+        )
         trace_config = _build_trace_config(str(skill.path), format, no_llm)
 
         try:
@@ -602,14 +687,19 @@ def _scan_multi_skill(
             continue
         score = result.get("risk_score", 0)
         severity = result.get("risk_severity", "LOW")
-        filtered = result.get("filtered_findings") or result.get("findings")
-        finding_count = len(filtered) if isinstance(filtered, list) else 0
+        finding_count = len(reported_findings(result))
         execution = "failed" if result.get("execution_successful") is False else "successful"
         summary.print(
             f"  {skill.name:<30} {score:<8} {severity:<12} {finding_count:<10} {execution:<10}"
         )
 
     summary.print("")
+
+    # `advice`, never `summary`: the console above is stdout in the one case
+    # where the table *is* the report, and this note never is.
+    _advise_on_advisory_findings(
+        sum(_count_advisory(result) for result in results if "error" not in result)
+    )
 
     if output and format == FormatChoice.json:
         combined: dict[str, object] = {
@@ -625,8 +715,7 @@ def _scan_multi_skill(
                 combined_skills.append({"name": skill.name, "error": result["error"]})
             else:
                 payload = _recursive_json_payload(result) or {}
-                selected_findings = result.get("filtered_findings") or result.get("findings") or []
-                finding_count = len(selected_findings) if isinstance(selected_findings, list) else 0
+                finding_count = len(reported_findings(result))
                 entry = {
                     "name": skill.name,
                     "path": skill.relative_path,
@@ -708,6 +797,7 @@ def _scan_repository(
     baseline: Path | None,
     show_suppressed: bool,
     verbose: bool,
+    spec_checks: SpecChecks = SpecChecks.OFF,
 ) -> None:
     """Scan every Skill inside a repository, each as its own Skill.
 
@@ -749,6 +839,7 @@ def _scan_repository(
                 yara_rules_dir=yara_dir,
                 baseline=baseline,
                 show_suppressed=show_suppressed,
+                spec_checks=spec_checks,
             )
             result = graph.invoke(
                 state, config=_build_trace_config(str(skill.path), format, no_llm)
@@ -768,13 +859,20 @@ def _scan_repository(
 
     advice.print(f"\n{'Skill':<28} {'Score':>6} {'Severity':>10} {'Findings':>9}")
     for skill, result in scanned:
-        findings = result.get("filtered_findings") or result.get("findings") or []
+        findings = reported_findings(result)
         advice.print(
             f"{skill.name[:28]:<28} {int(result.get('risk_score') or 0):>6} "
             f"{str(result.get('risk_severity') or ''):>10} {len(findings):>9}"
         )
     for skill, message in failures:
         advice.print(f"{skill.name[:28]:<28} {'ERROR':>6} {message[:40]}")
+
+    # A Repository Scan invokes the graph once per discovered Skill, so the note
+    # is a total over the run rather than a line per Skill. Without it the
+    # invocation this project's own README recommends -- `--repo-scan --no-llm
+    # --spec-checks advisory` -- was the one shape of the mode that printed no
+    # sign of being advisory at all.
+    _advise_on_advisory_findings(sum(_count_advisory(result) for _, result in scanned))
 
     if format == FormatChoice.sarif:
         body = json.dumps(_merge_repository_sarif(scanned), indent=2)
@@ -874,6 +972,14 @@ def baseline(
         bool,
         typer.Option("--verbose", "-V", help="Show detailed progress."),
     ] = False,
+    spec_checks: Annotated[
+        SpecChecks,
+        typer.Option(
+            "--spec-checks",
+            help=_SPEC_CHECKS_HELP,
+            case_sensitive=False,
+        ),
+    ] = SpecChecks.OFF,
 ) -> None:
     """
     Generate a baseline file that suppresses every finding in the current scan.
@@ -893,10 +999,28 @@ def baseline(
             set_level("DEBUG")
             advice.print("[dim]Scanning to build baseline...[/dim]")
         # output_format is irrelevant here; we consume findings, not report_body.
-        state = _scan_state(input_path, FormatChoice.json, no_llm)
+        # `--spec-checks` is offered here too: a conformance finding is baseline-
+        # eligible like any other (design §3.5), and a baseline generated without
+        # the flag could never accept one.
+        state = _scan_state(input_path, FormatChoice.json, no_llm, spec_checks=spec_checks)
         state["baseline_path"] = os.path.abspath(output.expanduser())
         result = graph.invoke(state)
-        findings = result.get("filtered_findings") or result.get("findings") or []
+        # **A fresh baseline holds exactly what the scan reports, and nothing
+        # else.** The `or` chain this replaces differed on one input -- an empty
+        # `filtered_findings`, meaning the meta filter dropped every finding --
+        # where it fell back to the raw pre-filter list and wrote entries for
+        # findings the scan does not report. Those entries suppress nothing
+        # either: `build_baseline_dict` fingerprints what it is given, and a
+        # pre-filter finding carries pre-filter evidence, so a later
+        # `scan --baseline` computes a different hash for the same defect.
+        #
+        # This command loads no baseline of its own, so "what an existing
+        # baseline already suppressed" cannot arise here: it has no `--baseline`
+        # option, `_scan_state` is called without one, and the `baseline_path`
+        # set below is read only by `build_context._selected_baseline_component`,
+        # which excludes the output file from the walk. `suppressed_findings` is
+        # therefore always empty on this path and nothing has to be added back.
+        findings = reported_findings(result)
         data = build_baseline_dict(
             findings,
             reason=reason,

@@ -7,12 +7,40 @@ We decided it declines by returning no Findings and emitting **nothing** to the 
 no ledger event, no analyzer status event — so a Scan of an Agent Skills Skill is byte-for-byte
 unchanged by the existence of a LangChain4j or Deep Agents Analyzer.
 
+**A second gate is accepted on the same reasoning: a configuration gate whose default is the absence
+of a request.** `structure_agent_skills_spec` runs only when `--spec-checks` is given a value other
+than its default `off`, and with the flag absent it declines in exactly this shape — no Finding, no
+Work Item, no Analyzer Status. See [§3.5 of
+`docs/MULTI_FRAMEWORK_SKILL_ANALYSIS.md`](../MULTI_FRAMEWORK_SKILL_ANALYSIS.md#35-spec-conformance-rules-and-scoring)
+for the catalogue this gate covers.
+
+The distinction that admits it, and that keeps the case narrow, is between a gate that is a *request*
+and a gate that is the *absence* of one. `--no-llm` is a request: the semantic Analyzers would have
+run, the user turned them off, and that is a configuration worth reporting — which is why they answer
+it with `disabled` and `LedgerReason.DISABLED_BY_CONFIGURATION`, and why this record does **not**
+widen to cover them. `--spec-checks off` is not a request at all; it is the default of a flag nobody
+passed. A row saying so would appear on every Scan ever run, and would report the default of a flag
+rather than a limitation of a Scan.
+
+The Ledger reconciliation is the one written below, unchanged: a Work Item is a *planned*
+unit of inspection, and a gate that does not open plans none. The measured cost is the same as the
+one that decided the original case — an Analyzer Status lands in
+`analysis_completeness.analyzer_statuses`, which the Behavior Snapshot projects, and `disabled` sits
+outside `NON_LIMITING_STATUSES`, so a `disabled` row on every Scan would move every committed
+snapshot *and* take `is_complete` down with it.
+
+What this does **not** license is a gate that skips work the Scan was asked for. Past the gate the
+Analyzer reports on every input, which is where [ADR 0006](0006-langchain4j-applicability-is-what-it-opens.md)
+binds: an Analyzer that opens nothing reports `not_applicable` rather than falling silent.
+
 This reads like a violation of the Inspection Ledger's purpose, which is why it is recorded here.
 The Ledger exists so that an absence of Findings is distinguishable from an absence of inspection,
 and a silent decline looks exactly like the thing it guards against. The reconciliation is in the
-definition of Work Item: it is a *planned* unit of inspection, and an Analyzer whose Framework gate
+definition of Work Item: it is a *planned* unit of inspection, and an Analyzer whose gate
 does not open plans none. There is no unaccounted work, because there was no work. A gap presupposes
-something that was meant to be inspected and was not.
+something that was meant to be inspected and was not. This holds for both gates alike — the
+Framework mismatch this record was written for, and the default-off configuration gate amended in
+above — because neither of them plans a Work Item it then declines to do.
 
 ## Considered Options
 

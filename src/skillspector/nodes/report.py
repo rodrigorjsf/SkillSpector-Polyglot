@@ -24,11 +24,11 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import replace
 from datetime import UTC, datetime
 from io import StringIO
-from typing import Literal
+from typing import Literal, cast
 
 from rich.console import Console
 from rich.markup import escape
@@ -138,6 +138,45 @@ def _build_sarif_properties(finding: Finding) -> dict[str, object] | None:
     return cleaned or None
 
 
+# The generic half of the note, and the only half this module may own: that a
+# finding was reported without being scored is true whatever published the ids.
+# **The remedy is not generic** — which flag to re-run with is catalogue
+# knowledge, so the publisher supplies that sentence in `unscored_rule_note` and
+# this module renders whatever it is handed. A publisher that names ids but no
+# note still gets the true statement below rather than silence.
+#
+# One analyzer publishes both keys today and neither carries a state reducer, so
+# a second publisher is not a thing this module has to render for — it is a thing
+# `state.SkillspectorState` documents as requiring a reducer decision first.
+_NOT_SCORED_FALLBACK_NOTE = "not scored in this run"
+
+
+def _not_scored_suffix(
+    finding: Finding,
+    unscored_rule_ids: Collection[str],
+    unscored_rule_note: str = "",
+) -> str:
+    """The parenthetical a finding gets when this run declined to score it.
+
+    Empty for every other finding, and empty for every scan that published no
+    such rule ids — which is every scan that asked for no gated analyzer.
+
+    **It reads the run, not the finding**, and that is the correction it carries.
+    A finding this run does not score is a finding at its honest confidence, so
+    there is nothing on it to branch on; the earlier mechanism said "advisory" by
+    emitting ``confidence = 0.0``, which rendered as ``Confidence: 0%`` — a claim
+    about certainty the scanner never made (issue #119).
+
+    *unscored_rule_note* is rendered verbatim, and this module neither writes nor
+    inspects it: naming ``--spec-checks`` here would make the ids opaque and the
+    sentence beside them not, which is a layering violation whether or not a
+    second analyzer ever publishes the key. Today exactly one does.
+    """
+    if (finding.rule_id or "") not in unscored_rule_ids:
+        return ""
+    return f" ({unscored_rule_note.strip() or _NOT_SCORED_FALLBACK_NOTE})"
+
+
 def _severity_to_sarif_level(severity: str) -> Literal["error", "warning", "note"]:
     """Map Finding.severity to SARIF result level."""
     return {
@@ -163,6 +202,7 @@ def _compute_risk_score(
     findings: list[Finding],
     has_executable_scripts: bool,
     component_metadata: list[dict[str, object]] | None = None,
+    unscored_rule_ids: Collection[str] | None = None,
 ) -> tuple[int, str, str]:
     """
     Compute risk score (0-100), severity band, and recommendation.
@@ -176,6 +216,15 @@ def _compute_risk_score(
     to [0, 1]). Findings with confidence <= 0 are skipped entirely — they do not
     contribute to the score but remain in the reported findings list.
 
+    *unscored_rule_ids* names rule ids this run was configured to report without
+    scoring, and they are skipped **in addition to** that confidence rule, which
+    is unchanged for every other analyzer. It is an **opaque** set of ids: this
+    module does not know which analyzer published them or what they mean, and it
+    must not learn — the catalogue knowledge stays in the analyzer that owns it,
+    and the mode that produced the set never reaches here. ``None`` (the default)
+    and an empty collection both mean nothing is exempt, which is what every scan
+    that asked for no such analyzer carries.
+
     Within each rule_id bucket, findings are processed in severity-descending
     order so that the highest-severity occurrence always receives the full weight.
 
@@ -184,6 +233,7 @@ def _compute_risk_score(
     findings from documentation files (markdown, text, json, yaml, toml)
     are scored at base weight to avoid punishing security documentation.
     """
+    unscored = frozenset(unscored_rule_ids or ())
     severity_rank = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}
     sorted_findings = sorted(
         findings,
@@ -199,6 +249,8 @@ def _compute_risk_score(
     score = 0.0
 
     for f in sorted_findings:
+        if (f.rule_id or "UNKNOWN") in unscored:
+            continue
         confidence = max(0.0, min(1.0, f.confidence))
         if confidence <= 0.0:
             continue
@@ -467,6 +519,8 @@ def _format_terminal(
     analysis_completeness: Mapping[str, object] | None = None,
     execution_successful: bool = True,
     manifest_status: ManifestStatus = ManifestStatus.PRESENT,
+    unscored_rule_ids: Collection[str] = (),
+    unscored_rule_note: str = "",
 ) -> str:
     """Generate Rich terminal output and export as string."""
     suppressed = suppressed or []
@@ -551,7 +605,10 @@ def _format_terminal(
             console.print(f"  {icon}: {f.rule_id} - {f.message[:60]}...")
             end = f"–{f.end_line}" if f.end_line and f.end_line != f.start_line else ""
             console.print(f"    [dim]Location:[/dim] {f.file}:{f.start_line}{end}")
-            console.print(f"    [dim]Confidence:[/dim] {f.confidence:.0%}")
+            console.print(
+                f"    [dim]Confidence:[/dim] {f.confidence:.0%}"
+                f"{_not_scored_suffix(f, unscored_rule_ids, unscored_rule_note)}"
+            )
             if f.remediation:
                 console.print(f"    [dim]Remediation:[/dim] {(f.remediation or '')[:150]}...")
             console.print()
@@ -817,6 +874,8 @@ def _format_markdown(
     analysis_completeness: Mapping[str, object] | None = None,
     execution_successful: bool = True,
     manifest_status: ManifestStatus = ManifestStatus.PRESENT,
+    unscored_rule_ids: Collection[str] = (),
+    unscored_rule_note: str = "",
 ) -> str:
     """Generate Markdown report string."""
     suppressed = suppressed or []
@@ -872,7 +931,10 @@ def _format_markdown(
             lines.append(f"### {emoji} {sev}: {f.rule_id}\n")
             end = f"–{f.end_line}" if f.end_line and f.end_line != f.start_line else ""
             lines.append(f"**Location:** `{f.file}:{f.start_line}{end}`  ")
-            lines.append(f"**Confidence:** {f.confidence:.0%}  ")
+            lines.append(
+                f"**Confidence:** {f.confidence:.0%}"
+                f"{_not_scored_suffix(f, unscored_rule_ids, unscored_rule_note)}  "
+            )
             lines.append("")
             lines.append(f"**Message:** {f.message}")
             lines.append("")
@@ -902,6 +964,47 @@ def _format_markdown(
     lines.append(f"- **Executable Scripts:** {'Yes' if has_executable_scripts else 'No'}")
     lines.append(f"\n*Generated by SkillSpector v{skillspector_version}*")
     return "\n".join(lines)
+
+
+def reported_findings(result: Mapping[str, object]) -> list[Finding]:
+    """The findings a finished scan's report actually contains. One reader, two corrections.
+
+    For every consumer of a `graph.invoke` result that wants to *count* or *list*
+    findings without re-rendering them — the CLI's summary tables, `skillspector
+    baseline`, the MCP tool's verdict payload. It lives here rather than beside
+    any one of them because the selection semantics it mirrors are this module's,
+    and three consumers reading graph state three ways is how they came to
+    disagree with the report in the first place.
+
+    **Selection is by presence, not by truth.** :func:`report` selects with
+    ``state.get("filtered_findings", raw_findings)``, so an empty filtered list is
+    honoured as "everything was filtered away". The ``or`` chains this replaces
+    read that same list as falsy and fell back to the pre-filter one, so a scan
+    whose findings the meta filter all dropped was counted at its pre-filter size.
+
+    **Baseline suppression is subtracted, because no findings key in state has had
+    it applied.** :func:`report` writes ``filtered_findings`` *before* partitioning
+    it against the baseline and reports only the active side, so a baseline that
+    accepted everything still left ``--repo-scan`` announcing ``Findings 2`` beside
+    a report holding none. A baseline accepting every finding is the steady state
+    of a baseline, not an edge case. ``suppressed_findings`` is the other half of
+    that partition, so the difference is exactly what was reported.
+    """
+    findings = result.get("filtered_findings")
+    if not isinstance(findings, list):
+        findings = result.get("findings")
+    if not isinstance(findings, list):
+        return []
+    selected = cast("list[Finding]", findings)
+    suppressed = result.get("suppressed_findings")
+    if not isinstance(suppressed, list):
+        return selected
+    suppressed_ids = {
+        getattr(entry.finding, "finding_id", None)
+        for entry in suppressed
+        if getattr(entry, "finding", None) is not None
+    }
+    return [finding for finding in selected if finding.finding_id not in suppressed_ids]
 
 
 def report(state: SkillspectorState) -> dict[str, object]:
@@ -975,9 +1078,25 @@ def report(state: SkillspectorState) -> dict[str, object]:
         file_cache=file_cache,
         scanner_version=skillspector_version,
     )
+    # Opaque on purpose: the analyzer that published these ids knows what they
+    # mean, and this module only has to keep them out of the score and say so
+    # beside the finding. Absent for every scan that asked for no such analyzer.
+    # The note travels with the ids for the same reason -- the sentence telling a
+    # reader how to score them names a flag only the publisher owns. Both keys
+    # are single-publisher and unreduced in `state.SkillspectorState`; reading
+    # them defensively here is about a hand-assembled state, not about a second
+    # analyzer.
+    raw_unscored = state.get("unscored_rule_ids")
+    unscored_rule_ids: frozenset[str] = (
+        frozenset(rule_id for rule_id in raw_unscored if isinstance(rule_id, str))
+        if isinstance(raw_unscored, list)
+        else frozenset()
+    )
+    raw_note = state.get("unscored_rule_note")
+    unscored_rule_note = raw_note if isinstance(raw_note, str) else ""
     findings_for_scoring = deduplicate(active_findings)
     risk_score, risk_severity, risk_recommendation = _compute_risk_score(
-        findings_for_scoring, has_executable_scripts, component_metadata
+        findings_for_scoring, has_executable_scripts, component_metadata, unscored_rule_ids
     )
     exceptions = analysis_completeness.get("ledger_exceptions", [])
     fatal_exception = (
@@ -1019,6 +1138,8 @@ def report(state: SkillspectorState) -> dict[str, object]:
             analysis_completeness=analysis_completeness,
             execution_successful=execution_successful,
             manifest_status=manifest_status,
+            unscored_rule_ids=unscored_rule_ids,
+            unscored_rule_note=unscored_rule_note,
         )
     elif output_format == "json":
         report_body = _format_json(
@@ -1055,6 +1176,8 @@ def report(state: SkillspectorState) -> dict[str, object]:
             analysis_completeness=analysis_completeness,
             execution_successful=execution_successful,
             manifest_status=manifest_status,
+            unscored_rule_ids=unscored_rule_ids,
+            unscored_rule_note=unscored_rule_note,
         )
     else:
         report_body = json.dumps(sarif_report, indent=2)

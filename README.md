@@ -53,6 +53,130 @@ tracking, YARA signatures, MCP least privilege, and the rest — applies to **ev
 rows above add to it; they never replace it. Full rule tables are in
 [Vulnerability Patterns](#vulnerability-patterns).
 
+### Specification conformance — `--spec-checks`
+
+One rule set belongs to no framework row, because all three frameworks implement the same
+[Agent Skills specification](docs/references/agent-skills-specification.md): 17 deterministic
+conformance rules, `SPEC-1` … `SPEC-17`, string comparisons and path lookups with no LLM
+involved. Fifteen check a constraint the captured specification states; **two are loader
+behavior** and are labelled as such rather than attributed to the page — `SPEC-14` (Deep Agents
+skips a 10 MB manifest) and `SPEC-17` (the page states no skill-name uniqueness clause). They are
+**off by default** and reached with `--spec-checks`:
+
+| Value | What runs |
+|---|---|
+| `off` *(default)* | Nothing. The scan is byte-for-byte what it was before the flag existed |
+| `advisory` | All 17 rules report; only the five with a runtime consequence — `SPEC-4`, `SPEC-9`, `SPEC-14`, `SPEC-15`, `SPEC-17` — affect the risk score. The other twelve are printed, marked `not scored` beside their confidence, and contribute zero |
+| `strict` | All 17 rules report **and** affect the risk score |
+
+```bash
+# Report all 17; only the five with a runtime consequence reach the score
+skillspector scan ./my-skill --no-llm --spec-checks advisory
+
+# Gate on conformance too: all 17 reach the score
+skillspector scan ./my-skill --no-llm --spec-checks strict
+```
+
+**Neither mode is inert, including `advisory`.** Its five scored rules raise the risk score like
+any other finding, so a skill near the threshold can move from `SAFE` to `CAUTION` — or across it,
+turning exit `0` into exit `1` and failing a build. Every conformance finding also enters the SARIF
+output, so a code-scanning upload gains alerts for them. Turning the flag on is a change to what
+your gate does; `off`, the default, is the only mode that changes nothing.
+
+**The flag works the same with or without the LLM stage.** That stage filters MEDIUM and LOW
+findings by asking the model to confirm them, and every conformance rule is MEDIUM or LOW — so
+these findings used to be dropped almost entirely unless you passed `--no-llm`, which turns off the
+semantic analysis the rest of the tool exists for. The conformance catalogue is now **exempt from
+that filter**: a rule that is a string comparison has nothing for a security model to confirm or
+deny, and a confirmed one would also have its confidence rewritten by the model. A conformance
+finding is reported at its rule's own confidence on both paths, so `--spec-checks` needs no pairing
+and the CLI prints no advice about one.
+
+**In `advisory`, each unscored finding says so in the report, and one line on stderr counts them.**
+The report prints the rule's real confidence and appends the reason it did not count —
+`Confidence: 100% (not scored — run with --spec-checks strict to include)` — in both the terminal
+and Markdown output, so a reviewer is never told the scanner is unsure about a string comparison.
+Beside that, on stderr —
+`Spec conformance: N advisory finding(s) reported without affecting the risk score.` The count is
+what the report carries, so a finding a `--baseline` already accepted is not in it — the line is
+absent entirely when the baseline accepts them all. It is a note about the scan rather than part of
+it, so it never joins the report on stdout, and it is a total for the run: `--recursive` and `--repo-scan` invoke the scanner once per discovered skill and the
+count covers all of them. `strict` prints no such line, because there everything is in the score.
+
+**That note is prose only: the JSON and SARIF reports carry no per-finding signal that a
+conformance finding was reported without being scored.** Both formats emit an advisory finding
+exactly as they emit a scored one — same rule id, same severity, same confidence — so a machine
+consumer of `--format json` or `--format sarif` can tell the two modes apart only by the risk
+score. The stderr line above is the whole of the machine-visible signal, and it is a total for the
+run rather than a mark on a finding
+([issue #125](https://github.com/rodrigorjsf/SkillSpector-Polyglot/issues/125)).
+
+Two rules deliberately under-match rather than guess: `SPEC-15` and `SPEC-16` read Markdown link
+targets only (a bare `scripts/extract.py` written in prose is not read as a reference, and a link
+inside a fenced code block is treated as an example), and `SPEC-4` stays silent when the scanned
+root is a temporary directory this tool created — a git clone, a download, a zip or a single
+file — because the directory name there is not the author's. `SPEC-15` accepts a percent-encoded
+link target — `references/User%20Guide.md` resolves against `references/User Guide.md` — and tries
+the raw spelling too, so a file whose name really holds a `%` still resolves; `SPEC-16` measures
+depth on the raw target, so an encoded `%2F` is a character rather than another level.
+
+**`SPEC-15` reports a missing file, never a file the scan declined to look for.** It is scored, so
+the difference costs real points. It stays silent for a target the scan was in no position to find:
+
+- **A single-file input** (`skillspector scan ./my-skill/SKILL.md`), which copies the manifest alone
+  into a temporary directory and so carries no tree at all. A clone, a download and a zip **do**
+  carry the skill's tree, so `SPEC-15` keeps reporting on all three — the exclusion is the lone-file
+  shape and nothing wider.
+- **A hidden file** and **a pruned directory** (`node_modules/` and its neighbours), both of which
+  the scan already records as out of scope in `analysis_completeness.scope_exclusions`. Reporting
+  them made one report say both that a path is out of scope and that the path was not found.
+
+One shape is **not** covered: a file under a **directory symlink**, which the walk does not descend
+and records no exclusion for, so a conforming skill still earns a scored finding there
+([issue #123](https://github.com/rodrigorjsf/SkillSpector-Polyglot/issues/123)).
+
+**A `SKILL.md` a skill *ships* is not a skill directory.** The specification defines three
+directories for what a skill bundles — `scripts/`, `references/`, `assets/` — and a manifest under one
+of them is a template or an example, so it is not inspected at all. Without that, a conforming skill
+shipping `references/SKILL.md` earned 20 scored points: `SPEC-4` against the directory name
+`references`, plus `SPEC-17` against the skill that ships it. **The exclusion is those three names
+and nothing more**, so a manifest parked somewhere the specification names no convention for —
+`docs/examples/SKILL.md` — is still read as a skill directory and can still collide with the skill
+around it ([issue #121](https://github.com/rodrigorjsf/SkillSpector-Polyglot/issues/121)).
+
+**A baseline is not bound to the mode it was taken in.** A v2 fingerprint binds to the *evidence* a
+finding carried — the file's content, the rule, the location, the emitted text — and which mode you
+ran is not evidence. So a baseline generated under `--spec-checks advisory` also suppresses under
+`strict`, and the other way round: escalating the mode changes what a conformance finding costs, not
+whether the baseline accepts it, and nothing your team already reviewed comes back unannounced.
+That covers every finding in the scan and not just the conformance ones, because the flag is inert
+to the LLM stage: no `SPEC-*` id reaches the meta-analysis prompt or the token budget that decides
+where a large file is split, so turning it on cannot change what the model is told about an
+unrelated finding beside it. Regenerate the baseline when the scanner version or the file content
+changes, as always — not when you change this flag.
+
+Two things a baseline *is* bound to, both of which predate conformance checking and apply to every
+rule. `--no-llm` moves five hashed fields, four of which are model output copied verbatim when the
+flag is off — with no temperature or seed pinned and the model itself env-selectable — so the LLM
+side offers no fingerprint stability at all, not even between two identical invocations. **A
+baseline you commit and rely on is a `--no-llm` baseline**; an LLM-side one is best-effort
+([issue #124](https://github.com/rodrigorjsf/SkillSpector-Polyglot/issues/124)). And a fingerprint
+binds to the path *relative to the scan root*, so a baseline taken with `skillspector baseline .`
+suppresses nothing under `--repo-scan`, which scans each discovered skill as its own root — baseline
+each skill directory instead. See [Baseline suppression](docs/SUPPRESSION.md) for the measurement
+and for what a fingerprint hashes.
+
+`SPEC-17` compares skill names *across* directories, so it is reachable only when one scan sees
+several `SKILL.md` files — the usual shape being a directory that declares no skill of its own and
+holds several that do. `--recursive` and `--repo-scan` scan each discovered skill directory
+separately, so they reach it only for a skill that nests another skill inside its own tree. A single
+directory shipping both accepted manifest spellings is **one** skill, not two: `SKILL.md` wins over
+`skill.md`, which is the precedence the rest of the scanner already reads them in, so the shadowed
+file raises no rule and `SPEC-17` never reports a directory against itself.
+
+No rule reads `allowed-tools`, whose comma/space handling is a
+[recorded deviation](docs/MULTI_FRAMEWORK_SKILL_ANALYSIS.md#known-deviation-allowed-tools-separator).
+
 **Deep Agents, precisely:** a Deep Agents project is detected and reported as such, and its
 `SKILL.md` files are scanned by the base catalog like any other skill. The `framework_deepagents`
 analyzer reads the host-side configuration on top of that, and the scan report carries a row naming
@@ -140,15 +264,25 @@ anonymous skill and computing a risk score over that mixture.
 # Scan every skill in an agentic repository, static analysis only, SARIF for CI
 skillspector scan . --repo-scan --no-llm --format sarif --output skillspector.sarif
 
-# Re-scan against an accepted baseline: only NEW findings are reported and scored
+# Re-scan against an accepted baseline: only NEW findings are reported and scored.
+# Build the baseline from PER-SKILL runs — `skillspector baseline .` has no --repo-scan
+# mode and records paths this scan never emits. See docs/SUPPRESSION.md
+skillspector baseline ./skills/my-skill --no-llm -o skillspector-baseline.yaml
 skillspector scan . --repo-scan --no-llm --baseline skillspector-baseline.yaml
 
 # A layout the default discovery roots miss
 skillspector scan . --repo-scan --repo-scan-root playbooks --repo-scan-root ops/skills
 ```
 
+```bash
+# Add Agent Skills specification conformance to the same run. Not inert: its five
+# scored rules raise the risk score and can flip the exit code — see the section below
+skillspector scan . --repo-scan --no-llm --spec-checks advisory
+```
+
 Discovery roots, the JVM build directories that are skipped, and a complete GitHub Actions job are
-documented under [Scanning a Whole Repository](#scanning-a-whole-repository).
+documented under [Scanning a Whole Repository](#scanning-a-whole-repository); `--spec-checks` under
+[Specification conformance](#specification-conformance----spec-checks).
 
 ## Scanning the MCP Registry
 
@@ -260,9 +394,11 @@ carries the worst single entry. Scan one server at a time when you want a per-se
   `skillspector scan <target> --mcp-registry` exits `2` with
   `Error: --mcp-registry currently supports only --format json`. SARIF is unavailable in this mode
   today; the error says "currently" because the restriction is a limitation, not a design promise.
-- **Five flags are rejected outright**, exit `2`: `--recursive`, `--repo-scan`, `--baseline`,
-  `--show-suppressed`, `--yara-rules-dir`. There is no way to accept a known posture check and stop
-  scoring it — baselines apply to skill scans only.
+- **Six flags are rejected outright**, exit `2`: `--recursive`, `--repo-scan`, `--baseline`,
+  `--show-suppressed`, `--yara-rules-dir`, `--spec-checks`. There is no way to accept a known
+  posture check and stop scoring it — baselines apply to skill scans only. `--spec-checks` is
+  rejected rather than ignored because a Registry Scan opens no component and runs no analyzer: it
+  assesses what a server owner published, and there is no `SKILL.md` to hold to a specification.
 - **Three flags are accepted and silently ignored**: `--no-llm`, `--verbose` / `-V` and
   `--repo-scan-root`. A Registry Scan never calls an LLM, with or without `--no-llm`.
 - `--output` / `-o` works and writes the JSON report to the given path.
@@ -320,6 +456,7 @@ Static analysis needs no credentials at all; only the optional LLM stage does.
 | Use a local agent CLI session instead of an API key | `SKILLSPECTOR_PROVIDER=claude_cli` (or `codex_cli`) |
 | Override the model | `SKILLSPECTOR_MODEL` |
 | Debug a scan | `SKILLSPECTOR_LOG_LEVEL=DEBUG`, or `-V` |
+| Report Agent Skills specification conformance | `--spec-checks advisory` (reported, unscored) or `--spec-checks strict` (scored) |
 
 The complete variable table is in [Environment Variables](#environment-variables), every flag in
 [CLI Options](#cli-options), and what leaves your machine in
@@ -366,7 +503,7 @@ which stream a line is printed to updates this README in the *same* pull request
 | A change to… | …updates, in the same PR |
 |---|---|
 | Framework detection or a framework analyzer | the [Framework support](#framework-support) matrix — including its **Status** column |
-| Any detection rule | the relevant [Vulnerability Patterns](#vulnerability-patterns) table and the pattern count in [Features](#features) |
+| Any detection rule | the relevant [Vulnerability Patterns](#vulnerability-patterns) table and the pattern count in [Features](#features) — a conformance rule is counted in its own line there rather than in the 77, because it assesses conformance rather than risk |
 | A CLI flag or subcommand | [CLI Options](#cli-options), and [Usage in an agentic project](#usage-in-an-agentic-project) if it changes the recommended invocation |
 | `--mcp-registry` behavior: an input shape, a check, a rejected flag, or the network rule | [Scanning the MCP Registry](#scanning-the-mcp-registry) and the walkthrough in [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) |
 | A domain term, or the meaning of one | [`CONTEXT.md`](CONTEXT.md) — the glossary is the vocabulary the prose, the docstrings and the test names are held to |
@@ -407,6 +544,7 @@ SkillSpector is part of the [NVIDIA Verified Skills pipeline](https://docs.nvidi
 
 - **Multi-format input**: Scan Git repos, URLs, zip files, directories, or single files
 - **77 vulnerability patterns** across 19 categories: prompt injection, data exfiltration, privilege escalation, supply chain, excessive agency, output handling, system prompt leakage, memory poisoning, tool misuse, rogue agent, anti-refusal, trigger abuse, dangerous code (AST), taint tracking, YARA signatures, MCP least privilege, MCP tool poisoning, LangChain4j framework, and Deep Agents framework
+- **17 Agent Skills conformance rules** — 15 from the specification, 2 from loader behavior (`SPEC-14`, `SPEC-17`) — counted apart from the patterns above because they assess conformance rather than risk, and off unless `--spec-checks` asks for them ([Specification conformance](#specification-conformance----spec-checks))
 - **Two-stage analysis**: Fast static analysis + optional LLM semantic evaluation
 - **Live vulnerability lookups**: SC4 queries [OSV.dev](https://osv.dev) for real-time CVE data with automatic offline fallback
 - **Multiple output formats**: Terminal, JSON, Markdown, and SARIF reports
@@ -615,9 +753,18 @@ scan is byte-for-byte unchanged. For a layout the patterns miss, replace them:
 skillspector scan . --repo-scan --repo-scan-root playbooks --repo-scan-root ops/skills
 ```
 
-`--baseline`, the SARIF output and the exit code all work as they do for a single skill. SARIF
-locations are rewritten to be relative to the repository root, so GitHub code scanning resolves them
-against the checked-out tree.
+The SARIF output and the exit code work as they do for a single skill. SARIF locations are rewritten
+to be relative to the repository root, so GitHub code scanning resolves them against the checked-out
+tree.
+
+**`--baseline` works here, but `skillspector baseline .` cannot produce the file it needs.** The
+flag is threaded through to every discovered skill, and each skill is scanned as its own root, so a
+fingerprint records `SKILL.md` rather than `skills/my-skill/SKILL.md`. `skillspector baseline` has
+no `--repo-scan` mode: pointed at the repository root it scans the whole tree as one anonymous skill
+and writes the repo-root-relative form. `component.path` is hashed, so those entries match nothing
+and suppress nothing. Baseline each skill directory instead — those entries *do* match — and
+concatenate their `fingerprints` lists into the one document `--baseline` accepts.
+[Baseline suppression](docs/SUPPRESSION.md) carries the measurement.
 
 #### `--repo-scan` or `--recursive`?
 
@@ -632,7 +779,7 @@ and not helpfully so: it walks build output that `--repo-scan` skips.
 | Minimum to engage | one skill | **two** — one child skill is not enough |
 | A `SKILL.md` at the path itself | irrelevant | short-circuits: the tree is scanned as that one skill |
 | `target/`, `build/`, `.gradle/` | skipped | walked, and a skill inside one counts |
-| `--baseline` | threaded through every skill | rejected, exit `2` — but **only** once the flag engages. Below the two-skill threshold it falls through to an ordinary scan and the baseline applies |
+| `--baseline` | threaded through every skill, and it suppresses — but only for a baseline taken *per skill directory*: `skillspector baseline .` has no repo-scan mode and writes repo-root-relative paths this scan never emits | rejected, exit `2` — but **only** once the flag engages. Below the two-skill threshold it falls through to an ordinary scan and the baseline applies |
 | `--format sarif --output` | one valid SARIF log, one run per skill | several SARIF documents glued together with `--- path ---` separators — **not parseable as SARIF** |
 | `--format json --output` | per-skill bodies concatenated | one object: `multi_skill`, `skill_count`, `max_risk_score`, `execution_successful`, `skills` |
 | **No** `--output` | the report is written to stdout, in every format — but only `sarif` is one merged document; `json` and `markdown` are the same `--- path ---` concatenation as the row above ([#116](https://github.com/rodrigorjsf/SkillSpector-Polyglot/issues/116)) | no report at all — the combined body is only ever written to a file ([#114](https://github.com/rodrigorjsf/SkillSpector-Polyglot/issues/114)). With `--format terminal` stdout carries the summary table and nothing else; with `json`, `sarif` or `markdown` stdout is **empty** and the format flag is silently ignored. As with `--baseline`, **only** once the flag engages: below the two-skill threshold it falls through to an ordinary scan, which does write a report to stdout in the requested format |
@@ -683,7 +830,9 @@ jobs:
 ```
 
 Add `--baseline skillspector-baseline.yaml` once known findings are accepted, so re-scans surface
-only new ones.
+only new ones — but build that file from **per-skill** `skillspector baseline` runs, not from
+`skillspector baseline .`, which records paths this scan never emits. See the `--baseline` note
+above.
 
 ### Suppressing False Positives (baseline)
 
@@ -843,7 +992,9 @@ claude mcp add skillspector -- skillspector mcp
 
 ## Vulnerability Patterns
 
-SkillSpector detects **77 vulnerability patterns** across 19 categories:
+SkillSpector detects **77 vulnerability patterns** across 19 categories, plus **17 specification
+conformance rules** that are counted separately and run only under `--spec-checks` — see
+[Specification Conformance](#specification-conformance-17-rules-opt-in) at the end of this section:
 
 ### Prompt Injection (5 patterns)
 
@@ -1034,6 +1185,35 @@ subagent without its own skills as a bug its documentation calls out, not as a r
 | DA-SUBAGENT-SKILLS | Subagent Without Skills | LOW | A custom subagent is defined in `subagents=[...]` without a `skills` key of its own. Upstream states that only the general-purpose subagent inherits the main agent's skills and that each custom subagent definition needs its own `skills` parameter, so the subagent runs without the capability the application was built around and nothing at runtime reports it. The general-purpose subagent is excluded structurally rather than by name: it is built in, so no definition declares it. Only a definition's keys are read, never its values — a real definition binds tools to objects no scan evaluates — so a finding names the line the definition opens on rather than the subagent, and a definition written as anything other than a mapping in this file, or holding a `**` spread, reaches `DA-UNRESOLVED` |
 | DA-UNRESOLVED | Unresolvable Host Configuration | MEDIUM | A `create_deep_agent(...)` argument is assembled at runtime, so the configuration deciding what the agent may do to its skills was never read. Seven cases, each named in its own message: the skill source list, the backend, the `FilesystemPermission` rules, the subagent definitions, a resolved skill path routed to a store whose contents are computed per request, a permission rule whose `operations`, `paths` or `mode` is not one this scan recognises, and a `FilesystemBackend` whose `root_dir` cannot be read, so no configured skill path maps onto a file. An argument that is simply absent is a configuration, not a boundary, and raises nothing |
 
+### Specification Conformance (17 rules, opt-in)
+
+Counted apart from the 77 patterns above, because a conformance rule states that a declaration
+disagrees with the [Agent Skills specification](docs/references/agent-skills-specification.md), not
+that a risk category applies — which is also why these findings carry no OWASP tag. They run only
+under `--spec-checks`; see
+[Specification conformance](#specification-conformance----spec-checks) for the three modes and the
+limits worth knowing before turning it on.
+
+| ID | Rule | Severity | Scored by default | Description |
+|----|------|----------|-------------------|-------------|
+| SPEC-1 | Missing Or Unparseable Declaration | MEDIUM | No | `SKILL.md` opens with no `---` YAML block, or with one that does not close or does not parse as a mapping. The remaining field rules stay silent on such a file: one unreadable declaration is one defect, not eight missing fields |
+| SPEC-2 | Missing Name | MEDIUM | No | No `name` is declared, or it holds nothing but blanks, or it is not text. The empty case is the specification's 1-character lower bound, which no charset or length rule can speak to. It is reported *beside* SPEC-4 rather than instead of it — an empty name is not the name of its directory either, and swallowing that made the emptiest declaration the cheapest one. A `name` that is not text at all stops here, because SPEC-4 compares two directory-name strings |
+| SPEC-3 | Missing Description | MEDIUM | No | No `description` is declared |
+| SPEC-4 | Name Does Not Match Directory | MEDIUM | **Yes** | The declared `name` is not the name of its own directory. Loaders that resolve same-name overrides by `name` rather than by path then load this skill as the one it declares, not the one it sits in. Silent when the scanned root is a temporary directory this tool created (git, URL, zip or single-file input), because that directory name is not the author's |
+| SPEC-5 | Name Charset | LOW | No | `name` holds characters outside `a-z`, `0-9` and `-` |
+| SPEC-6 | Name Hyphenation | LOW | No | `name` opens or closes with `-`, or holds `--` |
+| SPEC-7 | Name Length | LOW | No | `name` is over 64 characters |
+| SPEC-8 | Empty Description | LOW | No | `description` is declared and holds nothing |
+| SPEC-9 | Description Length | MEDIUM | **Yes** | `description` is over 1024 characters. It goes into the system prompt, so everything past the cut is dropped before the agent reads it |
+| SPEC-10 | Compatibility Length | LOW | No | `compatibility` is over 500 characters |
+| SPEC-11 | Metadata Shape | LOW | No | `metadata` is not a mapping from text keys to text values |
+| SPEC-12 | Body Line Budget | LOW | No | The body after the declaration block is over 500 lines; all of it loads at once when the skill activates |
+| SPEC-13 | Body Token Budget | LOW | No | The body is over roughly 5000 tokens. The only estimate in the catalog — counted from character length, not with a tokenizer — and it carries a lower confidence for that reason |
+| SPEC-14 | Manifest Size Limit | MEDIUM | **Yes** | `SKILL.md` is 10 MB or larger. Deep Agents skips such a file while loading, so the skill looks installed and never loads. Measured from the file's size on disk, not from its decoded text |
+| SPEC-15 | Missing File Reference | MEDIUM | **Yes** | A Markdown link in the body names a relative path the scan did not find, so the instructions point the agent at something that is not there. Bare paths written in prose are not read as references, and a link inside a fenced code block is treated as an example. It reports a **missing** file, never one the scan declined to look for: a single-file input carries no tree, and a hidden file or a pruned directory is already recorded as out of scope. A file under a directory symlink is the one uncovered shape ([issue #123](https://github.com/rodrigorjsf/SkillSpector-Polyglot/issues/123)) |
+| SPEC-16 | Deep File Reference | LOW | No | A Markdown link target is more than one level deep |
+| SPEC-17 | Duplicate Skill Name | MEDIUM | **Yes** | Two skill directories in the same scan declare one `name`, so whichever loader consumes them picks between them invisibly. **Loader behavior, not a specification clause** — the captured page states no skill-name uniqueness constraint; this is scored on the consequence, not on a citation. Reported once, on the later directory in path order. A manifest declaring no usable name is not a side of a collision — the same test SPEC-2 asks. Which invocations reach it is described under [Specification conformance](#specification-conformance----spec-checks) |
+
 All detected patterns are listed in the tables above.
 
 ## Risk Scoring
@@ -1133,6 +1313,9 @@ Options:
   --show-suppressed                            List baseline-suppressed findings
   --repo-scan                                  Find every skill in a repository, scan each
   --repo-scan-root TEXT                        Replace the discovery roots (repeatable)
+  --spec-checks [off|advisory|strict]          Agent Skills specification conformance
+                                               [default: off] (see Specification
+                                               conformance)
   --mcp-registry                               Registry Scan: assess MCP Registry records
                                                instead of a skill (see Scanning the MCP
                                                Registry; requires --format json)
@@ -1140,7 +1323,7 @@ Options:
   --help                                       Show this message and exit
 
 # Generate a baseline of all current findings (see docs/SUPPRESSION.md)
-skillspector baseline <path> [-o FILE] [--no-llm] [--reason TEXT]
+skillspector baseline <path> [-o FILE] [--no-llm] [--reason TEXT] [--spec-checks MODE]
 ```
 
 ## Integrating SkillSpector
@@ -1223,8 +1406,9 @@ For CI/IDE tooling, `--format sarif` emits SARIF 2.1.0.
 
 One rule covers every line the CLI prints: **the report goes to stdout, everything else goes to
 stderr** — advisories, progress lines, `Report saved to:`, per-skill summary tables (with one
-argued exception, below), errors and tracebacks. So both of these are pipelines you can rely on,
-with nothing to redirect away:
+argued exception, below), the `--spec-checks` advisory-count note described under
+[Specification conformance](#specification-conformance----spec-checks), errors and tracebacks. So both of
+these are pipelines you can rely on, with nothing to redirect away:
 
 ```bash
 skillspector scan ./my-skill/ --format json | jq .

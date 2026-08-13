@@ -222,3 +222,17 @@ When something fails repeatedly, when User has to re-explain, or when a workarou
 - Run the suite under a long `TMPDIR` too; a short `/tmp` hides width-dependent failures.
 - README's Contributing table, its own prose, and CLAUDE.md's list must enumerate one set.
 - Mutate every print site, not the changed ones; a docstring's universal claim binds all.
+- Any Analyzer Status moves every snapshot; `analysis_completeness` is a projected key.
+- Regex `$` matches before a trailing newline; anchor with `\Z`.
+- `MANIFEST_FILENAMES` is a precedence: one directory can ship both spellings.
+- A confidence read from user YARA meta is data; `confidence=` literals miss it.
+- Fingerprints hash every Finding field; run configuration goes in state, never on a Finding.
+- The meta stage rewrites five hashed fields; a baseline binds to its `--no-llm` side.
+- `filtered_findings` is pre-suppression; `report` subtracts the Baseline downstream.
+- A `SKILL.md` under `references/`, `scripts/` or `assets/` is a template, not a Skill.
+- An early `return` in a Rule walk can suppress a *scored* Rule further down.
+- Dropping a Batch loses its Findings from the report; decline it via `should_submit`.
+- Baseline per skill dir for `--repo-scan`; a repo-root Baseline's paths never match.
+- Withholding a Finding from the prompt also means withholding it from the token budget.
+- A state key without a reducer kills the scan on a second parallel writer.
+- A declined Batch sits in `successful`; never read that as a model answer.

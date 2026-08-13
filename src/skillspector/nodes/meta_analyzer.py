@@ -24,10 +24,12 @@ LangChain structured output for validated, schema-driven LLM responses.
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+from skillspector.agent_skills_spec import RULES as _SPEC_RULES
 from skillspector.constants import _SKILLSPECTOR_DEFAULT_MODEL
 from skillspector.inspection_ledger import (
     AnalyzerStatus,
@@ -238,6 +240,60 @@ _NO_LLM_CONFIDENCE_THRESHOLD = 0.4
 _HIGH_SEVERITY_PASS_THROUGH = frozenset({"CRITICAL", "HIGH"})
 _CODE_EXAMPLE_DOWNWEIGHT = 0.5
 
+# The deterministic conformance catalogue: the Findings this stage withholds from
+# the model. A Rule that is a string comparison has nothing for a security model
+# to confirm or deny -- "the declared name is not the name of its directory" is
+# not a judgement an LLM is better placed to make than `!=` was.
+#
+# **Withheld, not merely ignored, and the difference was a defect.** The first
+# version of this exemption skipped these ids in `apply_filter` while
+# `get_batches` still put every one of them into `batch.findings`, so
+# `build_prompt` formatted them into the prompt and sent them: the model *was*
+# asked, and only its answer was thrown away. That made the sentence "the model is
+# never asked about a SPEC id" false in the four places it was written, and it
+# billed a chat-model invocation for a file whose only Findings are conformance
+# Findings. `_model_visible` is now the one predicate that decides it, read by
+# `build_prompt`, `_estimate_extra_overhead` and `should_submit` alike, so the
+# prompt, the token budget and the decision to call are all SPEC-free together.
+#
+# **That is what makes `--spec-checks` inert to the LLM stage**, which is what
+# `README.md` promises about a Baseline: with the ids out of the overhead
+# estimate, the content budget and therefore the chunk boundaries are the ones an
+# `off` run computes, so enabling the flag cannot move an unrelated Finding into a
+# different chunk and hand `apply_filter`'s enrichment branch -- which rewrites
+# four fields `suppression.finding_fingerprint` hashes -- a different answer for
+# it.
+#
+# The `apply_filter` skip below stays as the second half of the same decision: a
+# model that is never asked can still be handed a stale or hallucinated SPEC id in
+# a response, and the skip is what keeps such an answer from reaching a Finding.
+#
+# **`_fallback_filtered` needs none, and that is a measurement rather than an
+# oversight.** That path drops below confidence 0.4; the lowest confidence in this
+# catalogue is `SPEC-13`'s 0.7 (`_ESTIMATED`), every other Rule is 1.0, and no
+# Finding here carries a `context` for the code-example downweight to halve. It
+# did need one while `--spec-checks advisory` was designed to emit its unscored
+# Findings at `confidence = 0.0`, because the threshold read that as a weak
+# guess. Those Findings carry their Rule's honest confidence and the mode is
+# carried in `unscored_rule_ids` instead, so the exemption had nothing left to do
+# -- and two mechanisms for one decision is one more than the decision needs.
+#
+# Every id here is unreachable unless `--spec-checks` asked for it, which is what
+# makes all of this additive rather than a trade: no input scanned before this
+# flag existed can carry one.
+_SPEC_RULE_IDS: frozenset[str] = frozenset(_SPEC_RULES)
+
+
+def _model_visible(findings: Sequence[Finding]) -> list[Finding]:
+    """The Findings of *findings* this stage puts to the model.
+
+    One predicate with three readers -- the prompt, the token budget it is
+    charged against, and whether the batch is worth a call at all. Two
+    expressions of "what the model sees" is how the prompt came to carry ids the
+    surrounding prose said it never carried.
+    """
+    return [finding for finding in findings if finding.rule_id not in _SPEC_RULE_IDS]
+
 
 def _fallback_filtered(findings: list[Finding]) -> list[Finding]:
     """Heuristic fallback filter for --no-llm mode.
@@ -250,6 +306,14 @@ def _fallback_filtered(findings: list[Finding]) -> list[Finding]:
        (0.5x confidence reduction) — never hard-drop, as there is no LLM
        safety net in this mode
     3. Apply default remediations from pattern_defaults
+
+    **No catalogue is exempt here, and that is deliberate.** The threshold is a
+    statement about *certainty*, and every finding reaching it now carries an
+    honest one — including the ``--spec-checks`` conformance findings, whose
+    lowest confidence is 0.7. Those needed an exemption only while "advisory"
+    was encoded as ``confidence = 0.0``, and that encoding is gone; see
+    ``_SPEC_RULE_IDS``, which the LLM path still uses for a reason that is not
+    about confidence at all.
     """
     from skillspector.nodes.analyzers.common import is_code_example
 
@@ -342,13 +406,31 @@ class LLMMetaAnalyzer(LLMAnalyzerBase):
         super().__init__(base_prompt=PER_FILE_ANALYSIS_PROMPT, model=model, node="meta_analyzer")
 
     def _estimate_extra_overhead(self, findings: list[Finding]) -> int:
-        if not findings:
+        """Tokens the formatted findings add, counting only what is sent.
+
+        Charged against the same list :meth:`build_prompt` renders. Charging the
+        withheld ids too would shrink the content budget for a prompt that never
+        carries them, which moves chunk boundaries with ``--spec-checks`` and so
+        changes what the model is shown about *unrelated* findings.
+        """
+        visible = _model_visible(findings)
+        if not visible:
             return 0
-        return estimate_tokens(_format_findings_for_prompt(findings))
+        return estimate_tokens(_format_findings_for_prompt(visible))
+
+    def should_submit(self, batch: Batch) -> bool:
+        """Decline a batch whose every finding is withheld from the prompt.
+
+        Such a prompt asks the model to evaluate nothing while still shipping the
+        whole file, so the call is paid for and its answer discarded unread.
+        Declining costs no accounting: see
+        :meth:`LLMAnalyzerBase.should_submit`.
+        """
+        return bool(_model_visible(batch.findings))
 
     def build_prompt(self, batch: Batch, **kwargs: object) -> str:
         metadata_text = kwargs.get("metadata_text", "No metadata available")
-        findings_text = _format_findings_for_prompt(batch.findings)
+        findings_text = _format_findings_for_prompt(_model_visible(batch.findings))
         return self.base_prompt.format(
             metadata=metadata_text,
             file_label=batch.file_label,
@@ -401,6 +483,19 @@ class LLMMetaAnalyzer(LLMAnalyzerBase):
         ``"llm-unconfirmed"`` is appended so consumers can distinguish it from
         LLM-validated findings.  MEDIUM and LOW findings continue to be filtered
         by the LLM as before (false-positive reduction).
+
+        Deterministic conformance findings are exempt
+        ---------------------------------------------
+        Every Rule of ``agent_skills_spec`` is MEDIUM or LOW, so the severity
+        floor above does not reach one, and :func:`_model_visible` withholds every
+        SPEC id from the prompt, so no response can carry a confirmation for one.
+        Filtering them on confirmation therefore computed seventeen Rules and
+        reported almost none of them, which made ``--spec-checks`` a flag that did
+        nothing unless it was paired with ``--no-llm`` -- the flag turning off the
+        semantic analysis the rest of the tool exists for. They now bypass this
+        filter entirely, which is what keeps a response that names a SPEC id
+        anyway -- a stale id, a hallucinated one -- from reaching a Finding; see
+        ``_SPEC_RULE_IDS`` for why the exemption is additive.
         """
         _enrichment = tuple[str, str, float]
         confirmed_granular: dict[tuple[str, str, int, int | None], _enrichment] = {}
@@ -438,6 +533,26 @@ class LLMMetaAnalyzer(LLMAnalyzerBase):
 
         result: list[Finding] = []
         for f in findings:
+            if f.rule_id in _SPEC_RULE_IDS:
+                # A deterministic conformance finding bypasses this filter whole,
+                # rather than merely surviving it. It was never in the prompt --
+                # `_model_visible` withholds it -- so there is no verdict to look
+                # up, and this branch is what stops a response naming the id
+                # regardless from being treated as one.
+                #
+                # Kept *unchanged*, and that is the load-bearing half. The
+                # enrichment branch overwrites `confidence` with the model's own,
+                # and `suppression.finding_fingerprint` hashes `confidence` -- so
+                # a "confirmed" conformance finding would fingerprint differently
+                # from the identical defect on a `--no-llm` run, and a baseline
+                # taken on one path would suppress nothing on the other. That is
+                # the same class of leak the `confidence = 0.0` advisory encoding
+                # caused, and the fingerprint invariant in `finding_fingerprint`
+                # is what both answer to. It is left untagged for the same reason
+                # `_TAGS` is empty: `llm-unconfirmed` says the model was asked and
+                # declined, and here it was never asked.
+                result.append(f)
+                continue
             exact_key = (f.file, f.rule_id, f.start_line, f.end_line)
             start_only_key = (f.file, f.rule_id, f.start_line, None)
             coarse_key = (f.file, f.rule_id)
@@ -644,10 +759,19 @@ def meta_analyzer(state: SkillspectorState) -> MetaAnalyzerResponse:
         analyzer = LLMMetaAnalyzer(model=model)
         batches = analyzer.get_batches(files_with_findings, file_cache, findings)
         batches = [batch for batch in batches if batch.findings]
+        # Counted, not filtered: a batch the analyzer declines still travels the
+        # whole path below and still earns its ledger row. The count is only for
+        # `llm_call_log`, which must not claim a chat-model invocation on a scan
+        # that made none -- `report._build_metadata` publishes it as
+        # `llm_calls_attempted`/`llm_calls_succeeded`, and an empty log is
+        # already how this node says "no LLM call happened" when there was
+        # nothing to filter at all.
+        submitted_count = sum(1 for batch in batches if analyzer.should_submit(batch))
         logger.debug(
-            "Meta-analyzer: %d files -> %d batches (model=%s)",
+            "Meta-analyzer: %d files -> %d batches, %d submitted (model=%s)",
             len(files_with_findings),
             len(batches),
+            submitted_count,
             model,
         )
 
@@ -708,6 +832,20 @@ def meta_analyzer(state: SkillspectorState) -> MetaAnalyzerResponse:
             len(filtered),
         )
         ledger_events, status = _meta_ledger_response(batches, detailed, filtered)
+        # A batch `should_submit` declined is filed in `detailed.successful` --
+        # deliberately, because `_meta_ledger_response` derives its ledger rows
+        # from that list and a batch dropped from it takes its findings out of
+        # the report. So `successful` answers "was this batch accounted for",
+        # **not** "did the chat model answer it", and `llm_call_log` needs the
+        # second question: `report._llm_runtime_status` reads a run whose every
+        # real call failed as *degraded*, and `report.report` escalates a
+        # degraded scan off `SAFE`. Reading `bool(detailed.successful)` here
+        # claimed a successful invocation whenever one batch was declined and
+        # every submitted batch failed, which reported that scan `SAFE`.
+        # Recounting is free -- `should_submit` is pure -- and unlike
+        # `submitted_count - len(detailed.failures)` it stays correct in the
+        # fallback branch above, which reconstructs `failures` itself.
+        answered_count = sum(1 for batch, _ in detailed.successful if analyzer.should_submit(batch))
         return {
             "findings": filtered,
             "effective_finding_ids": list(
@@ -719,12 +857,16 @@ def meta_analyzer(state: SkillspectorState) -> MetaAnalyzerResponse:
             ),
             "inspection_ledger": ledger_events,
             "analyzer_status_events": [status],
-            "llm_call_log": [
-                llm_call_record(
-                    "meta_analyzer",
-                    ok=bool(detailed.successful) or not detailed.failures,
-                )
-            ],
+            "llm_call_log": (
+                [
+                    llm_call_record(
+                        "meta_analyzer",
+                        ok=answered_count > 0,
+                    )
+                ]
+                if submitted_count
+                else []
+            ),
             "inference_usage": analyzer.inference_usage,
         }
     except Exception as e:

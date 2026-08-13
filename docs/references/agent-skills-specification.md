@@ -228,16 +228,18 @@ parser reads but does **not** currently validate. `_parse_manifest`
 `triggers`, `permissions`, `allowed-tools`, and `parameters`, then returns them
 unvalidated.
 
-Unenforced constraints, each a candidate rule:
+Unenforced constraints, each a candidate rule — and each now a rule of
+`structure_agent_skills_spec`, which reads its own copy of the declaration block (`_parse_manifest`
+is unchanged) and runs only when `--spec-checks` asks it to:
 
-| Constraint | Spec section | Current handling |
-|------------|--------------|------------------|
-| `name` matches parent directory name | [`name`](#name) | Not checked |
-| `name` charset / length / hyphen rules | [`name`](#name) | Not checked |
-| `description` present and ≤ 1024 chars | [`description`](#description) | Not checked |
-| `compatibility` ≤ 500 chars | [`compatibility`](#compatibility) | Field not parsed |
-| `SKILL.md` body ≤ 500 lines / ~5000 tokens | [Progressive disclosure](#progressive-disclosure) | Not checked |
-| File references one level deep | [File references](#file-references) | Not checked |
+| Constraint | Spec section | Handling |
+|------------|--------------|----------|
+| `name` matches parent directory name | [`name`](#name) | SPEC-4, scored |
+| `name` charset / length / hyphen rules | [`name`](#name) | SPEC-5, SPEC-6, SPEC-7, and SPEC-2 for the 1-character lower bound |
+| `description` present and ≤ 1024 chars | [`description`](#description) | SPEC-3, SPEC-8, SPEC-9 |
+| `compatibility` ≤ 500 chars | [`compatibility`](#compatibility) | SPEC-10; still not parsed into graph state |
+| `SKILL.md` body ≤ 500 lines / ~5000 tokens | [Progressive disclosure](#progressive-disclosure) | SPEC-12, SPEC-13 |
+| File references one level deep | [File references](#file-references) | SPEC-15, SPEC-16, over Markdown link targets only |
 
 ### `allowed-tools` is space-separated, not comma-separated
 

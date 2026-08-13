@@ -138,9 +138,11 @@ always a Component it reports.
 _Avoid_: eligibility, purview
 
 **Decline**:
-Return nothing at all — no Finding, no Work Item, no Analyzer Status. The only case is an Analyzer
-whose Framework gate does not open, which plans no inspection and so leaves no gap. An Analyzer that
-opens nothing on a Framework it *does* own reports `not_applicable` instead.
+Return nothing at all — no Finding, no Work Item, no Analyzer Status. Two cases: an Analyzer whose
+Framework gate does not open, and one whose configuration gate sits at a default nobody asked for.
+Both plan no inspection and so leave no gap. An Analyzer that a user's own request switched off
+reports `disabled` instead, and one that opens nothing on a Framework it *does* own reports
+`not_applicable`.
 _Avoid_: abstain, bail out, opt out
 
 ### Changing the scanner safely

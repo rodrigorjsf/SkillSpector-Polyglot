@@ -78,10 +78,14 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import yaml
 from typer.testing import CliRunner
 
 from skillspector import __version__
 from skillspector.cli import app
+from skillspector.models import Finding
+from skillspector.nodes.report import reported_findings
+from skillspector.suppression import SuppressedFinding
 
 runner = CliRunner()
 
@@ -570,6 +574,40 @@ class TestAnErrorNeverEntersTheReport:
         assert result.stdout == ""
         assert "--mcp-registry cannot be combined with" in _unwrapped(result.stderr)
 
+    def test_spec_checks_is_rejected_by_a_registry_scan_rather_than_ignored(
+        self, tmp_path: Path
+    ) -> None:
+        """A Registry Scan runs no Analyzer, so the flag could only do nothing.
+
+        Rejecting says so; accepting it would be the silent no-op issue #115
+        records for ``--format`` on another path.
+        """
+        result = runner.invoke(
+            app,
+            [
+                "scan",
+                str(_MCP_REGISTRY_CAPTURE),
+                "--mcp-registry",
+                "-f",
+                "json",
+                "--spec-checks",
+                "strict",
+            ],
+        )
+
+        assert result.exit_code == 2
+        assert result.stdout == ""
+        assert "--spec-checks" in _unwrapped(result.stderr)
+
+    def test_a_registry_scan_still_accepts_the_flags_default(self, tmp_path: Path) -> None:
+        """The rejection is of the *mode*, not of a flag every invocation carries."""
+        result = runner.invoke(
+            app, ["scan", str(_MCP_REGISTRY_CAPTURE), "--mcp-registry", "-f", "json"]
+        )
+
+        assert result.exit_code == 0, result.output
+        assert json.loads(result.stdout)["mcp_registry"] is True
+
     def test_refusing_a_shared_baseline_leaves_stdout_empty(self, tmp_path: Path) -> None:
         """``--recursive`` rejects one baseline across Skills, and says so on stderr."""
         _write_skill(tmp_path / "alpha", "alpha")
@@ -665,6 +703,282 @@ class TestAnErrorNeverEntersTheReport:
         assert "Traceback" not in result.stdout
         assert "the graph came apart" not in result.stdout
         assert "Traceback" in result.stderr
+
+
+class TestTheSpecConformanceAdvisory:
+    """``--spec-checks advisory`` prints one line about the report, beside it.
+
+    The count of findings that were reported without being scored is a note
+    *about* the scan — the report already carries every one of them — so it goes
+    to stderr, where a `-f json` pipeline never sees it.
+    """
+
+    @staticmethod
+    def _nonconforming(directory: Path) -> Path:
+        """A Skill that violates one scored rule and one advisory-only rule.
+
+        The directory name matches the declared one, so ``SPEC-4`` — the other
+        scored rule — stays out of the way and the two under test stand alone.
+        """
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / "SKILL.md").write_text(
+            "---\nname: weather--report\ndescription: Reports the weather when asked.\n---\n\n"
+            "Read [the guide](references/GUIDE.md) first.\n",
+            encoding="utf-8",
+        )
+        return directory
+
+    def test_the_advisory_count_does_not_join_the_report_on_stdout(self, tmp_path: Path) -> None:
+        skill = self._nonconforming(tmp_path / "weather--report")
+
+        result = runner.invoke(
+            app, ["scan", str(skill), "--no-llm", "-f", "json", "--spec-checks", "advisory"]
+        )
+
+        assert result.exit_code in (0, 1), result.output
+        issues = json.loads(result.stdout)["issues"]
+        assert {issue["id"] for issue in issues} == {"SPEC-6", "SPEC-15"}
+        assert "advisory finding(s) reported without affecting" in _unwrapped(result.stderr)
+
+    def test_strict_prints_no_such_note(self, tmp_path: Path) -> None:
+        """In ``strict`` every finding is in the score, so there is nothing to say."""
+        skill = self._nonconforming(tmp_path / "weather--report")
+
+        result = runner.invoke(
+            app, ["scan", str(skill), "--no-llm", "-f", "json", "--spec-checks", "strict"]
+        )
+
+        assert result.exit_code in (0, 1), result.output
+        assert "advisory finding(s)" not in _unwrapped(result.stderr)
+
+    def test_the_default_scan_says_nothing_about_conformance(self, tmp_path: Path) -> None:
+        """With the flag absent the feature is not there at all, on either stream."""
+        skill = self._nonconforming(tmp_path / "weather--report")
+
+        result = runner.invoke(app, ["scan", str(skill), "--no-llm", "-f", "json"])
+
+        assert result.exit_code == 0, result.output
+        assert json.loads(result.stdout)["issues"] == []
+        assert "advisory finding(s)" not in _unwrapped(result.stderr)
+
+    def test_a_baseline_that_accepts_every_conformance_finding_silences_the_note(
+        self, tmp_path: Path
+    ) -> None:
+        """The count is what the report carries, not what the scan computed.
+
+        A Baseline is applied inside ``report``, downstream of every findings key
+        the CLI can read, so counting those keys announced on stderr findings
+        that stdout did not contain -- and a Baseline that accepts everything is
+        the steady state of a Baseline, not an edge case.
+        """
+        skill = self._nonconforming(tmp_path / "weather--report")
+        baseline_file = tmp_path / "baseline.yaml"
+        written = runner.invoke(
+            app,
+            [
+                "baseline",
+                str(skill),
+                "-o",
+                str(baseline_file),
+                "--no-llm",
+                "--spec-checks",
+                "advisory",
+            ],
+        )
+        assert written.exit_code == 0, written.output
+
+        result = runner.invoke(
+            app,
+            [
+                "scan",
+                str(skill),
+                "--no-llm",
+                "-f",
+                "json",
+                "--spec-checks",
+                "advisory",
+                "--baseline",
+                str(baseline_file),
+            ],
+        )
+
+        assert result.exit_code in (0, 1), result.output
+        assert json.loads(result.stdout)["issues"] == []
+        assert "advisory finding(s)" not in _unwrapped(result.stderr)
+
+    def test_a_baseline_that_accepts_only_the_scored_finding_leaves_the_note(
+        self, tmp_path: Path
+    ) -> None:
+        """The other direction: a partial Baseline still leaves something to report.
+
+        Without it, "no note" would pass for a count that had simply been turned
+        off, rather than for one measured against what the report carries.
+        """
+        skill = self._nonconforming(tmp_path / "weather--report")
+        baseline_file = tmp_path / "baseline.yaml"
+        written = runner.invoke(
+            app,
+            [
+                "baseline",
+                str(skill),
+                "-o",
+                str(baseline_file),
+                "--no-llm",
+                "--spec-checks",
+                "advisory",
+            ],
+        )
+        assert written.exit_code == 0, written.output
+        document = yaml.safe_load(baseline_file.read_text(encoding="utf-8"))
+        document["fingerprints"] = [
+            entry for entry in document["fingerprints"] if entry["rule_id"] != "SPEC-6"
+        ]
+        baseline_file.write_text(yaml.safe_dump(document), encoding="utf-8")
+
+        result = runner.invoke(
+            app,
+            [
+                "scan",
+                str(skill),
+                "--no-llm",
+                "-f",
+                "json",
+                "--spec-checks",
+                "advisory",
+                "--baseline",
+                str(baseline_file),
+            ],
+        )
+
+        assert result.exit_code in (0, 1), result.output
+        assert {issue["id"] for issue in json.loads(result.stdout)["issues"]} == {"SPEC-6"}
+        assert "1 advisory finding(s) reported without affecting" in _unwrapped(result.stderr)
+
+    def test_a_repository_scan_reports_its_advisory_total(self, tmp_path: Path) -> None:
+        """The invocation the README recommends, which used to print no sign of the mode.
+
+        ``--repo-scan`` invokes the graph once per discovered Skill, so the note
+        is a total over the run rather than one line per Skill -- and it is a
+        note about the Scan, so it stays off the stdout this path always writes a
+        report to.
+        """
+        self._nonconforming(tmp_path / "skills" / "weather--report")
+
+        result = runner.invoke(
+            app, ["scan", str(tmp_path), "--repo-scan", "--no-llm", "--spec-checks", "advisory"]
+        )
+
+        assert result.exit_code in (0, 1), result.output
+        assert "advisory finding(s) reported without affecting" in _unwrapped(result.stderr)
+        assert "advisory finding(s)" not in _unwrapped(result.stdout)
+
+    def test_a_recursive_scan_reports_its_advisory_total(self, tmp_path: Path) -> None:
+        """``--recursive`` needs two Skills to engage, and the note is one total for both.
+
+        ``advice`` and never the ``summary`` console this path picks: that console
+        is stdout with ``-f terminal`` and no ``--output``, which is exactly the
+        shape asked for here.
+        """
+        self._nonconforming(tmp_path / "weather--report")
+        self._nonconforming(tmp_path / "tide--report").joinpath("SKILL.md").write_text(
+            "---\nname: tide--report\ndescription: Reports the tide when asked.\n---\n\n"
+            "Read [the guide](references/GUIDE.md) first.\n",
+            encoding="utf-8",
+        )
+
+        result = runner.invoke(
+            app, ["scan", str(tmp_path), "--recursive", "--no-llm", "--spec-checks", "advisory"]
+        )
+
+        assert result.exit_code in (0, 1), result.output
+        assert "advisory finding(s) reported without affecting" in _unwrapped(result.stderr)
+        assert "advisory finding(s)" not in _unwrapped(result.stdout)
+
+
+class TestTheSpecChecksFlagAddsNoAdvice:
+    """``--spec-checks`` needs no pairing advice, because it no longer degrades.
+
+    It used to warn that ``--spec-checks`` without ``--no-llm`` reported almost
+    nothing: every rule of the catalogue is MEDIUM or LOW, and
+    ``LLMMetaAnalyzer.apply_filter`` kept a MEDIUM or LOW finding only when the
+    model confirmed it -- which it was never asked to do for a SPEC id. That made
+    a scoring feature work only in a mode that turns off the semantic analysis the
+    rest of the tool exists for.
+
+    ``meta_analyzer`` now exempts the catalogue from both of its filter paths, so
+    the degradation is gone and so is the advice. The stream contract is what is
+    asserted here; that the findings actually survive the filter is asserted at
+    the filter, in ``tests/nodes/test_meta_analyzer.py``.
+    """
+
+    def test_the_llm_path_prints_no_pairing_advice(self, tmp_path: Path) -> None:
+        """``--repo-scan`` on a file exits 2 at once, which keeps this off a provider."""
+        target = tmp_path / "SKILL.md"
+        target.write_text("---\nname: x\ndescription: y\n---\n", encoding="utf-8")
+
+        result = runner.invoke(
+            app, ["scan", str(target), "--repo-scan", "--spec-checks", "advisory"]
+        )
+
+        assert result.exit_code == 2, result.output
+        assert "--spec-checks was asked for" not in _unwrapped(result.stderr)
+        assert "--no-llm" not in _unwrapped(result.stderr)
+
+    def test_strict_prints_no_pairing_advice_either(self, tmp_path: Path) -> None:
+        target = tmp_path / "SKILL.md"
+        target.write_text("---\nname: x\ndescription: y\n---\n", encoding="utf-8")
+
+        result = runner.invoke(app, ["scan", str(target), "--repo-scan", "--spec-checks", "strict"])
+
+        assert "--spec-checks was asked for" not in _unwrapped(result.stderr)
+
+    def test_no_llm_is_quiet(self, tmp_path: Path) -> None:
+        skill = TestTheSpecConformanceAdvisory._nonconforming(tmp_path / "weather--report")
+
+        result = runner.invoke(
+            app, ["scan", str(skill), "--no-llm", "-f", "json", "--spec-checks", "advisory"]
+        )
+
+        assert result.exit_code in (0, 1), result.output
+        assert "--spec-checks was asked for" not in _unwrapped(result.stderr)
+
+    def test_the_default_scan_is_quiet(self, tmp_path: Path) -> None:
+        """The flag's absence adds nothing to either stream, LLM stage on or not."""
+        target = tmp_path / "SKILL.md"
+        target.write_text("---\nname: x\ndescription: y\n---\n", encoding="utf-8")
+
+        result = runner.invoke(app, ["scan", str(target), "--repo-scan"])
+
+        assert result.exit_code == 2, result.output
+        assert "--spec-checks was asked for" not in _unwrapped(result.stderr)
+
+    def test_the_baseline_command_is_quiet_too(self, tmp_path: Path) -> None:
+        """``baseline`` takes the same flag and writes a file a team commits.
+
+        The graph is stubbed out, which is what keeps this off a provider.
+        """
+        skill = TestTheSpecConformanceAdvisory._nonconforming(tmp_path / "weather--report")
+        import skillspector.cli as cli_module
+
+        original = cli_module.graph
+        cli_module.graph = SimpleNamespace(invoke=_explode)
+        try:
+            result = runner.invoke(
+                app,
+                [
+                    "baseline",
+                    str(skill),
+                    "-o",
+                    str(tmp_path / "b.yaml"),
+                    "--spec-checks",
+                    "advisory",
+                ],
+            )
+        finally:
+            cli_module.graph = original
+
+        assert "--spec-checks was asked for" not in _unwrapped(result.stderr)
+        assert "--spec-checks was asked for" not in _unwrapped(result.stdout)
 
 
 class TestTheRegistryScan:
@@ -792,3 +1106,197 @@ class TestTheBaselineCommand:
         assert result.exit_code == 2
         assert result.stdout == ""
         assert "Traceback" in result.stderr
+
+
+class TestASummaryTableAgreesWithItsReport:
+    """A "Findings" column that disagrees with the report beside it is a wrong number.
+
+    Three tables count findings without rendering them -- the ``--repo-scan``
+    table, the ``--recursive`` table, and the ``--recursive --output`` JSON
+    payload -- and all three used to read a findings key straight out of graph
+    state through an ``or`` chain, as did ``skillspector baseline`` and the MCP
+    tool's verdict payload. Two things are wrong with that reading, and
+    ``report.reported_findings`` -- one reader for all five -- is where both are
+    answered:
+
+    - **No findings key in state has had baseline suppression applied.** `report`
+      writes ``filtered_findings`` before partitioning it, so a baseline that
+      accepted every finding still counted them: ``Findings 2`` beside a report
+      holding none.
+    - **An ``or`` chain treats an empty list as an absent key** and falls back to
+      the pre-filter list, so a scan whose findings the meta filter all dropped
+      counted the ones it dropped.
+    """
+
+    @staticmethod
+    def _nonconforming(directory: Path, name: str) -> Path:
+        """A Skill raising two conformance findings, one scored and one not."""
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / "SKILL.md").write_text(
+            f"---\nname: {name}\ndescription: Reports something when asked.\n---\n\n"
+            "Read [the guide](references/GUIDE.md) first.\n",
+            encoding="utf-8",
+        )
+        return directory
+
+    def _baseline(self, skill: Path, baseline_file: Path) -> None:
+        written = runner.invoke(
+            app,
+            [
+                "baseline",
+                str(skill),
+                "-o",
+                str(baseline_file),
+                "--no-llm",
+                "--spec-checks",
+                "advisory",
+            ],
+        )
+        assert written.exit_code == 0, written.output
+
+    def test_a_repository_scan_counts_what_its_report_carries(self, tmp_path: Path) -> None:
+        """The full shape: baseline accepts everything, so every count is zero."""
+        skill = self._nonconforming(tmp_path / "skills" / "weather--report", "weather--report")
+        baseline_file = tmp_path / "baseline.yaml"
+        self._baseline(skill, baseline_file)
+
+        result = runner.invoke(
+            app,
+            [
+                "scan",
+                str(tmp_path),
+                "--repo-scan",
+                "--no-llm",
+                "-f",
+                "json",
+                "--spec-checks",
+                "advisory",
+                "--baseline",
+                str(baseline_file),
+            ],
+        )
+
+        assert result.exit_code in (0, 1), result.output
+        # `--repo-scan` writes one report per Skill under a `--- path ---`
+        # header, so stdout is not one JSON document to parse.
+        assert '"issues": []' in result.stdout
+        table = _unwrapped(result.stderr)
+        assert "weather--report 0 LOW 0" in table
+        assert "advisory finding(s)" not in table
+
+    def test_a_repository_scan_without_a_baseline_still_counts_its_findings(
+        self, tmp_path: Path
+    ) -> None:
+        """The control. Without it, "zero" would pass for a count that never counts."""
+        self._nonconforming(tmp_path / "skills" / "weather--report", "weather--report")
+
+        result = runner.invoke(
+            app,
+            [
+                "scan",
+                str(tmp_path),
+                "--repo-scan",
+                "--no-llm",
+                "-f",
+                "json",
+                "--spec-checks",
+                "advisory",
+            ],
+        )
+
+        assert result.exit_code in (0, 1), result.output
+        assert '"id": "SPEC-6"' in result.stdout
+        assert '"id": "SPEC-15"' in result.stdout
+        assert "weather--report 10 LOW 2" in _unwrapped(result.stderr)
+
+    def test_an_empty_filtered_list_is_honoured_rather_than_fallen_back_from(self) -> None:
+        """The second defect, on the state shape that produces it.
+
+        A scan whose findings the meta filter all dropped carries
+        ``filtered_findings == []`` beside a non-empty ``findings``. `report`
+        selects by presence and reports none of them; an ``or`` chain reads the
+        empty list as falsy and counts the pre-filter ones instead. Exercised on
+        the helper because arranging that state from a fixture would mean finding
+        an analyzer whose finding this filter happens to drop, which pins the test
+        to that analyzer rather than to the reading under test.
+        """
+        finding = Finding(
+            rule_id="TM1", message="m", severity="LOW", confidence=0.2, file="tool.py"
+        )
+
+        assert reported_findings({"filtered_findings": [], "findings": [finding]}) == []
+
+    def test_an_absent_filtered_key_still_falls_back(self) -> None:
+        """Presence, not truth: a scan that never set the key reads the raw list.
+
+        The direct-node compatibility path `report` documents, and the reason the
+        reader is not simply ``result["filtered_findings"]``.
+        """
+        finding = Finding(
+            rule_id="TM1", message="m", severity="LOW", confidence=0.2, file="tool.py"
+        )
+
+        assert reported_findings({"findings": [finding]}) == [finding]
+
+    def test_a_suppressed_finding_is_subtracted(self) -> None:
+        """The first defect, isolated: no findings key in state has suppression applied."""
+        kept = Finding(rule_id="TM1", message="m", severity="LOW", confidence=1.0, file="a.py")
+        accepted = Finding(rule_id="TM2", message="m", severity="LOW", confidence=1.0, file="b.py")
+
+        result = reported_findings(
+            {
+                "filtered_findings": [kept, accepted],
+                "suppressed_findings": [SuppressedFinding(finding=accepted, reason="accepted")],
+            }
+        )
+
+        assert [f.rule_id for f in result] == ["TM1"]
+
+
+class TestAFreshBaselineHoldsWhatTheScanReports:
+    """``skillspector baseline`` records the findings the scan reports, and only those.
+
+    It loads no baseline of its own -- there is no ``--baseline`` option, and the
+    ``baseline_path`` it sets is read only by
+    ``build_context._selected_baseline_component``, which excludes the output file
+    from the walk -- so nothing is ever suppressed on this path. The reading that
+    mattered is the empty one: an ``or`` chain fell back to the raw pre-filter
+    findings when the meta filter had dropped them all, writing entries for
+    findings the scan does not report and whose fingerprints bind pre-filter
+    evidence, so a later ``scan --baseline`` computes a different hash and they
+    suppress nothing at all.
+    """
+
+    def test_a_scan_reporting_nothing_writes_an_empty_baseline(self, tmp_path: Path) -> None:
+        skill = _write_skill(tmp_path / "solo", "solo")
+        baseline_file = tmp_path / "baseline.yaml"
+
+        result = runner.invoke(app, ["baseline", str(skill), "-o", str(baseline_file), "--no-llm"])
+
+        assert result.exit_code == 0, result.output
+        assert "Wrote baseline with 0 suppressed finding(s)" in _unwrapped(result.stderr)
+        assert yaml.safe_load(baseline_file.read_text(encoding="utf-8"))["fingerprints"] == []
+
+    def test_a_scan_reporting_findings_writes_exactly_them(self, tmp_path: Path) -> None:
+        """The control, and the reason the fix is not "write nothing"."""
+        skill = TestASummaryTableAgreesWithItsReport._nonconforming(
+            tmp_path / "weather--report", "weather--report"
+        )
+        baseline_file = tmp_path / "baseline.yaml"
+
+        result = runner.invoke(
+            app,
+            [
+                "baseline",
+                str(skill),
+                "-o",
+                str(baseline_file),
+                "--no-llm",
+                "--spec-checks",
+                "advisory",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        document = yaml.safe_load(baseline_file.read_text(encoding="utf-8"))
+        assert {entry["rule_id"] for entry in document["fingerprints"]} == {"SPEC-6", "SPEC-15"}

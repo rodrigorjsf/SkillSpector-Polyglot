@@ -97,6 +97,17 @@ Coverage labels are intentionally conservative:
   keeps it visible. Its findings do still carry the `ASI02` tag, because that tag is set once for
   every rule the Deep Agents analyzer emits and is not derived from this matrix; the two are
   independent taxonomies and this page maps only its own.
+- The seventeen `SPEC-*` rules of `structure_agent_skills_spec`, reached only through
+  `skillspector scan --spec-checks`, map to no category above, and that is a scope decision rather
+  than an omission. This matrix crosswalks rules onto *risk* categories; a conformance rule states
+  that a declaration disagrees with the Agent Skills specification, which is a different claim.
+  Several of them have obvious security-adjacent readings — `SPEC-4` and `SPEC-17` are name
+  collisions a substitution attack would exploit, `SPEC-15` sends an agent looking for a file that
+  is not there — and mapping them on that basis would overstate what a length or a spelling proves.
+  They are documented in
+  [README § Specification Conformance](../README.md#specification-conformance-17-rules-opt-in);
+  recording the absence here is what keeps the boundary visible. Their findings carry no tag at all,
+  for the same reason.
 - The five `MCP-*` posture checks of a Registry Scan — `MCP-PACKAGE-VERSION`, `MCP-PACKAGE-SHA256`,
   `MCP-PLAIN-HTTP`, `MCP-OFFICIAL-STATUS` and `MCP-REPOSITORY`, reached only through
   `skillspector scan --mcp-registry` — map to no category above, and that is a scope decision rather

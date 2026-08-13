@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 SkillSpector-Polyglot contributors
 # SPDX-License-Identifier: Apache-2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -22,16 +23,19 @@ degradation signal.
 
 from __future__ import annotations
 
+from typing import cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from skillspector.inspection_ledger import LedgerOutcome, LedgerReason, finalize_ledger
 from skillspector.llm_analyzer_base import Batch, BatchExecutionResult, BatchFailure
+from skillspector.llm_utils import run_async
 from skillspector.models import Finding
 from skillspector.nodes.meta_analyzer import (
     LLMMetaAnalyzer,
     _meta_ledger_response,
     meta_analyzer,
 )
+from skillspector.nodes.report import _build_metadata, report
 from skillspector.state import SkillspectorState
 
 MOCK_PATCH_TARGET = "skillspector.llm_analyzer_base.get_chat_model"
@@ -684,3 +688,407 @@ def test_no_findings_records_nothing() -> None:
     result = meta_analyzer(_degr_state(findings=[]))
     assert "llm_call_log" not in result
     assert "filtered_findings" not in result
+
+
+def _spec_finding(rule_id: str = "SPEC-6", confidence: float = 1.0) -> Finding:
+    """A conformance finding in the shape ``structure_agent_skills_spec`` emits.
+
+    Every rule of the catalogue is MEDIUM or LOW, which is why the severity floor
+    above cannot reach one. The confidence is the rule's own and does **not**
+    depend on the ``--spec-checks`` mode: which rules a run declines to score is
+    carried in the ``unscored_rule_ids`` state key, not in a field of the finding.
+    """
+    return Finding(
+        rule_id=rule_id,
+        message=f"conformance finding {rule_id}",
+        severity="LOW",
+        confidence=confidence,
+        file="SKILL.md",
+        start_line=3,
+    )
+
+
+class TestConformanceFindingsBypassTheFilter:
+    """A string comparison is not something a security model confirms or denies.
+
+    Every rule of ``agent_skills_spec`` is MEDIUM or LOW and no SPEC id ever
+    reaches the prompt (``_model_visible``, asserted below), so filtering them on
+    confirmation computed seventeen rules and reported almost none of them --
+    making ``--spec-checks`` a flag that did nothing unless paired with
+    ``--no-llm``, the flag that turns off the semantic analysis the rest of the
+    tool exists for. This class covers the second half of that decision: what
+    happens to a response that names a SPEC id anyway.
+    """
+
+    def test_an_unconfirmed_conformance_finding_survives(self) -> None:
+        """The defect itself: the model says nothing, and the finding was dropped."""
+        findings = [_spec_finding()]
+        batch = Batch(file_path="SKILL.md", content="", findings=findings)
+
+        kept = _analyzer().apply_filter(findings, [(batch, [])])
+
+        assert [f.rule_id for f in kept] == ["SPEC-6"]
+
+    def test_an_unconfirmed_medium_severity_finding_outside_the_catalogue_still_drops(
+        self,
+    ) -> None:
+        """The scoping, asserted where it decides an existing verdict.
+
+        MEDIUM and LOW findings are filtered on confirmation exactly as before;
+        only rule ids unreachable without ``--spec-checks`` are exempt, which is
+        what makes the exemption additive rather than a trade.
+        """
+        findings = [_finding("SC4", 4, severity="MEDIUM")]
+        batch = Batch(file_path="requirements.txt", content="", findings=findings)
+
+        assert _analyzer().apply_filter(findings, [(batch, [])]) == []
+
+    def test_a_confirmed_conformance_finding_keeps_its_own_confidence(self) -> None:
+        """The load-bearing half: bypassing must not mean passing through enrichment.
+
+        The enrichment branch overwrites ``confidence`` with the model's own, and
+        ``suppression.finding_fingerprint`` hashes ``confidence`` -- so a
+        "confirmed" conformance finding would fingerprint differently from the
+        identical defect on a ``--no-llm`` run, and a baseline taken on one path
+        would suppress nothing on the other. The finding is returned unchanged
+        instead, message and all.
+        """
+        findings = [_spec_finding(confidence=0.7)]
+        item = {
+            "pattern_id": "SPEC-6",
+            "is_vulnerability": True,
+            "confidence": 0.95,
+            "start_line": 3,
+            "_file": "SKILL.md",
+            "explanation": "model prose",
+        }
+        batch = Batch(file_path="SKILL.md", content="", findings=findings)
+
+        kept = _analyzer().apply_filter(findings, [(batch, [item])])
+
+        assert [f.confidence for f in kept] == [0.7]
+        assert kept[0].message == "conformance finding SPEC-6"
+
+    def test_a_conformance_finding_is_not_tagged_unconfirmed(self) -> None:
+        """``llm-unconfirmed`` says the model was asked and declined; here it was never asked."""
+        findings = [_spec_finding()]
+        batch = Batch(file_path="SKILL.md", content="", findings=findings)
+
+        kept = _analyzer().apply_filter(findings, [(batch, [])])
+
+        assert "llm-unconfirmed" not in kept[0].tags
+
+    def test_a_scored_conformance_finding_keeps_its_score(self) -> None:
+        """Both modes emit the same rules at the same measured confidence."""
+        findings = [_spec_finding(rule_id="SPEC-15", confidence=1.0)]
+        batch = Batch(file_path="SKILL.md", content="", findings=findings)
+
+        kept = _analyzer().apply_filter(findings, [(batch, [])])
+
+        assert [(f.rule_id, f.confidence) for f in kept] == [("SPEC-15", 1.0)]
+
+
+def _spec_at(rule_id: str, line: int) -> Finding:
+    """A conformance finding on ``SKILL.md`` at a chosen line."""
+    return Finding(
+        rule_id=rule_id,
+        message=f"conformance finding {rule_id}",
+        severity="LOW",
+        confidence=1.0,
+        file="SKILL.md",
+        start_line=line,
+    )
+
+
+def _other_at(rule_id: str, line: int) -> Finding:
+    """A finding from outside the conformance catalogue, on the same component."""
+    return Finding(
+        rule_id=rule_id,
+        message=f"static finding {rule_id}",
+        severity="MEDIUM",
+        confidence=0.8,
+        file="SKILL.md",
+        start_line=line,
+    )
+
+
+@patch(MOCK_PATCH_TARGET, _mock_get_chat_model)
+class TestTheModelIsNeverAskedAboutASpecId:
+    """The sentence four files state, asserted rather than argued.
+
+    Skipping SPEC ids in ``apply_filter`` alone left them in ``batch.findings``,
+    so ``build_prompt`` formatted every one of them into the prompt and sent it:
+    the model *was* asked, and only its answer was thrown away. That also charged
+    them to ``_estimate_extra_overhead``, which shrinks the per-file content
+    budget and so moves chunk boundaries -- handing the enrichment branch a
+    different answer about an *unrelated* co-located finding, whose ``message``,
+    ``confidence``, ``remediation`` and ``explanation`` are all hashed into the
+    baseline fingerprint.
+    """
+
+    _CONTENT = "\n".join(f"line {i} of the scanned manifest" for i in range(1, 400))
+
+    def _live_analyzer(self, budget: int | None = None) -> LLMMetaAnalyzer:
+        analyzer = LLMMetaAnalyzer(model="gpt-4o-mini")
+        if budget is not None:
+            analyzer._input_budget = budget
+        return analyzer
+
+    def test_a_conformance_finding_is_not_in_the_prompt(self) -> None:
+        """The claim itself: no SPEC id reaches the text the model reads."""
+        findings = [_other_at("SC2", 3), _spec_at("SPEC-4", 1), _spec_at("SPEC-15", 7)]
+        batch = Batch(file_path="SKILL.md", content=self._CONTENT, findings=findings)
+
+        prompt = self._live_analyzer().build_prompt(batch, metadata_text="m")
+
+        assert "SPEC-4" not in prompt
+        assert "SPEC-15" not in prompt
+        assert "SC2" in prompt
+
+    def test_the_prompt_is_byte_identical_with_and_without_the_flag(self) -> None:
+        """The control the previous assertion needs: only the SPEC ids differ."""
+        without = [_other_at("SC2", 3)]
+        with_spec = [*without, _spec_at("SPEC-4", 1), _spec_at("SPEC-15", 7)]
+        analyzer = self._live_analyzer()
+
+        rendered = [
+            analyzer.build_prompt(
+                Batch(file_path="SKILL.md", content=self._CONTENT, findings=findings),
+                metadata_text="m",
+            )
+            for findings in (without, with_spec)
+        ]
+
+        assert rendered[0] == rendered[1]
+
+    def test_a_conformance_finding_is_charged_no_prompt_overhead(self) -> None:
+        """What decides the content budget, and so where a large file is split."""
+        analyzer = self._live_analyzer()
+        without = [_other_at("SC2", 3)]
+
+        assert analyzer._estimate_extra_overhead(
+            [*without, _spec_at("SPEC-4", 1), _spec_at("SPEC-15", 7)]
+        ) == analyzer._estimate_extra_overhead(without)
+        assert analyzer._estimate_extra_overhead([_spec_at("SPEC-4", 1)]) == 0
+
+    def test_the_submitted_batches_are_identical_with_and_without_the_flag(self) -> None:
+        """The flag is inert to the LLM stage -- same chunks, same calls, same input.
+
+        Asserted at a forced-small input budget so the manifest chunks at all:
+        that is the shape where a shifted content budget relocates a *non*-SPEC
+        finding into a different chunk. A chunk carrying only conformance
+        findings is dropped without the flag (it has no findings) and declined
+        with it (``should_submit``), so the two runs submit the same work.
+        """
+        without = [_other_at("SC2", 40), _other_at("SC4", 300)]
+        with_spec = [*without, _spec_at("SPEC-4", 1), _spec_at("SPEC-15", 200)]
+
+        def submitted(findings: list[Finding]) -> list[tuple[int | None, int | None, str]]:
+            analyzer = self._live_analyzer(budget=1200)
+            batches = analyzer.get_batches(["SKILL.md"], {"SKILL.md": self._CONTENT}, findings)
+            return [
+                # The prompt, not the batch: a declined SPEC finding still rides
+                # `batch.findings` so the ledger can account for it, and what the
+                # flag must not move is what the model is shown.
+                (batch.start_line, batch.end_line, analyzer.build_prompt(batch, metadata_text="m"))
+                for batch in batches
+                if batch.findings and analyzer.should_submit(batch)
+            ]
+
+        assert submitted(with_spec) == submitted(without)
+        assert len(submitted(without)) > 1, "the control needs a file that actually chunks"
+
+    def test_a_batch_of_only_conformance_findings_is_declined(self) -> None:
+        """Nothing to ask about, so nothing is sent -- the whole file included."""
+        analyzer = self._live_analyzer()
+
+        assert not analyzer.should_submit(
+            Batch(file_path="SKILL.md", content=self._CONTENT, findings=[_spec_at("SPEC-4", 1)])
+        )
+        assert analyzer.should_submit(
+            Batch(
+                file_path="SKILL.md",
+                content=self._CONTENT,
+                findings=[_spec_at("SPEC-4", 1), _other_at("SC2", 3)],
+            )
+        )
+
+    def test_a_declined_batch_costs_no_chat_model_invocation(self) -> None:
+        """Through the real executor, so the hook is exercised where it runs."""
+        analyzer = self._live_analyzer()
+        batch = Batch(file_path="SKILL.md", content=self._CONTENT, findings=[_spec_at("SPEC-4", 1)])
+
+        with patch.object(
+            LLMMetaAnalyzer, "_ainvoke_batch_with_retries", new_callable=AsyncMock
+        ) as invoke:
+            outcome = run_async(analyzer.arun_batches_detailed([batch], metadata_text="m"))
+
+        invoke.assert_not_awaited()
+        assert outcome.successful == [(batch, [])]
+        assert outcome.failures == []
+
+    def test_a_declined_batch_is_still_a_completed_batch(self) -> None:
+        """Declining must not drop the batch: the report is selected from the ledger.
+
+        ``_meta_ledger_response`` builds the Inspection Ledger rows from
+        ``BatchExecutionResult.successful``, and ``effective_finding_ids`` -- the
+        key ``report.report`` selects the reported findings from -- is derived
+        from those rows. A batch removed from the submitted list instead would
+        take its findings out of the report, and ``finalize_ledger`` would refuse
+        to let them be added back.
+        """
+        spec = _spec_at("SPEC-4", 1)
+        batch = Batch(file_path="SKILL.md", content=self._CONTENT, findings=[spec])
+
+        events, status = _meta_ledger_response([batch], BatchExecutionResult([(batch, [])]), [spec])
+
+        assert [event["outcome"] for event in events] == [LedgerOutcome.COMPLETED]
+        assert events[0]["emitted_finding_ids"] == [spec.finding_id]
+        assert status["status"] == "completed"
+
+
+@patch(MOCK_PATCH_TARGET, _mock_get_chat_model)
+class TestAConformanceOnlyScanMakesNoLLMCall:
+    """A manifest whose only findings are conformance findings, end to end."""
+
+    def _state(self, findings: list[Finding]) -> SkillspectorState:
+        return cast(
+            "SkillspectorState",
+            {
+                "findings": findings,
+                "use_llm": True,
+                "file_cache": {"SKILL.md": "# manifest\n"},
+                "manifest": {},
+                "model_config": {},
+            },
+        )
+
+    def test_no_batch_is_sent_and_the_findings_survive(self) -> None:
+        spec = _spec_at("SPEC-4", 1)
+
+        with patch.object(
+            LLMMetaAnalyzer, "_ainvoke_batch_with_retries", new_callable=AsyncMock
+        ) as invoke:
+            result = meta_analyzer(self._state([spec]))
+
+        invoke.assert_not_awaited()
+        assert [f.rule_id for f in result["findings"]] == ["SPEC-4"]
+        assert result["effective_finding_ids"] == [spec.finding_id]
+
+    def test_the_scan_claims_no_llm_call_that_never_happened(self) -> None:
+        """``llm_call_log`` drives ``llm_calls_attempted``/``llm_calls_succeeded``.
+
+        A declined batch lands in ``BatchExecutionResult.successful`` on purpose,
+        so the ``ok=bool(detailed.successful)`` telemetry would have recorded a
+        successful chat-model invocation for a scan that made none. An empty log
+        is already this node's "no LLM call happened" state -- it is what the
+        no-findings early return leaves behind.
+        """
+        with patch.object(LLMMetaAnalyzer, "_ainvoke_batch_with_retries", new_callable=AsyncMock):
+            result = meta_analyzer(self._state([_spec_at("SPEC-4", 1)]))
+
+        assert result["llm_call_log"] == []
+        assert (
+            _build_metadata(False, True, result["llm_call_log"]).get("llm_calls_attempted") is None
+        )
+
+    def test_a_single_other_finding_is_enough_to_make_the_call(self) -> None:
+        """The control: the decline is about the findings, not about the flag."""
+        with patch.object(
+            LLMMetaAnalyzer, "_ainvoke_batch_with_retries", new_callable=AsyncMock
+        ) as invoke:
+            invoke.return_value = (
+                Batch(file_path="SKILL.md", content="# manifest\n", findings=[]),
+                [],
+            )
+            result = meta_analyzer(self._state([_spec_at("SPEC-4", 1), _other_at("SC2", 3)]))
+
+        invoke.assert_awaited()
+        assert result["llm_call_log"] != []
+
+    def _mixed_state(self) -> SkillspectorState:
+        """One file whose batch is declined, one whose batch is submitted.
+
+        The ordinary shape for this feature: a `SKILL.md` carrying only
+        conformance findings beside any other file carrying a real one.
+        """
+        return cast(
+            "SkillspectorState",
+            {
+                "findings": [
+                    _spec_at("SPEC-4", 1),
+                    Finding(
+                        rule_id="SC2",
+                        message="static finding SC2",
+                        severity="MEDIUM",
+                        confidence=0.8,
+                        file="install.sh",
+                        start_line=3,
+                    ),
+                ],
+                "use_llm": True,
+                "file_cache": {
+                    "SKILL.md": "# manifest\n",
+                    "install.sh": "#!/bin/sh\ncurl x | sh\n",
+                },
+                "manifest": {},
+                "model_config": {},
+            },
+        )
+
+    def test_a_declined_batch_cannot_vouch_for_a_submitted_one_that_failed(self) -> None:
+        """The only real call failed, so the scan must not claim a successful one.
+
+        A declined batch is filed in ``BatchExecutionResult.successful`` on
+        purpose, so ``ok=bool(detailed.successful)`` read the decline as proof
+        that the chat model had answered -- even though the one batch actually
+        submitted raised. The all-declined and all-succeeding arms above both
+        miss it; only the mixed shape reaches it.
+        """
+        with patch.object(
+            LLMMetaAnalyzer,
+            "_ainvoke_batch_with_retries",
+            new_callable=AsyncMock,
+            side_effect=RuntimeError("provider 500"),
+        ) as invoke:
+            result = meta_analyzer(self._mixed_state())
+
+        assert invoke.await_count == 1  # the declined batch was never sent
+        assert result["llm_call_log"] == [
+            {"node": "meta_analyzer", "ok": False, "error": None},
+        ]
+
+    def test_that_failure_still_floors_the_recommendation_at_caution(self) -> None:
+        """The safety property the telemetry feeds, asserted end to end.
+
+        ``report._llm_runtime_status`` calls a run whose every LLM call failed
+        *degraded*, and ``report.report`` refuses to let a degraded scan report
+        ``SAFE``. With the decline counted as a success the run looked healthy,
+        so a scan whose only real LLM call failed reported ``SAFE`` -- a
+        false-safety signal, which is what makes the telemetry bug security
+        relevant rather than cosmetic.
+        """
+        with patch.object(
+            LLMMetaAnalyzer,
+            "_ainvoke_batch_with_retries",
+            new_callable=AsyncMock,
+            side_effect=RuntimeError("provider 500"),
+        ):
+            meta_result = meta_analyzer(self._mixed_state())
+
+        report_state = cast(
+            "SkillspectorState",
+            {
+                "filtered_findings": [],  # static score 0 -> would be SAFE
+                "component_metadata": [],
+                "has_executable_scripts": False,
+                "manifest": {},
+                "output_format": "json",
+                "use_llm": True,
+                "llm_call_log": meta_result["llm_call_log"],
+            },
+        )
+        result = report(report_state)
+
+        assert result["risk_score"] == 0
+        assert result["risk_recommendation"] == "CAUTION"

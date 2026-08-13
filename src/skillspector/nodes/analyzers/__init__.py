@@ -83,6 +83,9 @@ from skillspector.nodes.analyzers.static_patterns_tool_misuse import (
     node as static_patterns_tool_misuse_node,
 )
 from skillspector.nodes.analyzers.static_yara import node as static_yara_node
+from skillspector.nodes.analyzers.structure_agent_skills_spec import (
+    node as structure_agent_skills_spec_node,
+)
 
 ANALYZER_NODE_IDS: list[str] = [
     "static_patterns_prompt_injection",
@@ -108,10 +111,13 @@ ANALYZER_NODE_IDS: list[str] = [
     "semantic_security_discovery",
     "semantic_developer_intent",
     "semantic_quality_policy",
-    # Fork-added Framework Analyzers keep to the end of the list, so an upstream
-    # merge that appends its own id does not have to reorder this one.
+    # Fork-added Analyzers keep to the end of the list, so an upstream merge that
+    # appends its own id does not have to reorder this one. The two Framework
+    # Analyzers first, then the conformance one, which is gated on a flag rather
+    # than on a Framework.
     "framework_langchain4j",
     "framework_deepagents",
+    "structure_agent_skills_spec",
 ]
 
 ANALYZER_NODES = {
@@ -140,6 +146,7 @@ ANALYZER_NODES = {
     "semantic_quality_policy": semantic_quality_policy_node,
     "framework_langchain4j": framework_langchain4j_node,
     "framework_deepagents": framework_deepagents_node,
+    "structure_agent_skills_spec": structure_agent_skills_spec_node,
 }
 
 __all__ = ["ANALYZER_NODE_IDS", "ANALYZER_NODES"]

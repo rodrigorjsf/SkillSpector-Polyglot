@@ -21,9 +21,9 @@ from __future__ import annotations
 from skillspector.nodes.analyzers import ANALYZER_NODE_IDS, ANALYZER_NODES
 
 # Expected analyzer node IDs per the workflow reference table.
-# Order: static (15), behavioral (2), mcp (3), semantic (3), framework (2).
-# The framework family is fork-added and stays strictly last, so an upstream
-# merge that appends its own id does not have to reorder anything here.
+# Order: static (15), behavioral (2), mcp (3), semantic (3), framework (2),
+# structure (1). The last three are fork-added and stay strictly last, so an
+# upstream merge that appends its own id does not have to reorder anything here.
 EXPECTED_ANALYZER_NODE_IDS: list[str] = [
     "static_patterns_prompt_injection",
     "static_patterns_data_exfiltration",
@@ -50,6 +50,7 @@ EXPECTED_ANALYZER_NODE_IDS: list[str] = [
     "semantic_quality_policy",
     "framework_langchain4j",
     "framework_deepagents",
+    "structure_agent_skills_spec",
 ]
 
 
