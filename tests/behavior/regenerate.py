@@ -25,7 +25,7 @@ projections produced by *separate processes*, which is the only way to see
 ordering derived from hash seeds or from the import-time provider resolution.
 
 It emits the whole corpus in one go so that widening the corpus does not
-multiply interpreter spawns: all 35 fixtures are compared across hash seeds and
+multiply interpreter spawns: every fixture is compared across hash seeds and
 providers by three child processes in total, not three per fixture.
 """
 

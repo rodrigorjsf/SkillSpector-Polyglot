@@ -6,10 +6,13 @@ paths:
 
 # Analyzer Status
 
-Fifteen modules emit an Analyzer Status — through `analyzer_status_event` or through
-`analyzer_status_for_events`, which wraps it — and only twelve of them are Analyzer nodes: the ledger
-itself, `llm_analyzer_base.py` and `nodes/meta_analyzer.py` emit statuses too. This rule is scoped to
-the whole source tree for that reason, matching the scope its guard test already chose.
+Not every module that emits an Analyzer Status — through `analyzer_status_event` or through
+`analyzer_status_for_events`, which wraps it — is an Analyzer node: the ledger itself,
+`llm_analyzer_base.py`, `nodes/analyzers/static_runner.py` and `nodes/meta_analyzer.py` emit
+statuses too. This rule is scoped to the whole source tree for that reason, matching the scope its
+guard test already chose. (Count them with
+`grep -rl 'analyzer_status_event\|analyzer_status_for_events' src/skillspector/` rather than reading
+a number here — a number in this sentence rotted twice before it was removed.)
 
 - Statuses come from `AnalyzerStatus` in `inspection_ledger.py`, never from a bare string. Import the
   member: `analyzer_status_event` raises on an undeclared spelling, and

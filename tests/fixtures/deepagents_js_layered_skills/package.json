@@ -1,0 +1,10 @@
+{
+  "name": "support-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A TypeScript support agent that layers a per-user Skill directory over a shared library.",
+  "dependencies": {
+    "deepagents": "^1.9.1"
+  }
+}

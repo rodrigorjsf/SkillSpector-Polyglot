@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 SkillSpector-Polyglot contributors
 # SPDX-License-Identifier: Apache-2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -35,6 +36,7 @@ from skillspector.constants import RISK_THRESHOLD
 from skillspector.graph import graph
 from skillspector.llm_utils import is_llm_available
 from skillspector.logging_config import get_logger
+from skillspector.nodes.report import reported_findings
 
 if TYPE_CHECKING:
     from mcp.server.fastmcp import FastMCP
@@ -106,7 +108,9 @@ async def run_scan(
                 },
             },
         )
-        findings = result.get("filtered_findings") or result.get("findings") or []
+        # The same reader the CLI's summary tables use, so this payload's
+        # `findings` cannot disagree with the `report` string beside it.
+        findings = reported_findings(result)
         risk_score = int(result.get("risk_score") or 0)
         execution_successful = bool(result.get("execution_successful", True))
         analysis_completeness = result.get("analysis_completeness") or {}

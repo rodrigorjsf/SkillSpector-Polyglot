@@ -25,19 +25,21 @@ confirmed clean. Full per-fixture numbers are in the #8 close-out comment.
 
 ## Corpus
 
-- **All 35 leaf scan targets**, one committed snapshot each, laid out to mirror `tests/fixtures/`
+- **Every leaf scan target**, one committed snapshot each, laid out to mirror `tests/fixtures/`
   (`snapshots/sdi/sdi1_mismatch.json`). Measured at 11 079 lines across the original 24, 323–859 per
-  fixture. 23 of the 35 bear a `SKILL.md` **at their root**, which is the only place the Manifest
-  parser looks; `mcp_registry` bears none and is in the corpus anyway,
-  because it is a scan target in practice, the two `*_detection` fixtures (#21) bear none because
-  they carry one Framework signal and nothing else, and the nine application trees —
+  fixture. Most bear a `SKILL.md` **at their root**, which is the only place the Manifest parser
+  looks; `mcp_registry` bears none and is in the corpus anyway,
+  because it is a scan target in practice, the three `*_detection` fixtures bear none because
+  they carry one Framework signal and nothing else, and the application trees —
   `langchain4j_shell_skill` (#28), `langchain4j_tool_mode` (#53),
   `langchain4j_gradle_skill` (#88),
   `deepagents_runtime_skills` (#71), `deepagents_personal_skills` (#72),
   `deepagents_denied_skills` (#72), `deepagents_shadowed_skills` (#73),
-  `deepagents_layered_skills` (#73) and `deepagents_subagent_skills` (#74) — bear none at their
+  `deepagents_layered_skills` (#73), `deepagents_subagent_skills` (#74),
+  `deepagents_js_layered_skills` and `deepagents_js_runtime_skills` — bear none at their
   root because their Skills are nested
-  under `src/main/resources/skills/`, `skills/` and `library/skills/` respectively.
+  under `src/main/resources/skills/`, `skills/` and `library/skills/` respectively. A count is
+  deliberately not written here; `tests/behavior/test_behavior_snapshot.py` holds the one literal.
 - **The three fixture family parents (`sdi/`, `sqp/`, `ssd/`) are out of the corpus** and will stay
   out: they are fixture-layout containers, not Skills. Scanned as targets they behave as anonymous
   Skills — `sdi` and `sqp` at Risk Score 48 with an empty Manifest (#11).
@@ -52,7 +54,7 @@ confirmed clean. Full per-fixture numbers are in the #8 close-out comment.
 ## Change classes the corpus cannot see
 
 - **Skip-directory changes are unguarded.** No fixture contains a skippable directory, so
-  `analysis_completeness.scope_exclusions` is empty in all 35 and a change to the skip set cannot
+  `analysis_completeness.scope_exclusions` is empty in every one and a change to the skip set cannot
   move any snapshot. A test asserts the emptiness, so the day a fixture populates it, this limit is
   revisited rather than quietly becoming false.
 - **Suppression is unguarded.** `suppressed_findings` is empty in every fixture and
@@ -64,7 +66,8 @@ confirmed clean. Full per-fixture numbers are in the #8 close-out comment.
   scored verdict for a directory that is not a Skill — changing that was explicitly out of #11's
   scope, and no fixture guards it.
 - **`manifest_status` is guarded in one direction only.** It is one of the two projected keys carried
-  conditionally: dropped when it holds `present` (ADR 0003), so 23 of the 35 snapshots carry no
+  conditionally: dropped when it holds `present` (ADR 0003), so the snapshots whose root Manifest
+  parses carry no
   `manifest_status` byte at all. A Skill whose Manifest regressed to any other status still fails the
   byte compare, because the key would appear. The reverse — `mcp_registry` reverting to `present` —
   is caught by its own snapshot, and by nothing else. A test holds the rule non-vacuous by requiring
@@ -89,6 +92,25 @@ confirmed clean. Full per-fixture numbers are in the #8 close-out comment.
   in the Analyzer's own suite. This fixture holds the discriminating shape instead — a real
   declaration that excludes something else — which is why its snapshot read the same before and
   after that fix.
+- **The JavaScript fixtures are the first `package.json` in the corpus, and each carries one
+  base-catalog Finding because of it.** All three declare `"deepagents": "^1.9.1"`, and `SC1`
+  (Unpinned Dependencies, LOW) matches a caret range in a dependency file. That is correct — a caret
+  range *is* unpinned — and it is deliberately left in rather than pinned away: a caret is what real
+  npm manifests carry, and pinning it to keep the snapshots tidy would remove the corpus's only
+  evidence that the base catalog reaches a `package.json` at all. The cost is that an edit to `SC1`'s
+  catalogue prose moves these three snapshots along with every other fixture carrying the rule, which
+  is the behavior gate working rather than failing.
+- **The Deep Agents for JavaScript track is behind the gate in three fixtures, not six.** The Rules
+  it carries are the Python track's own, so what its fixtures have to pin is that a second *parser*
+  feeds the same verdicts — not the verdicts again. `deepagents_js_runtime_skills` pins
+  `DA-UNRESOLVED` in two modes at once (an unresolvable Skill list **and** an unresolvable backend),
+  and `deepagents_js_layered_skills` pins `DA-SKILL-WRITABLE`, `DA-SHADOW` and
+  `DA-SUBAGENT-SKILLS` together with each one's **silence** in the same tree — a covered Skill
+  source beside an open one, a Skill name in one source only beside one in both, and a subagent
+  with its own Skills beside one without. What no JavaScript fixture holds is the mitigation ladder
+  or the TSX grammar: `mode: "interrupt"`, `interruptOn`, and a `.tsx` Component whose call is
+  enclosed by JSX all live in the Analyzer's own suite. A regression in any of those is caught
+  there and not here.
 - **The Deep Agents boundary is exercised in one mode only; the writability verdict in three.**
   `deepagents_runtime_skills` (#71) assembles its Skill list per request, so `DA-UNRESOLVED` is
   behind the gate for the Skill-list case and for that case alone. The other four boundary cases —
@@ -175,7 +197,7 @@ declines is caught, while a change to what it would have found is not.
 - A projected key absent from the returned state is absent from the snapshot rather than recorded as
   `null`. A key that stops being emitted is a behavior change and shows as a diff either way.
 - **Two registered sort keys are still unexercised.** `analysis_completeness.ledger_exceptions` and
-  `scope_exclusions` are empty in **all 35** fixtures, not just in `malicious_skill`, so their named
+  `scope_exclusions` are empty in **every** fixture, not just in `malicious_skill`, so their named
   key has still never ordered anything. Widening the corpus did not close this. Its shape was
   checked against `InspectionLedgerException` (`src/skillspector/inspection_ledger.py`) rather than
   against data — every field it reads is a `str` or an `int | None`.
@@ -185,7 +207,7 @@ declines is caught, while a change to what it would have found is not.
   total: the total is the corpus count doubled, and a total is a corpus count that no `34` grep can
   find when the corpus grows. The out-of-process checks did **not**
   scale with the corpus: `regenerate.py --emit-all` projects the whole corpus per spawn, so three
-  child interpreters cover 35 fixtures against two hash seeds and two providers.
+  child interpreters cover every fixture against two hash seeds and two providers.
 - **A fixture's line endings are part of the frozen behavior.** The projection carries each
   component's `size_bytes`, so a checkout that rewrites `\n` to `\r\n` inflates every recorded size
   by one byte per line. `tests/fixtures/.gitattributes` pins the corpus to LF for exactly this

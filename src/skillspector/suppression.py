@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 SkillSpector-Polyglot contributors
 # SPDX-License-Identifier: Apache-2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -122,6 +123,57 @@ def finding_fingerprint(
     avoids delimiter ambiguity and the full SHA-256 digest avoids the legacy
     64-bit truncation.  Any source or scanner change therefore requires review
     and baseline regeneration.
+
+    **The invariant: a fingerprint depends only on the evidence — what was found
+    and where.**  Every field below is something the scanner *observed*, and the
+    rule that keeps it that way is enforceable rather than descriptive: **no
+    analyzer may encode how the run was configured into a ``Finding``.**  A
+    baseline is a durable record a team commits, so a fingerprint that moved with
+    the invocation would make one defect suppressible under one command line and
+    not another, and the team would never be told which.
+
+    That is not hypothetical.  ``--spec-checks advisory`` was designed to express
+    "reported but not scored" by emitting its findings at ``confidence = 0.0``,
+    which would have made a baseline taken in ``advisory`` suppress nothing in
+    ``strict``; it was rejected before release for exactly this reason.  Note
+    where the leak has to be caught — ``confidence`` and ``tags`` are both hashed
+    here, so moving such a flag onto a *different* field of the ``Finding`` moves
+    the collision rather than fixing it.  A run-scoped signal belongs in graph
+    state, the way ``unscored_rule_ids`` carries that one; see
+    ``skillspector.agent_skills_spec.unscored_rule_ids``.
+
+    **Two known violations, and neither is an analyzer's.**  Both are inherited
+    behaviour, both predate the rule above, and the count is a measurement rather
+    than a guarantee — do not write "the only one" here.
+
+    ``--no-llm`` moves five hashed fields.  The meta-analysis stage rewrites
+    ``confidence``, ``message``, ``remediation``, ``explanation`` and ``tags``,
+    and which branch runs is decided by that flag (``nodes.meta_analyzer``
+    ``_fallback_filtered`` versus the enrichment branch of ``apply_filter``).
+    Tracked as issue #124.  ``nodes.meta_analyzer._SPEC_RULE_IDS`` exists so the
+    conformance catalogue does not acquire it.
+
+    **Generating and consuming on the same side of that flag is necessary and
+    not sufficient, so do not state it as the remedy.**  On the ``--no-llm``
+    side the five are computed from the static finding and are stable.  On the
+    LLM side four of them are *model output written verbatim* — ``message``,
+    ``confidence``, ``remediation`` and ``explanation`` — and the fifth moves
+    with whether the model confirmed the finding.  Nothing pins that text:
+    ``llm_utils.get_chat_model`` sets no temperature and no seed, and which
+    model answers is itself run configuration (``SKILLSPECTOR_PROVIDER``,
+    ``SKILLSPECTOR_MODEL``, ``SKILLSPECTOR_MODEL_<SLOT>``).  Two identical
+    invocations may therefore fingerprint one defect two ways.  A baseline that
+    has to keep matching is a ``--no-llm`` baseline; an LLM-side baseline is
+    best-effort.
+
+    The **scan root** moves ``component.path``, which is hashed, so a fingerprint
+    only matches a scan rooted the same way.  ``skillspector baseline`` has no
+    repo-scan mode: pointed at a repository root it scans the whole tree as one
+    skill and records ``skills/My_Skill/SKILL.md``, while ``scan --repo-scan``
+    invokes the graph once per discovered skill directory and records
+    ``SKILL.md``.  A baseline taken the first way suppresses nothing on the
+    second.  A per-skill baseline *does* match under ``--repo-scan``; what no
+    command emits is one document covering several skills.
     """
     if not isinstance(file_content, str):
         raise ValueError("file_content is required to create an exact baseline fingerprint")

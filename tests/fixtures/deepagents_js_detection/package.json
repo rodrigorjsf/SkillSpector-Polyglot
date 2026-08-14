@@ -1,0 +1,10 @@
+{
+  "name": "deepagents-js-detection",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Carries one Node dependency declaration and nothing else, so what a Scan of it measures is the detection signal on its own.",
+  "dependencies": {
+    "deepagents": "^1.9.1"
+  }
+}

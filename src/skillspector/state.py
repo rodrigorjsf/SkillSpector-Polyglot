@@ -74,10 +74,52 @@ class SkillspectorState(TypedDict, total=False):
     # skillspector.manifest_status.
     manifest_status: ManifestStatus
     # Which Framework the scanned tree is written against, detected by a pure
-    # function under `build_context` -- no new graph node. Read by the gated
-    # `framework_langchain4j` analyzer, which returns no findings unless it holds
-    # LANGCHAIN4J. See skillspector.framework.
+    # function under `build_context` -- no new graph node. Read by one gated
+    # Analyzer per Framework -- `framework_langchain4j`, `framework_deepagents`
+    # and `framework_deepagents_js` -- each returning no findings unless the key
+    # holds its own member. `AGENT_SKILLS` has no Analyzer: it is what every
+    # input scanned before this key existed detects as. See
+    # skillspector.framework.
     framework: Framework
+    # Which Agent Skills specification conformance Rules run, and which of them
+    # contribute to the Risk Score: "off", "advisory" or "strict". Set by
+    # `scan --spec-checks`; an absent key means "off", which is what every Scan
+    # predating the flag carries and why the flag's absence changes nothing. Read
+    # by the gated `structure_agent_skills_spec` Analyzer, which returns nothing
+    # at all unless it holds one of the other two. See
+    # skillspector.agent_skills_spec.
+    spec_checks: str
+    # Rule ids this run was configured to report without scoring. Written by
+    # `structure_agent_skills_spec` past its gate, from the mode and the
+    # catalogue it owns, and read by `report._compute_risk_score` as an opaque
+    # set -- the report never learns what a SPEC Rule is.
+    #
+    # It is a property of the *run*, not of a Finding, and that is the whole
+    # reason it is here rather than on `Finding`: every field of a Finding is
+    # hashed into the v2 Baseline fingerprint, so a Finding carrying "this run
+    # did not score me" would fingerprint one defect two ways. An absent key
+    # means nothing is exempt, which is what every Scan predating the flag
+    # carries. See skillspector.agent_skills_spec.unscored_rule_ids.
+    #
+    # **Exactly one Analyzer publishes it, and both keys below are unreducible
+    # until that changes.** `graph.build_graph` fans every Analyzer node out from
+    # `build_context` in parallel, and a bare key -- one carrying no `Annotated`
+    # reducer -- accepts a single write per superstep: a second publisher raises
+    # `InvalidUpdateError` while applying the channel update, which is *outside*
+    # any node and so past where `guard_analyzer_node` could turn it into an
+    # empty result. The whole Scan dies. Adding a second publisher therefore
+    # means deciding a reducer for **both** keys first, and the note is the hard
+    # half: two remedies cannot concatenate into one sentence, so the honest
+    # shape is a mapping from rule id to its note rather than `operator.add`.
+    # `tests/unit/test_unscored_rule_ids_single_publisher.py` fails as soon as a
+    # second module anywhere in `src/skillspector` writes either key.
+    unscored_rule_ids: list[str]
+    # The sentence the report prints beside a finding of one of those rule ids,
+    # supplied by the one Analyzer that published them. It is here rather than in
+    # `report` because it names the flag that would score them, and the flag
+    # belongs to the catalogue: the report keeps the ids opaque and renders this
+    # verbatim. See skillspector.agent_skills_spec.UNSCORED_NOTE.
+    unscored_rule_note: str
     previous_manifest: dict[str, object] | None
 
     # Accumulated canonical findings. Same-ID meta updates replace in place.
@@ -171,6 +213,18 @@ class AnalyzerNodeResponse(TypedDict):
     findings: list[Finding]
     inspection_ledger: NotRequired[list[InspectionLedgerEvent]]
     analyzer_status_events: NotRequired[list[AnalyzerStatusEvent]]
+    # Which of the publishing analyzer's own rule ids this run must not score.
+    # `NotRequired` because every other analyzer omits it -- **not** because a
+    # second analyzer may add itself. `structure_agent_skills_spec` is the only
+    # writer, and both keys are bare channels that reject a concurrent second
+    # write; see the same keys on `SkillspectorState` for why the signal lives on
+    # the run rather than on a Finding, and for what a second publisher would
+    # have to settle first.
+    unscored_rule_ids: NotRequired[list[str]]
+    # ...and the sentence a report should print beside them. Rendered verbatim,
+    # so the publisher keeps the flag name it owns and the report keeps the ids
+    # opaque. Absent means the report falls back to a generic statement.
+    unscored_rule_note: NotRequired[str]
     # LLM-backed analyzers also report one telemetry record; static analyzers
     # omit it (NotRequired keeps the key optional for them).
     llm_call_log: NotRequired[list[LLMCallRecord]]

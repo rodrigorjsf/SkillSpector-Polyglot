@@ -1,6 +1,6 @@
 # SkillSpector-Polyglot
 
-LangGraph pipeline that scans `SKILL.md` skill directories for vulnerabilities and emits SARIF plus a 0–100 risk score. This fork extends that to skills embedded in a programming-language framework's own source tree — LangChain4j and Deep Agents, both shipped. The Deep Agents Analyzer carries `DA-UNRESOLVED`, `DA-SKILL-WRITABLE`, `DA-SHADOW` and `DA-SUBAGENT-SKILLS`; both Frameworks' upstream vocabularies carry a measured version range, re-measured by `docs/VOCABULARY_REMEASUREMENT.md`.
+LangGraph pipeline that scans `SKILL.md` skill directories for vulnerabilities and emits SARIF plus a 0–100 risk score. This fork extends that to skills embedded in a programming-language framework's own source tree — LangChain4j, Deep Agents for Python and Deep Agents for JavaScript, all three shipped as gated Framework Analyzers. The two Deep Agents Analyzers carry the same four Rules — `DA-UNRESOLVED`, `DA-SKILL-WRITABLE`, `DA-SHADOW` and `DA-SUBAGENT-SKILLS` — because they ask one upstream framework's questions in two languages. Three upstream vocabularies carry a measured version range; `contrib/vocabulary_sweep` re-measures the Maven Central and PyPI ones, and the npm one is measured by hand — `docs/VOCABULARY_REMEASUREMENT.md` owns both procedures and says why.
 
 The GitHub repository is `SkillSpector-Polyglot`; the distribution, the package under `src/skillspector/`, and the console script stay `skillspector`. Renaming them would break upstream merges and existing installs — never propose it as a cleanup.
 
@@ -44,8 +44,8 @@ say so and ask — never guess.
 install, usage, configuration, transparency — and only then the inherited upstream README under the
 `# Inherited documentation` marker. **The fork sections above that marker are not a snapshot; they
 are a contract.** A pull request that adds or alters a rule, a framework, a CLI flag, an environment
-variable, an exit code or an output format updates them in the *same* pull request — never a
-follow-up. The README's own "Contributing, and keeping these docs true" table maps each kind of
+variable, an exit code, an output format, or which stream a line is printed to updates them in the
+*same* pull request — never a follow-up. The README's own "Contributing, and keeping these docs true" table maps each kind of
 change to the section it must update; keep that table correct too.
 
 Below the marker, keep the diff append-only and leave the `NVIDIA/skillspector` URLs alone — they
@@ -118,7 +118,7 @@ whoever the user says. Do not manufacture an Umbrella Branch for a single PR.
 - New source files need the SPDX + Apache-2.0 header block. **Do not copy one from a neighbour** — the copyright line depends on who wrote the file, and a neighbour may be inherited, modified or fork-authored, each carrying a different line. See `.claude/rules/license-compliance.md`. Convention only; nothing enforces it.
 - `skillspector.constants` resolves the active provider and validates the model config **at import time**; importing it raises when `SKILLSPECTOR_STRICT_MODEL_VALIDATION=true` and a model is unknown.
 - This repo is a fork of NVIDIA/SkillSpector and still merges upstream. Prefer new files in new paths; where an existing file must change, keep the diff append-only.
-- Active goal: extend scanning to LangChain4j and Deep Agents skills. **Existing behavior on existing inputs must not change** — new analyzers are gated, never unconditionally wired.
+- Active goal: extend scanning to skills embedded in a framework's source tree — LangChain4j, Deep Agents for Python and Deep Agents for JavaScript today, more later. **Existing behavior on existing inputs must not change** — new analyzers are gated, never unconditionally wired, and a new Framework's detection signals may not narrow an existing Framework's.
 
 ## Agent skills
 
@@ -132,11 +132,25 @@ than reaching for it. `/upstream-sync` measures how far this fork has drifted fr
 Behavior Snapshot is correct rather than a regression. `/license-audit` measures this fork against
 Apache-2.0 §4 and fixes the drift, and it is the natural follow-up to a sync.
 
+`/upstream-sync` still has to be asked for, but nobody has to remember to notice the drift:
+`.github/workflows/upstream-drift.yml` re-runs its step-1 measurement weekly and opens — or edits —
+a single `Upstream drift:` issue whenever upstream is ahead. It only ever measures and reports.
+**It never merges, never pushes and never opens a pull request**, because the judgment in step 4 is
+not a machine's to make. It also never *closes* — close the drift issue yourself once the sync
+merges, or it keeps asserting a drift that is already gone.
+
+The schedule needs a human twice, not once. Like every workflow on this fork it stays dormant until
+someone clicks the Actions-tab enable button — and on a public repository GitHub disables a schedule
+again after 60 days with no repository activity, emailing the maintainer to re-enable it. That
+second one withdraws the cadence in exactly the circumstance `#105` describes, so treat a long quiet
+stretch as a reason to check the Actions tab rather than as evidence there is no drift.
+`workflow_dispatch` is the manual fallback.
+
 ## References
 
 - Domain glossary — use these terms, not their synonyms — `CONTEXT.md`
 - Architecture, node and provider walkthroughs, env vars — `docs/DEVELOPMENT.md`
-- Extending the scanner to LangChain4j and Deep Agents skills — `docs/MULTI_FRAMEWORK_SKILL_ANALYSIS.md`
+- Extending the scanner to LangChain4j and to Deep Agents in either language — `docs/MULTI_FRAMEWORK_SKILL_ANALYSIS.md`
 - Captured upstream framework docs — `docs/references/README.md`
 - Re-measuring a Framework vocabulary's version range, and its trigger — `docs/VOCABULARY_REMEASUREMENT.md`
 - Batch scanner, own runners, excluded from `make test` — `contrib/batch_scan/CLAUDE.md`
@@ -199,3 +213,45 @@ When something fails repeatedly, when User has to re-explain, or when a workarou
 - Upstream can add a fixture directory that is not a Skill; `NON_TARGET_DIRS` excludes it.
 - A dist-info may ship no LICENSE; read the tagged repo LICENSE instead.
 - `push --delete` saying "remote ref does not exist" means GitHub already deleted it.
+- The venv's installed version can fall below `pyproject.toml`'s floor; check before reading a dist-info.
+- `GH_REPO` steers `gh issue list` but not bare `gh repo view`; an `upstream` remote wins there.
+- A new framework package must be excluded from every *other* vocabulary guard's sweep.
+- Analyzer modules importing a parser must import it lazily; a guard checks `sys.modules`.
+- `tree-sitter-typescript` ships two grammars; `.tsx` needs `language_tsx()`.
+- Upstream JS docs leak Python spellings in prose; cite code blocks only.
+- Findings in JSON report use key `finding`, not `message`; status uses `reason_code`.
+- `result.output` folds both CLI streams; assert `result.stdout` and `result.stderr` apart.
+- A module-wide revert proves non-vacuity, not per-site coverage; mutate one site.
+- Below two child skills `--recursive` falls through; every claim about it needs that qualifier.
+- Rich folds a long path at width 80; set `COLUMNS` before asserting one.
+- Run the suite under a long `TMPDIR` too; a short `/tmp` hides width-dependent failures.
+- README's Contributing table, its own prose, and CLAUDE.md's list must enumerate one set.
+- Mutate every print site, not the changed ones; a docstring's universal claim binds all.
+- Any Analyzer Status moves every snapshot; `analysis_completeness` is a projected key.
+- Regex `$` matches before a trailing newline; anchor with `\Z`.
+- `MANIFEST_FILENAMES` is a precedence: one directory can ship both spellings.
+- A confidence read from user YARA meta is data; `confidence=` literals miss it.
+- Fingerprints hash every Finding field; run configuration goes in state, never on a Finding.
+- The meta stage rewrites five hashed fields; a baseline binds to its `--no-llm` side.
+- `filtered_findings` is pre-suppression; `report` subtracts the Baseline downstream.
+- A `SKILL.md` under `references/`, `scripts/` or `assets/` is a template, not a Skill.
+- An early `return` in a Rule walk can suppress a *scored* Rule further down.
+- Dropping a Batch loses its Findings from the report; decline it via `should_submit`.
+- Baseline per skill dir for `--repo-scan`; a repo-root Baseline's paths never match.
+- Withholding a Finding from the prompt also means withholding it from the token budget.
+- A state key without a reducer kills the scan on a second parallel writer.
+- A declined Batch sits in `successful`; never read that as a model answer.
+- tree-sitter reports `comment` as a named child; skip it before indexing children.
+- A tree-sitter `export const` hides in `export_statement`; unwrap its `declaration` field.
+- Reusing a rule id reuses `pattern_defaults` prose; override it per analyzer, not the catalogue.
+- A rule id shared across languages does not carry an exact Baseline; the fingerprint is evidence-bound.
+- Adding a runtime dependency needs `uv lock`; `uv sync --locked` in CI will not re-resolve.
+- A `SIGNALS` row is a detection contract; a new framework needs positives and negatives both.
+- A superset-satisfied gate: dropping a required tool widens it, never narrows it.
+- JavaScript has no statement terminator; a regex lead must exclude `\n`, not just `;`.
+- tree-sitter puts `await` inside a generic call's `function` field, not outside it.
+- Unwrap `as`/`satisfies`/parens/`!`, or a literal reads as unresolved.
+- Read a `package.json` dependency with `json.loads`; a regex also matches `overrides`.
+- Code-over-prose settles a disagreement; an example is not an enumeration.
+- Anchor every JS/TS detection signal to line start; strings and comments are scanned too.
+- A line-start anchor still fires inside a template literal; its contents are whole lines.

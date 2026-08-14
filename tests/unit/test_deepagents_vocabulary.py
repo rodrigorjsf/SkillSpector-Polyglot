@@ -26,14 +26,31 @@ Read as source text rather than as imported values for the same reason: a
 contributor writing ``"create_deep_agent"`` inline produces working code, and
 nothing about the running system looks different.
 
-**Scope of the sweep.** The whole of ``src/skillspector``, minus two files. The
-inventory module itself is the home rather than a leak site. ``framework.py`` is
-excluded *by decision*, not by oversight: ADR 0008 rejected sharing one
+**Scope of the sweep.** The whole of ``src/skillspector``, minus three files.
+The inventory module itself is the home rather than a leak site. ``framework.py``
+is excluded *by decision*, not by oversight: ADR 0008 rejected sharing one
 inventory between detection and the Rules, so detection's copy of these
 spellings is a second copy on purpose, and it is the file that holds
-``Framework.DEEPAGENTS``'s own value. Sweeping the rest of the tree rather than a
-hand-maintained list is stricter than the LangChain4j guard, which has to be
-edited whenever a coupled module appears elsewhere.
+``Framework.DEEPAGENTS``'s own value.
+
+The third exclusion is the **JavaScript track's own inventory**, and it is the
+same decision one Framework further out. ``skillspector.deepagents_js.vocabulary``
+inventories the npm distribution ``deepagents``; this module inventories the PyPI
+distribution of the same name. Many spellings are byte-identical, and a dozen of
+them are not homonyms -- ``CompositeBackend``, ``operations``, ``write_file`` --
+so without this exclusion the JavaScript home would be reported as leaking every
+one of them into a module that is, in fact, *its* home. Making it import from
+here instead is exactly what ADR 0005 forbids: the two distributions ship on
+different clocks, and a rename in one must not move the other's Rules.
+``docs/adr/0009-tree-sitter-for-typescript-parsing.md`` records it, and
+``tests/unit/test_deepagents_js_vocabulary.py`` is the reciprocal guard, which
+excludes *this* module for the same reason.
+
+Sweeping the rest of the tree rather than a hand-maintained list is stricter than
+the LangChain4j guard, which has to be edited whenever a coupled module appears
+elsewhere. It also means every ``deepagents_js`` module other than its inventory
+*is* swept by this guard -- and passes, because each imports its spellings from
+its own inventory rather than writing them inline.
 
 **Scope of the assertion.** A spelling is caught when it is written as a literal
 of its own -- the shape a matcher takes. A spelling embedded in a longer literal
@@ -84,8 +101,14 @@ _VOCABULARY = _SRC / "deepagents" / "vocabulary.py"
 # Detection keeps its own copy, by ADR 0008. See the module docstring.
 _DETECTION = _SRC / "framework.py"
 
+# The JavaScript track's inventory is its own home, not a leak site. See the
+# module docstring: ADR 0009 keeps the two inventories separate on purpose.
+_JS_VOCABULARY = _SRC / "deepagents_js" / "vocabulary.py"
+
+_EXCLUDED: frozenset[Path] = frozenset({_VOCABULARY, _DETECTION, _JS_VOCABULARY})
+
 _GUARDED_FILES: tuple[Path, ...] = tuple(
-    sorted(path for path in _SRC.rglob("*.py") if path not in (_VOCABULARY, _DETECTION))
+    sorted(path for path in _SRC.rglob("*.py") if path not in _EXCLUDED)
 )
 
 # Released versions, not spellings a Rule matches on. Left out so the inventory
@@ -246,9 +269,22 @@ class TestScope:
             _SRC / "deepagents" / "__init__.py",
         } <= set(_GUARDED_FILES)
 
-    def test_the_sweep_excludes_only_the_home_and_detection(self) -> None:
+    def test_the_sweep_excludes_only_the_home_detection_and_the_js_inventory(self) -> None:
         every = set(_SRC.rglob("*.py"))
-        assert every - set(_GUARDED_FILES) == {_VOCABULARY, _DETECTION}
+        assert every - set(_GUARDED_FILES) == {_VOCABULARY, _DETECTION, _JS_VOCABULARY}
+
+    def test_the_javascript_package_is_swept_apart_from_its_inventory(self) -> None:
+        """The exclusion is one file, not a package.
+
+        Only the JavaScript inventory is a second home; every module beside it
+        writes its spellings by importing them, so each stays under this guard.
+        Without this assertion the exclusion above could quietly widen to the
+        whole package and nothing would turn red.
+        """
+        package = _SRC / "deepagents_js"
+        swept = {path for path in _GUARDED_FILES if path.is_relative_to(package)}
+        assert swept == set(package.rglob("*.py")) - {_JS_VOCABULARY}
+        assert swept
 
 
 class TestHomonyms:

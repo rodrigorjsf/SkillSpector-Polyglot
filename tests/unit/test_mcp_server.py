@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 SkillSpector-Polyglot contributors
 # SPDX-License-Identifier: Apache-2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -24,6 +25,7 @@ import pytest
 
 from skillspector import mcp_server
 from skillspector.mcp_server import run_scan
+from skillspector.models import Finding
 from skillspector.providers import reset_provider, use_provider
 
 
@@ -251,3 +253,60 @@ async def test_mcp_stdio_initialize_registers_scan_skill() -> None:
             tools = await asyncio.wait_for(session.list_tools(), timeout=15)
 
     assert "scan_skill" in {tool.name for tool in tools.tools}
+
+
+async def test_the_verdict_lists_what_its_report_carries(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The MCP payload was the fifth reader of the graph's findings keys.
+
+    It read ``filtered_findings or findings or []``, so a scan whose findings the
+    meta filter all dropped came back with the pre-filter ones beside a ``report``
+    string containing none of them — a caller gating an install on
+    ``verdict["findings"]`` sees findings the report does not. It now uses
+    ``report.reported_findings``, the same reader the CLI's summary tables use.
+    """
+    dropped = Finding(
+        rule_id="TM1", message="dropped by the meta filter", severity="LOW", confidence=0.2
+    )
+
+    async def filtered_to_nothing(state: dict, config: dict) -> dict:
+        return {
+            "risk_score": 0,
+            "risk_severity": "LOW",
+            "risk_recommendation": "SAFE",
+            "execution_successful": True,
+            "analysis_completeness": {"entirely_uninspected_files": 0, "ledger_exceptions": []},
+            "findings": [dropped],
+            "filtered_findings": [],
+            "report_body": "{}",
+        }
+
+    monkeypatch.setattr(mcp_server.graph, "ainvoke", filtered_to_nothing)
+    verdict = await mcp_server.run_scan("fixture", use_llm=False)
+
+    assert verdict["findings"] == []
+
+
+async def test_the_verdict_still_lists_findings_the_report_keeps(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The control: "empty" must not pass for a payload that never lists anything."""
+    kept = Finding(rule_id="TM1", message="kept", severity="HIGH", confidence=0.9)
+
+    async def one_finding(state: dict, config: dict) -> dict:
+        return {
+            "risk_score": 25,
+            "risk_severity": "MEDIUM",
+            "risk_recommendation": "CAUTION",
+            "execution_successful": True,
+            "analysis_completeness": {"entirely_uninspected_files": 0, "ledger_exceptions": []},
+            "findings": [kept],
+            "filtered_findings": [kept],
+            "report_body": "{}",
+        }
+
+    monkeypatch.setattr(mcp_server.graph, "ainvoke", one_finding)
+    verdict = await mcp_server.run_scan("fixture", use_llm=False)
+
+    assert [f["id"] for f in verdict["findings"]] == ["TM1"]

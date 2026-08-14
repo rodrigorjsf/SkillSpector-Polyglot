@@ -52,7 +52,10 @@ examined.
 
 ``L4J-TOOL-DESC`` (MEDIUM). A ``@Tool`` description that instructs the model
 rather than describing the tool is a prompt-injection surface sitting in an
-annotation.
+annotation. Reported wherever the annotation is declared, and named with the
+Skill that attached the class whenever the Scan can join the two without
+guessing -- see :func:`_tool_attribution` for the guard, which is the whole of
+the difference between attribution and misattribution here.
 
 ``L4J-MCP-FILTER`` (MEDIUM). An ``McpToolProvider`` built without a tool filter
 hands the agent every tool its MCP server exposes rather than a scoped subset.
@@ -71,6 +74,7 @@ gets the scrutiny a ``SKILL.md`` body gets.
 
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Mapping
 from types import ModuleType
 from typing import TYPE_CHECKING
@@ -120,6 +124,13 @@ _TOOL_DESC_MESSAGE = (
     "A @Tool description carries instructions rather than describing the tool. The model reads "
     "this text as guidance, so it is a prompt-injection surface sitting in an annotation."
 )
+# Appended to the message above when, and only when, the Scan can say which
+# Skill the annotated class reaches. The attachment site is named alongside any
+# Skill name because the published spelling attaches tools to an already-built
+# Skill, whose name was set in some other chain: `skill.toBuilder().tools(new
+# OrderTools())` names no Skill at all, and a sentence that could only name one
+# would stay silent on the very shape the Rule was reported against.
+_TOOL_DESC_ATTRIBUTION = "The class {owner} is attached to {targets}."
 _MCP_FILTER_MESSAGE = (
     "McpToolProvider is built without a filter or filterToolNames, so every tool the MCP server "
     "exposes reaches the agent rather than a scoped subset."
@@ -293,7 +304,60 @@ def _carries_instructions(text: str) -> bool:
     )
 
 
-def _tool_surface_findings(path: str, source: str) -> list[Finding]:
+def _tool_desc_message(owner: str | None, attribution: Mapping[str, str]) -> str:
+    """The ``L4J-TOOL-DESC`` message, attributed when the Scan can attribute it."""
+    sentence = attribution.get(owner) if owner is not None else None
+    return f"{_TOOL_DESC_MESSAGE} {sentence}" if sentence else _TOOL_DESC_MESSAGE
+
+
+def _tool_attribution(java_sources: Mapping[str, str]) -> dict[str, str]:
+    """Which Skill each attached tool class reaches, for the classes that is knowable for.
+
+    Keyed by the class's simple name, valued by the sentence
+    ``L4J-TOOL-DESC`` appends. A class absent from the mapping gets no
+    attribution and the Rule reads exactly as it did before.
+
+    A class is absent unless the Scan declares its simple name **exactly once**.
+    That is the guard, and it is the reason this join exists at the Scan level
+    rather than per file. ``.tools(new OrderTools())`` names a simple name, not a
+    type: two packages may each declare an ``OrderTools``, and a join that
+    ignored that would tell a reader the poisoned tool reaches a Skill it never
+    reaches -- worse than the silence it replaced. Zero declarations is the same
+    answer for the other reason ``docs/MULTI_FRAMEWORK_SKILL_ANALYSIS.md`` §3.6
+    gives: resolution stops at the edge of the Scan, and a class held in no
+    scanned file is one this Scan cannot speak about. It also raises nothing
+    there, because a class the Scan does not hold declares no annotation for
+    ``L4J-TOOL-DESC`` to have reported in the first place.
+
+    Several attachment sites for one unambiguous class are not ambiguity -- they
+    are two true facts -- so all of them are named, ordered by path so a Finding
+    does not read differently depending on which file the Scan opened first.
+    """
+    from skillspector.langchain4j import skill_definitions, tool_surface  # noqa: PLC0415
+
+    declared: Counter[str] = Counter()
+    attachments: dict[str, list[str]] = {}
+    for path, source in sorted(java_sources.items()):
+        declared.update(tool_surface.find_declared_types(source))
+        for tools in skill_definitions.find_attached_tools(source):
+            for type_name in tools.type_names:
+                if type_name is None:
+                    continue
+                site = f"{path}:{tools.line}"
+                attachments.setdefault(type_name, []).append(
+                    f'the Skill "{tools.skill_name}" at {site}'
+                    if tools.skill_name
+                    else f"a Skill at {site}"
+                )
+
+    return {
+        owner: _TOOL_DESC_ATTRIBUTION.format(owner=owner, targets=", ".join(dict.fromkeys(targets)))
+        for owner, targets in attachments.items()
+        if declared[owner] == 1
+    }
+
+
+def _tool_surface_findings(path: str, source: str, attribution: Mapping[str, str]) -> list[Finding]:
     """The three Rules over an application's tool wiring."""
     from skillspector.langchain4j import tool_surface  # noqa: PLC0415
 
@@ -302,7 +366,7 @@ def _tool_surface_findings(path: str, source: str) -> list[Finding]:
             _TOOL_DESC_RULE_ID,
             path,
             annotation.line,
-            _TOOL_DESC_MESSAGE,
+            _tool_desc_message(annotation.owner, attribution),
             _TOOL_SURFACE_CONFIDENCE,
             severity=_TOOL_SURFACE_SEVERITY,
         )
@@ -476,6 +540,12 @@ def node(state: SkillspectorState) -> AnalyzerNodeResponse:
     # the silent failure this ordering exists to prevent.
     from skillspector.langchain4j import shell_skills  # noqa: PLC0415
 
+    # Built once, from every Java source at once, because it is the one question
+    # here a single compilation unit cannot answer: the `.tools(...)` call that
+    # grants a tool class and the `@Tool` annotation inside it are ordinarily in
+    # different files.
+    attribution = _tool_attribution(java_sources)
+
     for path, source in java_sources.items():
         usage_line = shell_skills.find_shell_skills_usage(source)
         if usage_line is not None:
@@ -483,7 +553,7 @@ def node(state: SkillspectorState) -> AnalyzerNodeResponse:
                 _finding(_RULE_ID, path, usage_line, _WIRING_MESSAGE, _WIRING_CONFIDENCE)
             )
         inspected[path].extend(_skill_definition_findings(path, source))
-        inspected[path].extend(_tool_surface_findings(path, source))
+        inspected[path].extend(_tool_surface_findings(path, source, attribution))
 
     # Indexed rather than `setdefault`: a declaring build file is an applicable
     # file, so it already has a row. A KeyError here would mean the two had

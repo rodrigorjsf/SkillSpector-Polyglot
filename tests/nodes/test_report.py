@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 SkillSpector-Polyglot contributors
 # SPDX-License-Identifier: Apache-2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -25,8 +26,11 @@ from skillspector.models import Finding
 from skillspector.nodes.report import (
     _DIMINISHING_WEIGHTS,
     _MAX_OCCURRENCES_PER_RULE,
+    _NOT_SCORED_FALLBACK_NOTE,
     _SEVERITY_POINTS,
     _compute_risk_score,
+    _format_markdown,
+    _format_terminal,
     report,
 )
 from skillspector.sarif_models import validate_sarif_report
@@ -243,6 +247,174 @@ class TestComputeRiskScoreEdgeCases:
         # 10 + 10 = 20
         assert score == 20
         assert band == "LOW"
+
+
+class TestUnscoredRuleIds:
+    """Rule ids a run was configured to report without scoring.
+
+    The parameter is **opaque**: nothing here names a SPEC rule, because
+    ``report.py`` does not know what one is. The catalogue knowledge stays in the
+    analyzer that publishes the ids, and this module only has to keep them out of
+    the score without disturbing the confidence rule that was already there.
+    """
+
+    def test_the_default_is_no_exemption(self) -> None:
+        """Omitting the parameter must be byte-identical to the scorer before it existed."""
+        findings = [_finding("R1", "MEDIUM"), _finding("R2", "HIGH")]
+
+        assert _compute_risk_score(findings, False) == _compute_risk_score(findings, False, None)
+        assert _compute_risk_score(findings, False, None, None) == _compute_risk_score(
+            findings, False
+        )
+
+    def test_an_empty_collection_is_no_exemption_either(self) -> None:
+        """``strict`` publishes ``[]``, which must score exactly as an absent key does."""
+        findings = [_finding("R1", "MEDIUM"), _finding("R2", "HIGH")]
+
+        assert _compute_risk_score(findings, False, None, []) == _compute_risk_score(
+            findings, False
+        )
+
+    def test_a_named_rule_contributes_nothing(self) -> None:
+        findings = [_finding("R1", "MEDIUM"), _finding("R2", "HIGH")]
+
+        # 10 + 25 = 35 with nothing exempt; 25 with R1 exempt.
+        assert _compute_risk_score(findings, False)[0] == 35
+        assert _compute_risk_score(findings, False, None, ["R1"])[0] == 25
+
+    def test_an_unnamed_rule_is_untouched(self) -> None:
+        """The exemption is by id, so it cannot reach a rule it does not name."""
+        findings = [_finding("R1", "MEDIUM"), _finding("R2", "HIGH")]
+
+        assert _compute_risk_score(findings, False, None, ["R3"])[0] == 35
+
+    def test_it_is_skipped_in_addition_to_the_confidence_rule(self) -> None:
+        """Both skips apply, and neither replaces the other.
+
+        The confidence rule stays exactly as it was for every other analyzer:
+        ``R2`` at zero confidence is skipped without being named, and ``R1`` is
+        skipped by name at full confidence.
+        """
+        findings = [_finding("R1", "MEDIUM"), _finding("R2", "HIGH", confidence=0.0)]
+
+        assert _compute_risk_score(findings, False, None, ["R1"])[0] == 0
+
+    def test_an_exempt_rule_consumes_no_diminishing_returns_slot(self) -> None:
+        """It is skipped before the occurrence count, like a zero-confidence finding.
+
+        Otherwise exempting a rule would silently discount the *next* occurrence
+        of a different rule's bucket -- which it cannot, since buckets are keyed
+        by rule id, but the ordering is asserted so a later refactor cannot move
+        the skip below the counter unnoticed.
+        """
+        findings = [
+            _finding("R1", "HIGH"),
+            _finding("R1", "HIGH"),
+            _finding("R2", "HIGH"),
+        ]
+
+        # R1 exempt entirely; R2 is a first occurrence at full weight: 25.
+        assert _compute_risk_score(findings, False, None, ["R1"])[0] == 25
+
+    def test_an_exempt_finding_stays_in_the_reported_list(self) -> None:
+        """The scorer never removes a finding -- it is the caller's list, untouched."""
+        findings = [_finding("R1", "MEDIUM"), _finding("R2", "HIGH")]
+        _compute_risk_score(findings, False, None, ["R1"])
+
+        assert [f.rule_id for f in findings] == ["R1", "R2"]
+
+
+class TestTheNotScoredNote:
+    """Both writers say a finding was not scored, rather than misreporting its confidence.
+
+    Issue #119: an unscored finding used to arrive at ``confidence = 0.0`` and
+    render as ``Confidence: 0%``, which a reviewer reads as "the scanner is
+    completely unsure". The confidence is now the honest one and the note is what
+    carries "this run did not score it" — so the two statements are separate and
+    both true.
+
+    The rule ids **and the note** are opaque here for the same reason they are
+    opaque in the scorer: neither writer knows which analyzer published them, so
+    neither may name that analyzer's flag. The sentence is rendered verbatim from
+    what the publisher handed over; ``_NOT_SCORED_FALLBACK_NOTE`` is the generic
+    statement left when a publisher hands over none.
+    """
+
+    @staticmethod
+    def _rendered(writer: object, **kwargs: object) -> str:
+        return writer(  # type: ignore[operator]
+            [_finding("R1", "MEDIUM"), _finding("R2", "HIGH")],
+            [],
+            {"name": "demo"},
+            "/skills/demo",
+            35,
+            "MEDIUM",
+            "CAUTION",
+            False,
+            use_llm=False,
+            **kwargs,
+        )
+
+    @pytest.mark.parametrize("writer", [_format_terminal, _format_markdown])
+    def test_a_named_rule_is_marked_not_scored(self, writer: object) -> None:
+        body = self._rendered(writer, unscored_rule_ids=frozenset({"R1"}))
+
+        assert _NOT_SCORED_FALLBACK_NOTE in body
+
+    @pytest.mark.parametrize("writer", [_format_terminal, _format_markdown])
+    def test_the_publisher_supplies_the_sentence(self, writer: object) -> None:
+        """The remedy names a flag, so it comes from state rather than from here.
+
+        A publisher's note is rendered verbatim and the generic fallback is gone
+        when it is — otherwise a second gated catalogue's finding would carry
+        this one's flag.
+        """
+        body = self._rendered(
+            writer,
+            unscored_rule_ids=frozenset({"R1"}),
+            unscored_rule_note="left out — pass --imaginary-flag to score it",
+        )
+
+        assert "(left out — pass --imaginary-flag to score it)" in body
+        assert _NOT_SCORED_FALLBACK_NOTE not in body
+
+    @pytest.mark.parametrize("writer", [_format_terminal, _format_markdown])
+    def test_the_writers_name_no_analyzer_flag(self, writer: object) -> None:
+        """Handed ids and nothing else, neither writer invents a remedy.
+
+        ``report`` must not learn what a SPEC rule is, and the sentence beside an
+        unscored finding is the place that constraint is easiest to lose.
+        """
+        body = self._rendered(writer, unscored_rule_ids=frozenset({"R1"}))
+
+        assert "--spec-checks" not in body
+
+    @pytest.mark.parametrize("writer", [_format_terminal, _format_markdown])
+    def test_the_confidence_it_prints_is_the_honest_one(self, writer: object) -> None:
+        """The note is added beside the percentage, never in place of it."""
+        body = self._rendered(writer, unscored_rule_ids=frozenset({"R1"}))
+
+        assert "100%" in body
+        # `": 0%"` rather than `"0%"`, which is a substring of `"100%"`. The two
+        # writers label the field differently — `Confidence:` and
+        # `**Confidence:**` — and the colon-space is what they share.
+        assert ": 0%" not in body
+
+    @pytest.mark.parametrize("writer", [_format_terminal, _format_markdown])
+    def test_the_default_adds_nothing(self, writer: object) -> None:
+        """Every scan that published no such ids renders exactly as it did before."""
+        assert self._rendered(writer) == self._rendered(writer, unscored_rule_ids=frozenset())
+        assert self._rendered(writer) == self._rendered(
+            writer, unscored_rule_note="never rendered without ids"
+        )
+        assert _NOT_SCORED_FALLBACK_NOTE not in self._rendered(writer)
+
+    @pytest.mark.parametrize("writer", [_format_terminal, _format_markdown])
+    def test_an_unnamed_rule_is_left_alone(self, writer: object) -> None:
+        """One note per named rule, not one per finding in the report."""
+        body = self._rendered(writer, unscored_rule_ids=frozenset({"R1"}))
+
+        assert body.count(_NOT_SCORED_FALLBACK_NOTE) == 1
 
 
 class TestComputeRiskScoreBands:

@@ -547,6 +547,28 @@ class LLMAnalyzerBase:
 
         return batches
 
+    def should_submit(self, batch: Batch) -> bool:
+        """Whether *batch* is worth a chat-model invocation. Default: always.
+
+        The one reason to answer ``False`` is that the prompt this batch would
+        build asks the model nothing — a subclass whose :meth:`build_prompt`
+        withholds some findings can end up with a batch holding only withheld
+        ones, and sending the file anyway is a paid call whose entire answer is
+        discarded before it is read.
+
+        **A declined batch is still a completed batch**, and that is the whole of
+        why the guard lives here rather than in the caller. Dropping it from the
+        submitted list instead would drop it from
+        :attr:`BatchExecutionResult.successful`, and
+        ``nodes.meta_analyzer._meta_ledger_response`` derives its Inspection
+        Ledger rows — and through them ``effective_finding_ids``, which
+        ``nodes.report.report`` selects the reported findings from — from exactly
+        that list. A batch that vanishes here takes its findings out of the
+        report. Declining returns ``(batch, [])``: no call, no verdicts, and the
+        same accounting a batch the model answered nothing about would produce.
+        """
+        return True
+
     # -- Prompt / parse -----------------------------------------------------
 
     def build_prompt(self, batch: Batch, **kwargs: object) -> str:
@@ -731,6 +753,9 @@ class LLMAnalyzerBase:
         """Execute batches and retain each sanitized failure alongside successes."""
         outcome = BatchExecutionResult()
         for batch in batches:
+            if not self.should_submit(batch):
+                outcome.successful.append((batch, []))
+                continue
             try:
                 prompt = self.build_prompt(batch, **kwargs)
                 result = self._invoke_batch_with_retries(batch, prompt)
@@ -821,6 +846,8 @@ class LLMAnalyzerBase:
         sem = asyncio.Semaphore(max_concurrency)
 
         async def _process(batch: Batch) -> tuple[Batch, list]:
+            if not self.should_submit(batch):
+                return (batch, [])
             async with sem:
                 prompt = self.build_prompt(batch, **kwargs)
                 return await self._ainvoke_batch_with_retries(batch, prompt)

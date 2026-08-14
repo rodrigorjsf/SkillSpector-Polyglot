@@ -34,7 +34,7 @@ skillspector scan ./my-skill/ --baseline .skillspector-baseline.yaml --show-supp
 
 | Command / option | Description |
 |------------------|-------------|
-| `skillspector baseline <path> [-o FILE] [--no-llm] [--reason TEXT]` | Scan and write a baseline that fingerprint-suppresses every current finding. Default output: `.skillspector-baseline.yaml`. |
+| `skillspector baseline <path> [-o FILE] [--no-llm] [--reason TEXT]` | Scan and write a baseline that fingerprint-suppresses every current finding. Default output: `.skillspector-baseline.yaml`. **A baseline that has to keep matching is a `--no-llm` baseline**: without the flag the LLM stage writes model text into four hashed fields, with no temperature or seed pinned, so the same defect can fingerprint two ways between identical runs — see [What a fingerprint binds to](#what-a-fingerprint-binds-to). |
 | `skillspector scan <path> --baseline FILE` (`-b`) | Suppress findings matching the baseline before scoring/reporting. |
 | `skillspector scan <path> --baseline FILE --show-suppressed` | Also list the suppressed findings (they still don't affect the score). |
 
@@ -108,6 +108,73 @@ non-empty `reason`. `rule_id` and `file` are informational fields for reviewers.
 If source content is unavailable or `scanner_version` does not match, exact
 fingerprints fail closed and suppress nothing. Use `rules` only when you
 intentionally want a reviewed suppression to survive source drift.
+
+### What a fingerprint binds to
+
+**A fingerprint binds to the evidence — what was found and where.** Every field it
+hashes is something the scanner observed: the file's content, the rule, the
+severity, the location, the emitted text. The rule that keeps it that way is that
+**no analyzer may encode how the run was configured into a `Finding`** — a baseline
+is committed and shared, so a fingerprint that moved with the command line would
+suppress a finding under one invocation and not another, silently, and every field
+of a `Finding` is hashed.
+
+That rule is what makes an **Agent Skills conformance finding** (`SPEC-1` …
+`SPEC-17`, see
+[Specification conformance](../README.md#specification-conformance----spec-checks))
+mode-independent, and `skillspector baseline --spec-checks` relies on it. A
+baseline generated under `advisory` suppresses the same defect under `strict`, and
+the other way round: escalating the mode changes what a finding *costs*, not
+whether the baseline accepts it, so nothing a team already reviewed comes back
+unannounced. The mode is carried in graph state rather than on the finding, and
+the invariant is restated in `suppression.finding_fingerprint` so the next such
+overload is caught at the source.
+
+That holds for **every** finding in the scan, not only the conformance ones,
+because `--spec-checks` is inert to the LLM stage: `meta_analyzer._model_visible`
+keeps every `SPEC-*` id out of the meta-analysis prompt *and* out of the token
+overhead the per-file content budget is charged, so enabling the flag cannot move
+an unrelated finding into a different chunk and get a different answer about it
+from the model.
+
+**Two known exceptions, and neither is something the conformance rules
+introduced.** Both are inherited behaviour and both predate them.
+
+- **`--no-llm`.** The LLM stage rewrites `confidence`, `message`, `remediation`,
+  `explanation` and `tags` — all five hashed — so the same defect fingerprints one
+  way with the flag and another way without it. Tracked as
+  [issue #124](https://github.com/rodrigorjsf/SkillSpector-Polyglot/issues/124)
+  with the measurement and the repair options.
+
+  **Generating and consuming on the same side of the flag is necessary but not
+  sufficient, so it is not the remedy.** With `--no-llm` those five fields are
+  computed from the static finding and are stable run to run. Without it, four of
+  them are *model output copied verbatim* — `message`, `confidence`, `remediation`
+  and `explanation` — and the fifth (`tags`) turns on whether the model confirmed
+  the finding. Nothing pins that text: no temperature and no seed are set on the
+  chat model, and which model answers is itself run configuration
+  (`SKILLSPECTOR_PROVIDER`, `SKILLSPECTOR_MODEL`, `SKILLSPECTOR_MODEL_<SLOT>`). So
+  two consecutive identical invocations may fingerprint the same defect
+  differently, and the non-suppression is silent — no warning, no exit-code
+  change.
+
+  **A baseline that has to keep matching is a `--no-llm` baseline.** An LLM-side
+  baseline is best-effort: useful for a single review pass, not something to
+  commit and rely on.
+- **The scan root.** `component.path` is normalized relative to the root the scan
+  was given, and it is hashed, so a fingerprint only matches a scan rooted the
+  same way. This bites on `--repo-scan`, because `skillspector baseline` has no
+  repo-scan mode: pointed at a repository root it scans the whole tree as one
+  anonymous skill and records `skills/My_Skill/SKILL.md`, while `scan --repo-scan`
+  invokes the scanner once per discovered skill directory and records `SKILL.md`.
+  Those never match, so that baseline suppresses nothing. **Baseline each skill
+  directory** (`skillspector baseline ./skills/My_Skill …`) — those entries do
+  match under `--repo-scan`, measurably — and concatenate their `fingerprints`
+  lists into the single document `--baseline` accepts. There is no supported
+  command that emits that combined document today.
+
+Read the paragraphs above as a rule binding the analyzers, not as a description of
+the meta-analysis stage or of how the CLI chooses a scan root.
 
 ### Migrating version 1 baselines
 

@@ -1,0 +1,517 @@
+{
+  "analysis_completeness": {
+    "analyzer_statuses": [
+      {
+        "analyzer_id": "behavioral_ast",
+        "completed": 0,
+        "failed": 0,
+        "message": "No files matched this analyzer's applicability contract.",
+        "planned_work": 0,
+        "reason_code": "no_applicable_files",
+        "skipped": 0,
+        "status": "not_applicable",
+        "unaccounted": 0
+      },
+      {
+        "analyzer_id": "behavioral_taint_tracking",
+        "completed": 0,
+        "failed": 0,
+        "message": "No files matched this analyzer's applicability contract.",
+        "planned_work": 0,
+        "reason_code": "no_applicable_files",
+        "skipped": 0,
+        "status": "not_applicable",
+        "unaccounted": 0
+      },
+      {
+        "analyzer_id": "framework_deepagents_js",
+        "completed": 2,
+        "failed": 0,
+        "planned_work": 2,
+        "skipped": 0,
+        "status": "completed",
+        "unaccounted": 0
+      },
+      {
+        "analyzer_id": "mcp_least_privilege",
+        "completed": 0,
+        "failed": 0,
+        "message": "No compatible manifest was present for this analyzer.",
+        "planned_work": 0,
+        "reason_code": "manifest_absent",
+        "skipped": 0,
+        "status": "not_applicable",
+        "unaccounted": 0
+      },
+      {
+        "analyzer_id": "mcp_rug_pull",
+        "completed": 1,
+        "failed": 0,
+        "planned_work": 1,
+        "skipped": 0,
+        "status": "completed",
+        "unaccounted": 0
+      },
+      {
+        "analyzer_id": "mcp_tool_poisoning",
+        "completed": 0,
+        "failed": 0,
+        "message": "No compatible manifest was present for this analyzer.",
+        "planned_work": 0,
+        "reason_code": "manifest_absent",
+        "skipped": 0,
+        "status": "not_applicable",
+        "unaccounted": 0
+      },
+      {
+        "analyzer_id": "meta_analyzer",
+        "completed": 0,
+        "failed": 0,
+        "message": "Analyzer was disabled by the requested configuration.",
+        "planned_work": 0,
+        "reason_code": "disabled_by_configuration",
+        "skipped": 0,
+        "status": "disabled",
+        "unaccounted": 0
+      },
+      {
+        "analyzer_id": "semantic_developer_intent",
+        "completed": 0,
+        "failed": 0,
+        "message": "Analyzer was disabled by the requested configuration.",
+        "planned_work": 0,
+        "reason_code": "disabled_by_configuration",
+        "skipped": 0,
+        "status": "disabled",
+        "unaccounted": 0
+      },
+      {
+        "analyzer_id": "semantic_quality_policy",
+        "completed": 0,
+        "failed": 0,
+        "message": "Analyzer was disabled by the requested configuration.",
+        "planned_work": 0,
+        "reason_code": "disabled_by_configuration",
+        "skipped": 0,
+        "status": "disabled",
+        "unaccounted": 0
+      },
+      {
+        "analyzer_id": "semantic_security_discovery",
+        "completed": 0,
+        "failed": 0,
+        "message": "Analyzer was disabled by the requested configuration.",
+        "planned_work": 0,
+        "reason_code": "disabled_by_configuration",
+        "skipped": 0,
+        "status": "disabled",
+        "unaccounted": 0
+      },
+      {
+        "analyzer_id": "static_patterns_agent_snooping",
+        "completed": 2,
+        "failed": 0,
+        "planned_work": 2,
+        "skipped": 0,
+        "status": "completed",
+        "unaccounted": 0
+      },
+      {
+        "analyzer_id": "static_patterns_anti_refusal",
+        "completed": 2,
+        "failed": 0,
+        "planned_work": 2,
+        "skipped": 0,
+        "status": "completed",
+        "unaccounted": 0
+      },
+      {
+        "analyzer_id": "static_patterns_data_exfiltration",
+        "completed": 2,
+        "failed": 0,
+        "planned_work": 2,
+        "skipped": 0,
+        "status": "completed",
+        "unaccounted": 0
+      },
+      {
+        "analyzer_id": "static_patterns_excessive_agency",
+        "completed": 2,
+        "failed": 0,
+        "planned_work": 2,
+        "skipped": 0,
+        "status": "completed",
+        "unaccounted": 0
+      },
+      {
+        "analyzer_id": "static_patterns_harmful_content",
+        "completed": 2,
+        "failed": 0,
+        "planned_work": 2,
+        "skipped": 0,
+        "status": "completed",
+        "unaccounted": 0
+      },
+      {
+        "analyzer_id": "static_patterns_memory_poisoning",
+        "completed": 2,
+        "failed": 0,
+        "planned_work": 2,
+        "skipped": 0,
+        "status": "completed",
+        "unaccounted": 0
+      },
+      {
+        "analyzer_id": "static_patterns_output_handling",
+        "completed": 2,
+        "failed": 0,
+        "planned_work": 2,
+        "skipped": 0,
+        "status": "completed",
+        "unaccounted": 0
+      },
+      {
+        "analyzer_id": "static_patterns_privilege_escalation",
+        "completed": 2,
+        "failed": 0,
+        "planned_work": 2,
+        "skipped": 0,
+        "status": "completed",
+        "unaccounted": 0
+      },
+      {
+        "analyzer_id": "static_patterns_prompt_injection",
+        "completed": 2,
+        "failed": 0,
+        "planned_work": 2,
+        "skipped": 0,
+        "status": "completed",
+        "unaccounted": 0
+      },
+      {
+        "analyzer_id": "static_patterns_rogue_agent",
+        "completed": 2,
+        "failed": 0,
+        "planned_work": 2,
+        "skipped": 0,
+        "status": "completed",
+        "unaccounted": 0
+      },
+      {
+        "analyzer_id": "static_patterns_ssrf",
+        "completed": 2,
+        "failed": 0,
+        "planned_work": 2,
+        "skipped": 0,
+        "status": "completed",
+        "unaccounted": 0
+      },
+      {
+        "analyzer_id": "static_patterns_supply_chain",
+        "completed": 2,
+        "failed": 0,
+        "planned_work": 2,
+        "skipped": 0,
+        "status": "completed",
+        "unaccounted": 0
+      },
+      {
+        "analyzer_id": "static_patterns_system_prompt_leakage",
+        "completed": 2,
+        "failed": 0,
+        "planned_work": 2,
+        "skipped": 0,
+        "status": "completed",
+        "unaccounted": 0
+      },
+      {
+        "analyzer_id": "static_patterns_tool_misuse",
+        "completed": 2,
+        "failed": 0,
+        "planned_work": 2,
+        "skipped": 0,
+        "status": "completed",
+        "unaccounted": 0
+      },
+      {
+        "analyzer_id": "static_yara",
+        "completed": 2,
+        "failed": 0,
+        "planned_work": 2,
+        "skipped": 0,
+        "status": "completed",
+        "unaccounted": 0
+      }
+    ],
+    "coverage_percent": 100.0,
+    "entirely_uninspected_files": 0,
+    "execution_successful": true,
+    "findings_after_filtering": 3,
+    "findings_before_filtering": 3,
+    "fully_inspected_files": 2,
+    "is_complete": false,
+    "ledger_exceptions": [],
+    "limitations": [
+      "Analyzer was disabled by the requested configuration.",
+      "Analyzer was disabled by the requested configuration.",
+      "Analyzer was disabled by the requested configuration.",
+      "Analyzer was disabled by the requested configuration."
+    ],
+    "partially_inspected_files": 0,
+    "scanned_components": 2,
+    "scope_exclusions": [],
+    "total_components": 2
+  },
+  "component_metadata": [
+    {
+      "executable": false,
+      "lines": 10,
+      "path": "package.json",
+      "size_bytes": 262,
+      "type": "json"
+    },
+    {
+      "executable": true,
+      "lines": 20,
+      "path": "src/agent.ts",
+      "size_bytes": 600,
+      "type": "typescript"
+    }
+  ],
+  "findings": [
+    {
+      "category": "Supply Chain",
+      "code_snippet": "  \"type\": \"module\",\n  \"description\": \"A TypeScript agent whose Skill sources and backend are chosen per request from the caller's tenant.\",\n  \"dependencies\": {\n    \"deepagents\": \"^1.9.1\"\n  }\n}",
+      "confidence": 0.4,
+      "context": "  \"type\": \"module\",\n  \"description\": \"A TypeScript agent whose Skill sources and backend are chosen per request from the caller's tenant.\",\n  \"dependencies\": {\n    \"deepagents\": \"^1.9.1\"\n  }\n}",
+      "end_line": null,
+      "explanation": "Dependencies lack version pinning, allowing potential malicious package updates. Consider pinning versions.",
+      "file": "package.json",
+      "finding": "\"deepagents\": \"^1.9.1\"",
+      "intent": null,
+      "matched_text": "\"deepagents\": \"^1.9.1\"",
+      "message": "Unpinned Dependencies",
+      "pattern": "Unpinned Dependencies",
+      "remediation": "Pin all dependency versions in requirements.txt or pyproject.toml. Use exact versions (==) or compatible ranges. Run pip-audit regularly.",
+      "rule_id": "SC1",
+      "severity": "LOW",
+      "start_line": 8,
+      "tags": [
+        "Supply Chain"
+      ]
+    },
+    {
+      "category": "Deep Agents Framework",
+      "code_snippet": null,
+      "confidence": 1.0,
+      "context": null,
+      "end_line": null,
+      "explanation": "A Deep Agents host configuration carries something that is not statically resolvable -- the Skill source list, the backend, the permission rules, or the store a resolved Skill path is routed to. Resolution stops at the module boundary by design, so what the agent was given, or what it may do to it, exists in no scanned file. This is reported rather than skipped: silence here would let the report read as clean on the one surface never inspected.",
+      "file": "src/agent.ts",
+      "finding": null,
+      "intent": null,
+      "matched_text": null,
+      "message": "The Skill source list is assembled at runtime, so the Scan cannot say which Skill directories this agent was given and examined none of them.",
+      "pattern": "Unresolvable Host Configuration",
+      "remediation": "Name the value in the same module the agent is built in -- a literal list of Skill paths, a module-level constant, a backend constructed there rather than returned by a helper -- so the scanner reads the configuration the agent runs with. Where it genuinely has to be assembled per request, review that code path separately; no static scan can follow it.",
+      "rule_id": "DA-UNRESOLVED",
+      "severity": "MEDIUM",
+      "start_line": 17,
+      "tags": [
+        "ASI02"
+      ]
+    },
+    {
+      "category": "Deep Agents Framework",
+      "code_snippet": null,
+      "confidence": 1.0,
+      "context": null,
+      "end_line": null,
+      "explanation": "A Deep Agents host configuration carries something that is not statically resolvable -- the Skill source list, the backend, the permission rules, or the store a resolved Skill path is routed to. Resolution stops at the module boundary by design, so what the agent was given, or what it may do to it, exists in no scanned file. This is reported rather than skipped: silence here would let the report read as clean on the one surface never inspected.",
+      "file": "src/agent.ts",
+      "finding": null,
+      "intent": null,
+      "matched_text": null,
+      "message": "The backend is built somewhere this Scan cannot follow, so whether the agent's Skill files are on disk at all -- and whether anything can write to them -- was not determined.",
+      "pattern": "Unresolvable Host Configuration",
+      "remediation": "Name the value in the same module the agent is built in -- a literal list of Skill paths, a module-level constant, a backend constructed there rather than returned by a helper -- so the scanner reads the configuration the agent runs with. Where it genuinely has to be assembled per request, review that code path separately; no static scan can follow it.",
+      "rule_id": "DA-UNRESOLVED",
+      "severity": "MEDIUM",
+      "start_line": 18,
+      "tags": [
+        "ASI02"
+      ]
+    }
+  ],
+  "framework": "deepagents_js",
+  "has_executable_scripts": true,
+  "manifest": {},
+  "manifest_status": "absent",
+  "risk_recommendation": "SAFE",
+  "risk_score": 15,
+  "risk_severity": "LOW",
+  "sarif_report": {
+    "$schema": "https://schemastore.azurewebsites.net/schemas/json/sarif-2.1.0-rtm.4.json",
+    "runs": [
+      {
+        "invocations": [
+          {
+            "executionSuccessful": true,
+            "toolExecutionNotifications": [
+              {
+                "level": "warning",
+                "message": {
+                  "text": "Analyzer was disabled by the requested configuration."
+                },
+                "properties": {
+                  "kind": "inspection_limitation"
+                }
+              },
+              {
+                "level": "warning",
+                "message": {
+                  "text": "Analyzer was disabled by the requested configuration."
+                },
+                "properties": {
+                  "kind": "inspection_limitation"
+                }
+              },
+              {
+                "level": "warning",
+                "message": {
+                  "text": "Analyzer was disabled by the requested configuration."
+                },
+                "properties": {
+                  "kind": "inspection_limitation"
+                }
+              },
+              {
+                "level": "warning",
+                "message": {
+                  "text": "Analyzer was disabled by the requested configuration."
+                },
+                "properties": {
+                  "kind": "inspection_limitation"
+                }
+              }
+            ]
+          }
+        ],
+        "results": [
+          {
+            "level": "note",
+            "locations": [
+              {
+                "physicalLocation": {
+                  "artifactLocation": {
+                    "uri": "package.json"
+                  },
+                  "region": {
+                    "startLine": 8
+                  }
+                }
+              }
+            ],
+            "message": {
+              "text": "Unpinned Dependencies"
+            },
+            "properties": {
+              "category": "Supply Chain",
+              "code_snippet": "  \"type\": \"module\",\n  \"description\": \"A TypeScript agent whose Skill sources and backend are chosen per request from the caller's tenant.\",\n  \"dependencies\": {\n    \"deepagents\": \"^1.9.1\"\n  }\n}",
+              "confidence": 0.4,
+              "explanation": "Dependencies lack version pinning, allowing potential malicious package updates. Consider pinning versions.",
+              "finding": "\"deepagents\": \"^1.9.1\"",
+              "pattern": "Unpinned Dependencies",
+              "remediation": "Pin all dependency versions in requirements.txt or pyproject.toml. Use exact versions (==) or compatible ranges. Run pip-audit regularly.",
+              "severity": "LOW",
+              "tags": [
+                "Supply Chain"
+              ]
+            },
+            "ruleId": "SC1"
+          },
+          {
+            "level": "warning",
+            "locations": [
+              {
+                "physicalLocation": {
+                  "artifactLocation": {
+                    "uri": "src/agent.ts"
+                  },
+                  "region": {
+                    "startLine": 17
+                  }
+                }
+              }
+            ],
+            "message": {
+              "text": "The Skill source list is assembled at runtime, so the Scan cannot say which Skill directories this agent was given and examined none of them."
+            },
+            "properties": {
+              "category": "Deep Agents Framework",
+              "confidence": 1.0,
+              "explanation": "A Deep Agents host configuration carries something that is not statically resolvable -- the Skill source list, the backend, the permission rules, or the store a resolved Skill path is routed to. Resolution stops at the module boundary by design, so what the agent was given, or what it may do to it, exists in no scanned file. This is reported rather than skipped: silence here would let the report read as clean on the one surface never inspected.",
+              "pattern": "Unresolvable Host Configuration",
+              "remediation": "Name the value in the same module the agent is built in -- a literal list of Skill paths, a module-level constant, a backend constructed there rather than returned by a helper -- so the scanner reads the configuration the agent runs with. Where it genuinely has to be assembled per request, review that code path separately; no static scan can follow it.",
+              "severity": "MEDIUM",
+              "tags": [
+                "ASI02"
+              ]
+            },
+            "ruleId": "DA-UNRESOLVED"
+          },
+          {
+            "level": "warning",
+            "locations": [
+              {
+                "physicalLocation": {
+                  "artifactLocation": {
+                    "uri": "src/agent.ts"
+                  },
+                  "region": {
+                    "startLine": 18
+                  }
+                }
+              }
+            ],
+            "message": {
+              "text": "The backend is built somewhere this Scan cannot follow, so whether the agent's Skill files are on disk at all -- and whether anything can write to them -- was not determined."
+            },
+            "properties": {
+              "category": "Deep Agents Framework",
+              "confidence": 1.0,
+              "explanation": "A Deep Agents host configuration carries something that is not statically resolvable -- the Skill source list, the backend, the permission rules, or the store a resolved Skill path is routed to. Resolution stops at the module boundary by design, so what the agent was given, or what it may do to it, exists in no scanned file. This is reported rather than skipped: silence here would let the report read as clean on the one surface never inspected.",
+              "pattern": "Unresolvable Host Configuration",
+              "remediation": "Name the value in the same module the agent is built in -- a literal list of Skill paths, a module-level constant, a backend constructed there rather than returned by a helper -- so the scanner reads the configuration the agent runs with. Where it genuinely has to be assembled per request, review that code path separately; no static scan can follow it.",
+              "severity": "MEDIUM",
+              "tags": [
+                "ASI02"
+              ]
+            },
+            "ruleId": "DA-UNRESOLVED"
+          }
+        ],
+        "tool": {
+          "driver": {
+            "name": "skillspector",
+            "rules": [
+              {
+                "id": "DA-UNRESOLVED",
+                "shortDescription": {
+                  "text": "The Skill source list is assembled at runtime, so the Scan cannot say which Skill directories this agent was given and examined none of them."
+                }
+              },
+              {
+                "id": "SC1",
+                "shortDescription": {
+                  "text": "Unpinned Dependencies"
+                }
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "version": "2.1.0"
+  }
+}

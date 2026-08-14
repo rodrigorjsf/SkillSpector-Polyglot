@@ -10,14 +10,28 @@ re-fetching a live site during development or review.
 | [agent-skills-specification.md](agent-skills-specification.md) | <https://agentskills.io/specification> | 2026-08-01 |
 | [langchain4j-skills.md](langchain4j-skills.md) | <https://docs.langchain4j.dev/tutorials/skills/> | 2026-08-01 |
 | [langchain-deepagents-skills.md](langchain-deepagents-skills.md) | <https://docs.langchain.com/oss/python/deepagents/skills> | 2026-08-01 |
+| [deepagents-js-skills.md](deepagents-js-skills.md) | <https://docs.langchain.com/oss/javascript/deepagents/skills> | 2026-08-13 |
 
-## Why these three
+## Why these four
 
-The Agent Skills specification is the **shared normative anchor**. Both LangChain4j
-Skills and LangChain Deep Agents state explicitly that their skills follow it, and both
-consume the same `SKILL.md` layout SkillSpector already scans. The framework-specific
-files cover only what the specification does not: the host-side wiring (Java classes,
-Python `create_deep_agent` arguments) where the security-relevant configuration lives.
+The Agent Skills specification is the **shared normative anchor**. LangChain4j Skills and
+both LangChain Deep Agents distributions state explicitly that their skills follow it, and
+all three consume the same `SKILL.md` layout SkillSpector already scans. The
+framework-specific files cover only what the specification does not: the host-side wiring
+(Java classes, Python `create_deep_agent` arguments, JavaScript `createDeepAgent` options)
+where the security-relevant configuration lives.
+
+**Two of the four capture the same framework in two languages, and that is deliberate.** The
+PyPI distribution `deepagents` and the npm distribution `deepagents` are published from
+different repositories on different release clocks, and their host APIs differ in shape even
+where they agree in meaning. One merged capture would have to pick a spelling for every
+difference, and every pick would be wrong on one side. So each language gets its own capture,
+its own measured version range and its own inventory module — and where a page's *prose*
+borrows the other language's spellings, the annotation rule below applies.
+
+**A framework earns a capture here by publishing host-side skill-loading documentation that
+names the Agent Skills specification and consumes the same `SKILL.md` layout.** That is the
+admission rule; a framework that merely has "skills" in some other sense does not qualify.
 
 ## Conventions
 
@@ -51,6 +65,26 @@ visible.
 One such citation has been checked and does not hold; the finding is recorded once, in
 [langchain4j-skills.md § The two "integration approaches" are not specification vocabulary](langchain4j-skills.md#the-two-integration-approaches-are-not-specification-vocabulary).
 
+**The same treatment applies to a page that disagrees with *itself*.**
+[deepagents-js-skills.md](deepagents-js-skills.md) is a JavaScript page whose prose repeatedly
+uses the Python distribution's spellings — `create_deep_agent`, `interrupt_on`, `root_dir`, a
+Python dict with a capital `True`, a `list[str]` type annotation — while its code blocks are
+correct JavaScript throughout. The capture reproduces both and annotates the conflict in a
+section of its own; **the code blocks are the ones SkillSpector's spellings were read from.**
+Correcting the prose in place would have hidden that upstream ships it that way, which is
+exactly what a later reader needs to know.
+
+**The rule settles a disagreement; it is not a licence to read a code block as an
+enumeration.** That capture's annotation once filed `edit_file` as a prose-only spelling and
+left it out of the JavaScript inventory on this rule. Both halves were wrong. The page's one
+`interruptOn` example gates three tools, which is *an* example of a gate rather than a list of
+what may be gated, so nothing disagreed with anything; and `edit_file` is snake_case in both
+distributions, so it is a JavaScript tool name in JavaScript prose rather than a Python
+spelling leak like `interrupt_on`. Sweeping the published npm tarballs — which is what settles
+a spelling here, not a page — found it in every release of the measured range. Before deciding
+a spelling is absent, check that the code block really *contradicts* the prose, and check the
+artifacts.
+
 ## Refreshing
 
 Upstream docs move. Re-capture with:
@@ -59,6 +93,7 @@ Upstream docs move. Re-capture with:
 # Mintlify-backed sites (agentskills.io, docs.langchain.com) serve raw markdown
 curl -sSL https://agentskills.io/specification.md
 curl -sSL https://docs.langchain.com/oss/python/deepagents/skills.md
+curl -sSL https://docs.langchain.com/oss/javascript/deepagents/skills.md
 
 # Docusaurus (docs.langchain4j.dev) serves HTML only
 curl -sSL https://docs.langchain4j.dev/tutorials/skills/ | lynx -dump -nolist -stdin

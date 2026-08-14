@@ -97,14 +97,23 @@ Snapshot. Audit files that carry a header, and leave the ones that deliberately 
 
 `THIRD_PARTY_NOTICES.md` is upstream's record of what the distribution pulls in.
 
-**Presence is already enforced** — `tests/unit/test_third_party_notices.py` fails when
-`project.dependencies` and the file's `## Runtime Dependencies` section disagree in either
-direction, so `make test-unit` answers "is anything missing" and this step does not re-derive it.
-Two things it does **not** cover, and this step does:
+**Presence is already enforced, once per section** — `tests/unit/test_third_party_notices.py` fails
+when a declaration and its section of the notices disagree in either direction: `project.dependencies`
+against `## Runtime Dependencies`, and each redistributed extra of `project.optional-dependencies`
+against its `## Optional Dependencies (<extra> extra)` section (`#109`). It reads the redistributed
+set out of the notices' headings rather than listing it, so writing a section is what generates its
+comparisons. A further test fails when `pyproject.toml` declares an extra that has neither a section
+nor a recorded not-redistributed status, when one has *both* — a section contradicts the very record
+that says it has none — or when it drops one that has either, so a new extra cannot slip in
+undisclosed and a renamed one cannot leave a comparison silently pointed at nothing. A third fails on
+a duplicated section heading, which would otherwise hide every entry beneath the second copy from
+both directions at once. The `dev` extra is deliberately absent from the notices — it declares
+tooling for working on this project rather than capability a consumer installs to use the
+distribution — and that decision is recorded in the test's `_NOT_REDISTRIBUTED_EXTRAS` rather than
+re-decided per audit. So `make test-unit` answers "is anything missing" and this step does not
+re-derive it. Two things it does **not** cover, and this step does:
 
-- **`project.optional-dependencies`.** `mcp` is redistributed and unaudited — tracked as `#109`.
-  `dev` is not redistributed and stays out.
-- **License compatibility.** The test checks that an entry exists, never what it says. For each
+- **License compatibility.** The test proves that an entry exists, never what it says. For each
   dependency the fork added since the merge-base:
 
   ```bash
@@ -114,8 +123,14 @@ Two things it does **not** cover, and this step does:
   confirm its stated license is compatible with Apache-2.0 redistribution, reading the license and
   copyright line from the installed `dist-info` rather than recalling either.
 
-**Done when** the test passes, every fork-added runtime dependency's license is confirmed
-compatible, and the extras' status is recorded rather than assumed.
+- **That the `dist-info` you read is one the distribution permits.** The test compares names, never
+  versions. Check the installed `METADATA`'s `Version:` against the specifier `pyproject.toml`
+  declares before treating its license file as the source of a §4 fact — see the read-never-recalled
+  paragraph of `.claude/rules/license-compliance.md`, and `#113` for enforcing it.
+
+**Done when** the test passes and every fork-added redistributed dependency's license — runtime or
+`mcp` extra — is confirmed compatible with Apache-2.0 redistribution, from a `dist-info` whose
+version satisfies the declared bound.
 
 ## 4. Audit the license itself
 

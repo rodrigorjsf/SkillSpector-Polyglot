@@ -279,6 +279,27 @@ class TestTheAdvisoryStaysOutOfTheReport:
 
         assert "--repo-scan finds 1 skill(s) here" in _unwrapped(result.stderr)
 
+    def test_the_older_multi_skill_warning_is_on_stderr_too(self, tmp_path: Path) -> None:
+        """#99: the sibling advisory, which predates #39 and stayed on stdout.
+
+        Two immediate child Skills and no ``--recursive``: the directory itself
+        declares no ``SKILL.md``, so a report *is* written to stdout, and this
+        warning used to land ahead of it. ``json.loads`` on ``result.stdout`` is
+        the assertion the issue reproduces at the shell with ``| jq``; every
+        pre-existing assertion in this file reads ``result.output``, which folds
+        the two streams and passes either way.
+        """
+        _write_skill(tmp_path / "alpha", "alpha")
+        _write_skill(tmp_path / "beta", "beta")
+
+        result = runner.invoke(app, ["scan", str(tmp_path), "--no-llm", "-f", "json"])
+
+        assert result.exit_code == 0, result.output
+        assert json.loads(result.stdout)["skill"]["name"] == "unknown"
+        assert "Warning" not in result.stdout
+        # Moved, not silenced.
+        assert "Found 2 skills in this directory" in _unwrapped(result.stderr)
+
 
 class TestTheOutputContracts:
     """What the combined file holds. Two different shapes, chosen by ``--format``."""
