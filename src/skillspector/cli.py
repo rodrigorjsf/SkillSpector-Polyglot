@@ -175,8 +175,8 @@ def _count_advisory(result: dict[str, object]) -> int:
     `.claude/rules/analyzers.md` cites ADR 0006 for. The key is absent whenever
     no such Analyzer ran, so the count is then zero without a mode test.
 
-    Counted over `_reported_findings`, so a finding a baseline already accepted is
-    not announced on stderr while stdout does not carry it.
+    Counted over `report.reported_findings`, so a finding a baseline already
+    accepted is not announced on stderr while stdout does not carry it.
     """
     raw_unscored = result.get("unscored_rule_ids")
     unscored = frozenset(raw_unscored) if isinstance(raw_unscored, list) else frozenset()
