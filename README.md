@@ -46,7 +46,8 @@ What SkillSpector-Polyglot does with a scanned tree depends on the framework it 
 |---|---|---|---|---|
 | **Agent Skills** (Claude Code, Codex CLI, Gemini CLI, …) | any | default | — (the full 68-pattern base catalog applies) | **Shipped** — upstream behavior, unchanged |
 | **LangChain4j** | Java / Kotlin | `langchain4j` Maven coordinate, `dev.langchain4j` import, or `src/main/resources/skills/` layout | 5 rules — `L4J-SHELL`, `L4J-UNRESOLVED`, `L4J-TOOL-DESC`, `L4J-MCP-FILTER`, `L4J-WORKDIR` | **Shipped** |
-| **Deep Agents** | Python | `deepagents` distribution, `import deepagents`, or `create_deep_agent(` | 4 rules — `DA-SKILL-WRITABLE`, `DA-SHADOW`, `DA-SUBAGENT-SKILLS`, `DA-UNRESOLVED` | **Shipped** — `framework_deepagents` reads the host-side `create_deep_agent(...)` configuration, says per skill source path whether the agent can rewrite it, reports a skill in a later source that silently replaces a same-named one in an earlier source, reports a custom subagent defined without skills of its own, and reports where resolution stopped ([design](docs/MULTI_FRAMEWORK_SKILL_ANALYSIS.md), [shape](docs/adr/0008-deepagents-analyzer-resolves-one-module-deep.md)) |
+| **Deep Agents** (Python) | Python | `deepagents` distribution, `import deepagents`, or `create_deep_agent(` | 4 rules — `DA-SKILL-WRITABLE`, `DA-SHADOW`, `DA-SUBAGENT-SKILLS`, `DA-UNRESOLVED` | **Shipped** — `framework_deepagents` reads the host-side `create_deep_agent(...)` configuration, says per skill source path whether the agent can rewrite it, reports a skill in a later source that silently replaces a same-named one in an earlier source, reports a custom subagent defined without skills of its own, and reports where resolution stopped ([design](docs/MULTI_FRAMEWORK_SKILL_ANALYSIS.md), [shape](docs/adr/0008-deepagents-analyzer-resolves-one-module-deep.md)) |
+| **Deep Agents** (JavaScript) | TypeScript / JavaScript | `"deepagents"` in a `package.json` `dependencies`, `devDependencies`, `peerDependencies` or `optionalDependencies` block — read out of the parsed manifest, so a key of that name elsewhere in the file is not a signal — plus `import`/`require` of `deepagents`, or `createDeepAgent(` where a statement could start, so a help string, a `//` line or a JSDoc line quoting the SDK is not a signal, while a template literal quoting it still is, because its contents are whole lines ([#127](https://github.com/rodrigorjsf/SkillSpector-Polyglot/issues/127)) — every signal gated on a `.ts`/`.tsx`/`.mts`/`.cts`/`.js`/`.mjs`/`.cjs` file or a `package.json`, because the npm and PyPI distribution names are identical | the **same 4 rules** — `DA-SKILL-WRITABLE`, `DA-SHADOW`, `DA-SUBAGENT-SKILLS`, `DA-UNRESOLVED` | **Shipped** — `framework_deepagents_js` asks the same four questions of the host-side `createDeepAgent({...})` options object, parsed with `tree-sitter-typescript`. The rule ids are reused rather than duplicated: it is the same upstream framework in a second language, so a glob suppression rule keyed on `rule_id` covers both tracks and the catalogue stays one entry per question. What differs is the shapes read — an options object rather than keyword arguments, a plain object literal rather than `FilesystemPermission(...)`, a positional route map rather than `routes=`, and `interruptOn` rather than `interrupt_on`. The four rules mean the same thing in both tracks and are asked over the same two write tools, so a configuration reported one way in Python is reported the same way in TypeScript ([design](docs/MULTI_FRAMEWORK_SKILL_ANALYSIS.md), [shape](docs/adr/0009-tree-sitter-for-typescript-parsing.md), [capture](docs/references/deepagents-js-skills.md)) |
 
 The base catalog — prompt injection, data exfiltration, privilege escalation, supply chain, taint
 tracking, YARA signatures, MCP least privilege, and the rest — applies to **every** framework. The
@@ -55,7 +56,7 @@ rows above add to it; they never replace it. Full rule tables are in
 
 ### Specification conformance — `--spec-checks`
 
-One rule set belongs to no framework row, because all three frameworks implement the same
+One rule set belongs to no framework row, because all four frameworks implement the same
 [Agent Skills specification](docs/references/agent-skills-specification.md): 17 deterministic
 conformance rules, `SPEC-1` … `SPEC-17`, string comparisons and path lookups with no LLM
 involved. Fifteen check a constraint the captured specification states; **two are loader
@@ -179,9 +180,12 @@ No rule reads `allowed-tools`, whose comma/space handling is a
 
 **Deep Agents, precisely:** a Deep Agents project is detected and reported as such, and its
 `SKILL.md` files are scanned by the base catalog like any other skill. The `framework_deepagents`
-analyzer reads the host-side configuration on top of that, and the scan report carries a row naming
-which components it opened, so an absence of Deep Agents findings is distinguishable from an absence
-of inspection.
+analyzer (Python) or `framework_deepagents_js` analyzer (TypeScript/JavaScript) reads the host-side
+configuration on top of that, and the scan report carries a row naming which components it opened,
+so an absence of Deep Agents findings is distinguishable from an absence of inspection. **Exactly
+one of the two ever runs**, and a repository that is genuinely both — a monorepo with a Python agent
+beside a TypeScript one — detects as plain Agent Skills and runs neither, which is the conservative
+answer detection has always given to an ambiguous tree.
 
 What it says today is **whether the agent can rewrite its own instructions, whether a later skill
 source silently replaces a skill in an earlier one, whether a custom subagent was defined without
@@ -502,7 +506,7 @@ which stream a line is printed to updates this README in the *same* pull request
 
 | A change to… | …updates, in the same PR |
 |---|---|
-| Framework detection or a framework analyzer | the [Framework support](#framework-support) matrix — including its **Status** column |
+| Framework detection or a framework analyzer | the [Framework support](#framework-support) matrix — including its **Status** column. A framework whose analyzer reuses another framework's rule ids says so in its row, so the [Vulnerability Patterns](#vulnerability-patterns) count stays one entry per question rather than one per language |
 | Any detection rule | the relevant [Vulnerability Patterns](#vulnerability-patterns) table and the pattern count in [Features](#features) — a conformance rule is counted in its own line there rather than in the 77, because it assesses conformance rather than risk |
 | A CLI flag or subcommand | [CLI Options](#cli-options), and [Usage in an agentic project](#usage-in-an-agentic-project) if it changes the recommended invocation |
 | `--mcp-registry` behavior: an input shape, a check, a rejected flag, or the network rule | [Scanning the MCP Registry](#scanning-the-mcp-registry) and the walkthrough in [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) |
@@ -511,9 +515,10 @@ which stream a line is printed to updates this README in the *same* pull request
 | An exit code, an output format, or which stream a line is printed to | [Integrating SkillSpector](#integrating-skillspector) — including [Which stream carries what](#which-stream-carries-what), the one rule every `console.print` in `cli.py` is held to — and the **Logging** bullet of [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md), which is where a contributor adding a print site reads which of the two consoles to use |
 | Anything that ships a designed-but-unbuilt capability | the **Status** column above, and [`docs/MULTI_FRAMEWORK_SKILL_ANALYSIS.md`](docs/MULTI_FRAMEWORK_SKILL_ANALYSIS.md) |
 | Any detection rule, again | [`docs/OWASP-AST10-COVERAGE.md`](docs/OWASP-AST10-COVERAGE.md) — the row the rule belongs to, or the gaps list where it belongs to none |
-| A redistributed dependency in `pyproject.toml`, added **or removed** — a runtime one, or one in the `mcp` extra | [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md), in the section matching the declaration — `## Runtime Dependencies` or `## Optional Dependencies (mcp extra)`; license and copyright read from the installed `dist-info`, not recalled; `tests/unit/test_third_party_notices.py` fails, per section, on a missing entry and on one that outlived its dependency. The `dev` extra declares the project's own toolchain rather than capability a consumer installs, and stays out |
+| A redistributed dependency in `pyproject.toml`, added **or removed** — a runtime one, or one in the `mcp` extra | **`uv.lock`**, re-locked with `uv lock` in the same PR — `.github/workflows/release.yml` runs `uv sync --locked`, which errors rather than re-resolving, so a stale lock fails the release rather than the tests; and [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md), in the section matching the declaration — `## Runtime Dependencies` or `## Optional Dependencies (mcp extra)`; license and copyright read from the installed `dist-info`, not recalled; `tests/unit/test_third_party_notices.py` fails, per section, on a missing entry and on one that outlived its dependency. The `dev` extra declares the project's own toolchain rather than capability a consumer installs, and stays out |
 | A **new** optional-dependency extra in `pyproject.toml` | [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) — its own `## Optional Dependencies (<extra> extra)` section when the extra delivers capability to a consumer, which is what generates its comparisons in `tests/unit/test_third_party_notices.py`; when it declares tooling for working on this project, like `dev`, no section and a line in that test's `_NOT_REDISTRIBUTED_EXTRAS` instead — plus the row above; exactly one of the two, and the same test fails on any extra with neither *and* on any extra with both, as well as on a duplicated section heading. An extra that composes another by naming this distribution back — `skillspector[mcp]`, the idiom `dev` uses — owes no entry for that self-reference: the composed extra's own section discloses it |
-| An upstream spelling a framework rule matches | the framework's `vocabulary.py` — never a literal elsewhere — and, if the spelling is new, a re-measured range per [`docs/VOCABULARY_REMEASUREMENT.md`](docs/VOCABULARY_REMEASUREMENT.md) |
+| An upstream spelling a framework rule matches | the framework's `vocabulary.py` — never a literal elsewhere — and, if the spelling is new, a re-measured range per [`docs/VOCABULARY_REMEASUREMENT.md`](docs/VOCABULARY_REMEASUREMENT.md). Two frameworks that wrap the same upstream project in two languages keep **two** inventories and two guards: they ship on different release clocks, and one rename must not move both |
+| A new captured upstream reference | [`docs/references/README.md`](docs/references/README.md) — its table row, and the "Why these …" section that states the admission rule |
 
 A capability that ships without its row updated is a documentation bug — report it as one.
 
@@ -1166,6 +1171,19 @@ these rules are inert and the scan is unchanged.
 
 Applies only to a scan whose tree is detected as a Deep Agents project. On every other input these
 rules are inert and the scan is unchanged.
+
+**Four patterns, two analyzers.** Deep Agents ships as a Python distribution and a JavaScript one,
+and SkillSpector reads both — `framework_deepagents` and `framework_deepagents_js`. They are the
+same four questions about the same upstream framework, so they are the same four rule ids. What that
+reuse buys is a suppression **rule** — a glob rule keyed on `rule_id` keeps matching across both
+tracks — and one catalogue, OWASP and coverage entry per question rather than one per language. It
+does **not** carry an exact baseline across a port: a v2 fingerprint binds to the evidence, and the
+component path, the file bytes, the line and the message all change when an application is rewritten
+in another language. Everything below is written
+with the Python spellings, because that is the distribution the rules were first read from; the
+JavaScript equivalents (`createDeepAgent`, an options object, a plain permission object, `rootDir`,
+`interruptOn`) are in [the JavaScript capture](docs/references/deepagents-js-skills.md) and
+[ADR 0009](docs/adr/0009-tree-sitter-for-typescript-parsing.md).
 
 Two of the four partition every `create_deep_agent(...)` call between them: what resolved is judged,
 and what did not is reported as not having been. Resolution stops at the module boundary — a literal

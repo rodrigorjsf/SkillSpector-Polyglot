@@ -74,9 +74,12 @@ class SkillspectorState(TypedDict, total=False):
     # skillspector.manifest_status.
     manifest_status: ManifestStatus
     # Which Framework the scanned tree is written against, detected by a pure
-    # function under `build_context` -- no new graph node. Read by the gated
-    # `framework_langchain4j` analyzer, which returns no findings unless it holds
-    # LANGCHAIN4J. See skillspector.framework.
+    # function under `build_context` -- no new graph node. Read by one gated
+    # Analyzer per Framework -- `framework_langchain4j`, `framework_deepagents`
+    # and `framework_deepagents_js` -- each returning no findings unless the key
+    # holds its own member. `AGENT_SKILLS` has no Analyzer: it is what every
+    # input scanned before this key existed detects as. See
+    # skillspector.framework.
     framework: Framework
     # Which Agent Skills specification conformance Rules run, and which of them
     # contribute to the Risk Score: "off", "advisory" or "strict". Set by

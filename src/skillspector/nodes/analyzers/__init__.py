@@ -25,6 +25,9 @@ from skillspector.nodes.analyzers.behavioral_taint_tracking import (
 from skillspector.nodes.analyzers.framework_deepagents import (
     node as framework_deepagents_node,
 )
+from skillspector.nodes.analyzers.framework_deepagents_js import (
+    node as framework_deepagents_js_node,
+)
 from skillspector.nodes.analyzers.framework_langchain4j import (
     node as framework_langchain4j_node,
 )
@@ -112,11 +115,12 @@ ANALYZER_NODE_IDS: list[str] = [
     "semantic_developer_intent",
     "semantic_quality_policy",
     # Fork-added Analyzers keep to the end of the list, so an upstream merge that
-    # appends its own id does not have to reorder this one. The two Framework
-    # Analyzers first, then the conformance one, which is gated on a flag rather
-    # than on a Framework.
+    # appends its own id does not have to reorder this one. The three Framework
+    # Analyzers first, one per Framework that has one, then the conformance one,
+    # which is gated on a flag rather than on a Framework.
     "framework_langchain4j",
     "framework_deepagents",
+    "framework_deepagents_js",
     "structure_agent_skills_spec",
 ]
 
@@ -146,6 +150,7 @@ ANALYZER_NODES = {
     "semantic_quality_policy": semantic_quality_policy_node,
     "framework_langchain4j": framework_langchain4j_node,
     "framework_deepagents": framework_deepagents_node,
+    "framework_deepagents_js": framework_deepagents_js_node,
     "structure_agent_skills_spec": structure_agent_skills_spec_node,
 }
 

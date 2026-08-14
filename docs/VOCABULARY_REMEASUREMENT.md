@@ -1,9 +1,29 @@
 # Re-measuring a Framework vocabulary
 
-Both Framework inventories — `src/skillspector/langchain4j/vocabulary.py` and
-`src/skillspector/deepagents/vocabulary.py` — carry a claim: *these spellings were observed across
-this range of published releases, and none was ever removed*. This document is how that claim is
-re-measured, and what obliges someone to re-measure it.
+Every Framework inventory carries a claim: *these spellings were observed across this range of
+published releases, and none was ever removed*. This document is how that claim is re-measured, and
+what obliges someone to re-measure it.
+
+Three inventories carry it today, and the tooling reaches **two** of them:
+
+| Inventory | Index | Re-measured by |
+|---|---|---|
+| `src/skillspector/langchain4j/vocabulary.py` | Maven Central | `contrib.vocabulary_sweep` |
+| `src/skillspector/deepagents/vocabulary.py` | PyPI | `contrib.vocabulary_sweep` |
+| `src/skillspector/deepagents_js/vocabulary.py` | npm | **by hand** — see below |
+
+**The npm gap is stated rather than hidden.** `contrib/vocabulary_sweep` reads PyPI and Maven
+Central; it has no npm reader, so the JavaScript inventory's range was measured by hand: every final
+release of the npm distribution `deepagents` at or above the Skills floor upstream documents
+(`1.7.0`) was downloaded from the registry and its packed `.js`, `.cjs`, `.mjs`, `.ts` and `.json`
+files searched for each spelling as a whole word — 32 releases, `1.7.0` through `1.12.3`, on
+2026-08-13. The result is recorded in that module's `OBSERVED_VERSION_RANGE` comment, including which
+release each of the two late-arriving spellings first appears in.
+
+Everything below applies to all three inventories; only the *command* differs, and teaching
+`contrib/vocabulary_sweep` to read npm is the obvious way to close the difference. Until it does, a
+re-measurement of the JavaScript inventory has to repeat the manual sweep and say in the commit body
+that it did.
 
 ## The failure it guards against
 
@@ -12,10 +32,11 @@ nothing says so. The Scan still succeeds, the Analyzer still reports `completed`
 opened still gets an Inspection Ledger row, and the report reads as clean. **An absence of Findings
 caused by a stale spelling is indistinguishable from a genuinely clean Scan.**
 
-Neither guard test catches this. `tests/unit/test_langchain4j_vocabulary.py` and
-`tests/unit/test_deepagents_vocabulary.py` fail the build when a spelling is written *outside* its
-inventory; they cannot fail when the inventory itself has gone stale, because a stale spelling is
-still perfectly consistent with the code that reads it. Only reading published releases can tell.
+No guard test catches this. `tests/unit/test_langchain4j_vocabulary.py`,
+`tests/unit/test_deepagents_vocabulary.py` and `tests/unit/test_deepagents_js_vocabulary.py` fail the
+build when a spelling is written *outside* its inventory; they cannot fail when the inventory itself
+has gone stale, because a stale spelling is still perfectly consistent with the code that reads it.
+Only reading published releases can tell.
 
 This procedure closes the gap [ADR 0005](adr/0005-langchain4j-upstream-vocabulary.md) named and
 [issue #46](https://github.com/rodrigorjsf/SkillSpector-Polyglot/issues/46) recorded: the original
@@ -121,8 +142,9 @@ the risk the first two miss, which is precisely the release SkillSpector has not
 2. **When a scanned corpus, an issue, or an upstream release note names a Framework version outside
    the recorded range.** The range is a staleness marker a maintainer reads; a version beyond it is
    the moment to read it.
-3. **Every six months otherwise.** Both Frameworks publish fast — Deep Agents shipped 78 final
-   releases in roughly a year — and both are pre-1.0 or beta by upstream's own description.
+3. **Every six months otherwise.** Every upstream here publishes fast — Deep Agents shipped 78 final
+   releases in roughly a year on PyPI, and 32 on npm between its Skills floor and today — and each is
+   pre-1.0, beta or freshly past 1.0 by upstream's own description.
    LangChain4j says so on the page this project captured: *"The Skills API is experimental. APIs and
    behavior may still change in future releases."*
 

@@ -27,7 +27,10 @@ _Avoid_: manifest state, parse result, manifest error
 
 **Framework**:
 The convention a Skill is written against, which determines how its definition is located and
-parsed. Agent Skills, LangChain4j, and Deep Agents are different Frameworks.
+parsed. Agent Skills, LangChain4j, and Deep Agents are different Frameworks. **The host language is
+part of the identity**: Deep Agents for Python and Deep Agents for JavaScript are two Frameworks,
+because a Skill's definition is located and parsed differently in each, even though they are one
+upstream project and are judged by one set of Rules.
 _Avoid_: format, flavour, dialect
 
 **Scan**:

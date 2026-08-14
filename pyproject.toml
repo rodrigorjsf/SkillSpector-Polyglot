@@ -54,6 +54,14 @@ dependencies = [
     # interpreter.
     "tree-sitter>=0.26.0",
     "tree-sitter-java>=0.23.5",
+    # TypeScript and JavaScript parsing for the Deep Agents for JavaScript
+    # Framework analyzer, accepted in
+    # docs/adr/0009-tree-sitter-for-typescript-parsing.md on the same grounds as
+    # the Java grammar above: a cp39-abi3 wheel, so no C toolchain, and an
+    # error-tolerant parse, so a file the grammar does not fully know still
+    # yields the configuration the Rules read. It ships two grammars --
+    # TypeScript and TSX -- and the analyzer needs both.
+    "tree-sitter-typescript>=0.23.2",
 ]
 
 [project.optional-dependencies]

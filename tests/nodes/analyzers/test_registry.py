@@ -50,6 +50,7 @@ EXPECTED_ANALYZER_NODE_IDS: list[str] = [
     "semantic_quality_policy",
     "framework_langchain4j",
     "framework_deepagents",
+    "framework_deepagents_js",
     "structure_agent_skills_spec",
 ]
 

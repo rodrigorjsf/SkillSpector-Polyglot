@@ -109,6 +109,12 @@ and project URL.
 - **Copyright:** Copyright (c) 2017 Ayman Nadeem
 - **URL:** https://github.com/tree-sitter/tree-sitter-java
 
+### tree-sitter-typescript
+
+- **License:** MIT
+- **Copyright:** Copyright (c) 2017 Max Brunsfeld
+- **URL:** https://github.com/tree-sitter/tree-sitter-typescript
+
 ### yara-python
 
 - **License:** Apache-2.0

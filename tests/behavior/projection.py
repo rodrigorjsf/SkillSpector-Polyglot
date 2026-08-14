@@ -324,6 +324,23 @@ FIXTURES_DIR = _BEHAVIOR_DIR.parent / "fixtures"
 # without confirming the names would fire on every application that follows the
 # advice.
 #
+# The three ``deepagents_js_*`` fixtures are the JavaScript track's, and they
+# cover the same ground in three fixtures rather than six because the Rules they
+# exercise are the Python track's own -- what is new here is the parser, not the
+# verdict. ``deepagents_js_detection`` is the bare signal, a ``package.json``
+# declaring the npm distribution and nothing else. ``deepagents_js_runtime_skills``
+# assembles both its Skill list and its backend per tenant, so its snapshot pins
+# the resolution boundary. ``deepagents_js_layered_skills`` carries the other
+# three verdicts **and their silences in the same tree**: two Skill sources of
+# which only the shared one is covered by a rule, so exactly one
+# ``DA-SKILL-WRITABLE``; two Skill names of which only one appears under both
+# sources, so exactly one ``DA-SHADOW``; and two subagent definitions of which
+# only one is written without Skills of its own, so exactly one
+# ``DA-SUBAGENT-SKILLS``. Pinning each Rule's silence beside its Finding in one
+# snapshot is what the Python track spends a second fixture on, and it is the same
+# protection: every one of these Rules fails by firing on configuration that is
+# already right.
+#
 # ``langchain4j_shell_skill`` (#28) is the first fixture a Framework Analyzer
 # actually reads: a LangChain4j application whose Skill sits at
 # ``src/main/resources/skills/`` and whose host code wires shell mode. Its root
@@ -341,6 +358,9 @@ CORPUS_NAMES: tuple[str, ...] = (
     "deepagents_runtime_skills",
     "deepagents_shadowed_skills",
     "deepagents_subagent_skills",
+    "deepagents_js_detection",
+    "deepagents_js_layered_skills",
+    "deepagents_js_runtime_skills",
     "langchain4j_detection",
     "langchain4j_gradle_skill",
     "langchain4j_shell_skill",

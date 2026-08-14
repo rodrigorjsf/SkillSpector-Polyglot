@@ -4,12 +4,18 @@
 and phases 1–7 of [§5](#5-phasing) have shipped: `detect_framework` and the `framework` state
 key (issue #21), then the LangChain4j-in-CI increment (issue #23) — the gated
 `framework_langchain4j` Analyzer carrying all five L4J rules of
-[§3.6](#36-java-parsing-and-definition-path-coverage), and the Repository Scan of
+[§3.6](#36-host-language-parsing-and-definition-path-coverage), and the Repository Scan of
 [§3.7](#37-repository-level-discovery-cicd) behind `--repo-scan`, and phase 2 — the gated
 `framework_deepagents` Analyzer carrying all four of the Deep Agents rules of
 [§2.3](#23-deep-agents-python-host) (issues #70–#74) and the vocabulary stability measurement
 that closes it (#75), and phase 3 — `structure_agent_skills_spec`, the seventeen conformance
 rules of [§3.5](#35-spec-conformance-rules-and-scoring) behind `--spec-checks`, off by default.
+A fourth Framework has since shipped outside that phase numbering: `framework_deepagents_js`,
+the same four Deep Agents rules read out of the **JavaScript** distribution's
+`createDeepAgent({...})` options object, parsed with `tree-sitter-typescript` and decided in
+[ADR 0009](adr/0009-tree-sitter-for-typescript-parsing.md). It is a parser increment rather than
+a rules increment: no new rule id, no new question, no change to any pre-existing Behavior
+Snapshot.
 **Phase 8 alone remains design proposal** — the deferred behavior-affecting changes. One piece of
 phase 3 is outstanding rather than shipped: §3.5's advisory *section heading*, which would group
 unscored conformance findings apart from the security ones. The rest of the advisory rendering
@@ -29,8 +35,8 @@ Framework references live in [`docs/references/`](references/README.md).
 
 ## 1. The finding that shapes everything
 
-**All three skill ecosystems share one on-disk format.** LangChain4j Skills and Deep Agents
-both state upstream that they implement the
+**Every skill ecosystem here shares one on-disk format.** LangChain4j Skills and Deep Agents
+— in both its Python and its JavaScript distribution — state upstream that they implement the
 [Agent Skills specification](references/agent-skills-specification.md) — the same
 `SKILL.md` + `scripts/` + `references/` + `assets/` layout SkillSpector already scans, with
 the same frontmatter keys `_parse_manifest` already reads
@@ -114,7 +120,7 @@ Two structural facts make Java harder than Python:
   depends on it never applies.
 - **No Java parser in the dependency set.** `behavioral_ast` and `behavioral_taint_tracking`
   are built on Python's stdlib `ast`. Java needs one added — see
-  [§3.6](#36-java-parsing-and-definition-path-coverage) for the choice and its cost.
+  [§3.6](#36-host-language-parsing-and-definition-path-coverage) for the choice and its cost.
 
 `ClassPathSkillLoader` also allows skills under `src/main/resources/skills/` or bundled
 inside a JAR. The path is trivially handled; the JAR is not — `InputHandler` keys archive
@@ -187,9 +193,79 @@ exactly as today.
 |-----------|------------------|
 | `langchain4j` | `pom.xml` / `build.gradle*` containing `dev.langchain4j`; any `.java`/`.kt` file importing `dev.langchain4j.*`; `src/main/resources/skills/` layout |
 | `deepagents` | `pyproject.toml` / `requirements*.txt` naming `deepagents`; any `.py` importing `deepagents` or calling `create_deep_agent` |
+| `deepagents_js` | `package.json` whose `dependencies`, `devDependencies`, `peerDependencies` or `optionalDependencies` names `"deepagents"`; any `.ts`/`.tsx`/`.mts`/`.cts`/`.js`/`.mjs`/`.cjs` module importing, re-exporting or `require`-ing `deepagents`, or calling `createDeepAgent` |
 
 Detection is a pure function over `components` and `file_cache`, both already built. It adds
 no I/O and cannot fail a scan.
+
+**The two Deep Agents rows are told apart by the file, never by the name.** The PyPI distribution
+and the npm distribution are both spelled `deepagents`, byte for byte, so every signal in either row
+is gated on the extension of the file it is read from. Neither set of files overlaps the other, so
+the two Analyzers cannot fire on each other's sources; a repository that genuinely contains both
+fires two signals and falls to `agent_skills` under the rule below.
+
+**Ambiguity is resolved once rather than pairwise.** With three Frameworks the rule is stated as
+**exactly one signal fires → that Framework; zero, or two or more → `agent_skills`**, which for two
+Frameworks is identical to the pairwise form it replaces. So no input that detected as a Framework
+before can detect as something else now.
+
+**The JavaScript dependency signal is read out of the parsed manifest**, not matched textually. A
+`package.json` is JSON, so the four declaration blocks above can be read by name — which is what
+makes the signal mean what this table says it means. A regex for `"deepagents":` also fired on an
+`overrides` entry, a `resolutions` entry, and any config object that happened to use the word as a
+key, none of which is this project declaring a dependency. A manifest that does not parse carries no
+signal, the same answer a signal file that could not be read at all gets.
+
+**The JavaScript import signal is line-anchored *and* line-bounded, with one alternative that may
+cross a newline inside braces.** A JavaScript named import is routinely written across several lines
+and the captured reference publishes it that way, so the multi-line form has to be matched — but not
+by letting every lead cross a newline. An earlier revision did, and JavaScript falsified it at once:
+`export function f() {` opens a brace-delimited body carrying no `;`, and automatic semicolon
+insertion means most JavaScript statements carry none either, so a lead excluding only `;` and quotes
+ran from that `export` into a `//` comment naming the package on the next line. A Python Deep Agents
+repository shipping one such `.ts` file then fired two signals and lost all four `DA-*` rules in
+silence. What may cross a newline now is a braced binding list — an import list or a destructuring
+pattern — whose contents exclude braces and quotes, so the crossing stops at the matching brace.
+
+**Which signals are comment-proof, and which are not.** The table above names signals; this says how
+literally each is read, because "detection is textual" is not the same claim for all of them.
+
+| Signal | Comment- and string-proof? | How |
+|--------|----------------------------|-----|
+| Every manifest signal (`pom.xml`, `build.gradle*`, `pyproject.toml`, `requirements*.txt`, `package.json`) | Yes | `package.json` is parsed; the others carry no comment syntax that spells a framework name this scanner matches |
+| `src/main/resources/skills/` layout | Yes | A path, not file content |
+| Every import signal (Java, Kotlin, Python, JavaScript) | Yes, except a whole statement commented out on its own line | Anchored at the start of a line |
+| `createDeepAgent` | Comment-proof; **not** template-literal-proof | Anchored at the start of a line, preceded only by a declarator with its `=` (whose lead excludes quotes), a `return`, an `await`, or nothing. A `//` line, a JSDoc `*` line and a quoted string's continuation line each fail every alternative; a backtick-delimited string does not, because it carries whole lines |
+| `create_deep_agent` | **No** | Matched wherever the name appears in a `.py` file, docstrings and comment tails included |
+
+**The template literal is the one prose shape the anchor does not exclude, and it too is recorded
+rather than fixed.** Measured: a `.ts` file holding
+
+```ts
+const SYSTEM_PROMPT = `
+You build agents. Example:
+const agent = await createDeepAgent({ skills: ["/skills/"] });
+`;
+```
+
+fires the JavaScript signal, because the line inside the backticks is byte-for-byte a line of code
+and the pattern reads one line at a time. Telling the two apart means tracking backtick state across
+the whole file, which is a lexer's job rather than a regular expression's — and getting it wrong in
+the other direction, a stray backtick in a comment flipping the parity, would silence a genuine
+JavaScript repository's own signal. The cost is the row above's, in the same direction and with the
+same consequence: a Python Deep Agents repository shipping one `.ts` file whose prompt string quotes
+the SDK fires two signals, detects `agent_skills`, and loses all four `DA-*` rules in silence. The
+shape is pinned in `tests/nodes/test_framework_detection.py` so it is visible rather than folklore,
+and so it cannot change without the change being deliberate. Issue #127 carries the four ways out
+and which one to measure first.
+
+The last table row is the deliberate asymmetry, and it is recorded rather than fixed. Anchoring
+`create_deep_agent` the way `createDeepAgent` is anchored would turn some tree that detects
+`deepagents` today into `agent_skills`, which is a change to existing behavior on existing input —
+exactly what a new Framework's change may not do. The cost of leaving it is the mirror of the case
+the JavaScript anchoring closed: a JavaScript Deep Agents repository shipping one `.py` file that
+names `create_deep_agent` in prose fires two signals and loses its rules. Fixing it is a change to
+the Python Framework's own detection and belongs to that change.
 
 ### 3.3 Proposed analyzer nodes
 
@@ -225,7 +301,7 @@ that #71 shipped. Read the row as the original proposal, not as what is running.
 > [§3.5](#35-spec-conformance-rules-and-scoring).
 
 `framework_langchain4j` parses Java with tree-sitter rather than matching patterns — see
-[§3.6](#36-java-parsing-and-definition-path-coverage). Deep Agents detection reuses the
+[§3.6](#36-host-language-parsing-and-definition-path-coverage). Deep Agents detection reuses the
 existing Python `ast` infrastructure to inspect `create_deep_agent` call keywords directly.
 
 ### 3.4 Supporting changes
@@ -650,10 +726,11 @@ every mode — so the premise it was filed on is gone. It is left open rather th
 because recording provenance in a baseline may still be wanted for reasons this change did not
 touch; what is settled is that no *suppression* correctness argument depends on it.
 
-### 3.6 Java parsing and definition-path coverage
+### 3.6 Host-language parsing and definition-path coverage
 
-The goal is production LangChain4j applications, so this section covers **every way
-LangChain4j lets a skill be defined**, and says plainly where static analysis stops.
+The goal is production applications, so this section covers **every way each framework lets a
+skill be defined**, and says plainly where static analysis stops. It was written for
+LangChain4j and now carries a second parser; the JavaScript half is at the end.
 
 #### Parser choice: tree-sitter
 
@@ -685,6 +762,46 @@ interpreter.
 | `.toolProviders(McpToolProvider.builder()…)` | Yes | Presence and the absence of both `.filter(…)` and `.filterToolNames(…)` are visible |
 | `.tools(Map.of(spec, executor))` | Partially | The `ToolSpecification` literal is readable; the `ToolExecutor` lambda body is not analyzed. Since #57 this also raises `L4J-UNRESOLVED`, on the same test as the row above — the argument is a call rather than a `new X()`, so no tool class is named — which is the honest reading: what the map grants is decided by an executor nothing here reads |
 | `Skills.from(…)` vs `ShellSkills.from(…)` | Yes | Mode selection is a type reference |
+
+#### TypeScript and JavaScript: `tree-sitter-typescript`
+
+The Deep Agents for JavaScript Analyzer needs the same thing one language over, and takes the
+same answer. **Accepted** in
+[ADR 0009](adr/0009-tree-sitter-for-typescript-parsing.md), which records the measurements:
+`tree-sitter-typescript` 0.23.2, MIT, prebuilt `cp39-abi3` wheels, and verified working against
+the `tree-sitter` 0.26.0 this project already declares.
+
+Two properties are load-bearing rather than incidental:
+
+- **It ships two grammars, and both are needed.** JSX does not parse under
+  `language_typescript()` — it reads `<Panel>` as a type parameter list — so a `.tsx` Component
+  goes to `language_tsx()`, and any other Component that fails is retried there and kept only if
+  the retry is clean. Measured: a module whose `createDeepAgent` call is *enclosed* by JSX yields
+  zero configurations under the TypeScript grammar and one under TSX.
+- **A parse error is tolerated, not refused.** The grammar's last release predates roughly two
+  years of TypeScript syntax, so `has_error` is as likely to mean "newer than the grammar" as
+  "broken". This is the one place the JavaScript track's ledger differs from the Python track's:
+  there is no `SKIPPED`/`SYNTAX_ERROR` branch, because tree-sitter always returns a tree.
+
+| Definition path | Statically resolvable | Notes |
+|-----------------|----------------------|-------|
+| `createDeepAgent({ skills: ["/skills/"] })` | Yes | The options object is an object literal |
+| `createDeepAgent({ skills: SOURCES })` | Yes | Resolvable when `SOURCES` is declared at the module's top level, `export const` included — the grammar wraps an exported declaration in an `export_statement`, which the resolver unwraps |
+| `createDeepAgent({ backend })` — shorthand property | Yes | Followed to the constant it names |
+| `new FilesystemBackend({ rootDir: "./library" })` | Yes | Literal root, mapped relative to the Scan root |
+| `new FilesystemBackend({ rootDir: process.cwd() })` | **No** | Upstream's own headline example. The working directory is chosen at deployment; reported as `DA-UNRESOLVED` |
+| `new CompositeBackend(new StateBackend(), { "/skills/": … })` | Yes | The route map is the **second positional argument**; there is no `routes` key |
+| `new StoreBackend({ namespace: (ctx) => … })` | Partially | The routed path resolves; what lives at it does not. Reported as `DA-UNRESOLVED` |
+| `permissions: [{ operations, paths, mode }]` | Yes | A plain object literal — `FilesystemPermission` does not exist in this distribution |
+| `createDeepAgent(buildOptions())` | **No** | No setting is attributable to any name, so this is a silence rather than a boundary |
+| `createDeepAgent({ ...defaults, skills })` | **Partially** | The spread is dropped and the properties written beside it are still read, mirroring the Python resolver, which drops the `**` entry and keeps the named keywords. What the spread carried stays invisible, so a setting that would *clear* a finding is missed and the result over-reports. The refusal is kept at every other object — a permission rule, `interruptOn`, `rootDir`, a route map, a subagent definition — where dropping a spread would instead clear something |
+| `createDeepAgent({ skills } as CreateDeepAgentOptions)`, `… satisfies T`, `(…)`, `<T>…`, `…!` | Yes | Every one of these is erased by the compiler, so the wrapper is unwrapped and the object beneath it read. Stopping at one made a fully literal call report **nothing at all** — no finding, no boundary, risk score 0 — because `_options` reads a silence as "no setting was named" and here every setting was |
+| `skills: ["/skills/"] as const` | Yes | Same unwrapping, one layer in. It previously reached the boundary and raised `DA-UNRESOLVED` on a literal list |
+| `createDeepAgent({ skills, hook() {…} })` — a method shorthand, a getter/setter, or a computed key | **Partially** | The unreadable property is dropped and the rest is read, on the spread's argument and in the same direction: refusing the object made one `hook() {}` beside a literal `skills` silence all four rules. Tolerating is monotone here — a dropped property reads as *absent*, and the refusal it replaces made every property absent — so this call site can only ever read more settings, never fewer. The refusal is kept at every other object |
+| `await createDeepAgent<State>({ … })` | Yes | With both an `await` and a type argument the grammar puts the `await_expression` **inside** the call's `function` field, so the callee is unwrapped before it is named. Reading the field literally found no call at all, while the analyzer still reported `COMPLETED` — a miss indistinguishable from a clean scan |
+| A `skills` array holding an interpolated template literal | **No** | A template substitution is a runtime value |
+| A `//` or `/* */` comment anywhere inside the call | Yes | tree-sitter reports a comment as a *named child*, so every reader drops them before indexing or counting. Upstream's own published example writes a note inside the options object |
+| `import { createDeepAgent as makeAgent }` | **No** | Tracking import bindings is the interprocedural reach this section declines |
 
 #### The coverage limit, stated as a finding
 
@@ -815,9 +932,11 @@ and **is delivered**: the gate lives in [`tests/behavior/`](../tests/behavior/),
   those two would catch none of them. Measurement confirmed the breadth is affordable: the
   specified projection is 323–859 lines per fixture and 11 079 across the original 24, well inside
   what a reviewer reads.
-- **Corpus: 35 leaf directories.** Every fixture directory bearing a root `SKILL.md` (23), plus
-  `tests/fixtures/mcp_registry`, which bears none and scans as an anonymous Skill, plus the two
-  `*_detection` fixtures phase 1 added, which bear none either and carry one Framework signal each,
+- **Corpus: every committed snapshot.** A count is deliberately not written here — it has rotted
+  twice — and `tests/behavior/test_behavior_snapshot.py` holds the one literal, beside the list it
+  checks. The corpus is every fixture directory bearing a root `SKILL.md`, plus
+  `tests/fixtures/mcp_registry`, which bears none and scans as an anonymous Skill, plus the
+  `*_detection` fixtures, which bear none either and carry one Framework signal each,
   plus the three LangChain4j applications the `framework_langchain4j` Analyzer reads —
   `langchain4j_shell_skill` in shell mode, `langchain4j_tool_mode`, which declares only
   `dev.langchain4j:langchain4j-skills` and proves the Rules that are not about shell mode fire
@@ -830,9 +949,17 @@ and **is delivered**: the gate lives in [`tests/behavior/`](../tests/behavior/),
   `deepagents_shadowed_skills` and `deepagents_layered_skills`, which layer a per-user Skill
   directory over a shared library under a resolvable filesystem backend root and differ only in
   whether the two sources declare a Skill of one name, and `deepagents_subagent_skills`, whose two
-  custom subagent definitions differ only in whether one names Skill sources of its own. The three
-  family parents — `sdi/`, `sqp/`, `ssd/` — are fixture-layout containers, not Skills, and are
-  not scan targets.
+  custom subagent definitions differ only in whether one names Skill sources of its own — plus the
+  three Deep Agents for JavaScript trees `framework_deepagents_js` reads: `deepagents_js_detection`,
+  the bare `package.json` signal, `deepagents_js_runtime_skills`, whose Skill list and backend are
+  both chosen per tenant and which therefore pins the resolution boundary, and
+  `deepagents_js_layered_skills`, which carries the other three verdicts **and their silences in one
+  tree** — two Skill sources of which one is covered by a rule, two Skill names of which one appears
+  under both sources, and two subagent definitions of which one names Skills of its own. Three
+  fixtures rather than the Python track's six, because the Rules are the Python track's already:
+  what this Framework adds is a parser, so what its fixtures have to pin is that the parser feeds the
+  same verdicts. The three family parents — `sdi/`, `sqp/`, `ssd/` — are fixture-layout containers,
+  not Skills, and are not scan targets.
 - **Blocking, inside `make test-unit`**, with a `make update-snapshots` to regenerate. The
   friction is the feature: it forces a behavior change to be declared as a reviewable commit.
   The counter-example is already in this repo — `mypy` is configured and invoked by nothing.
@@ -874,6 +1001,7 @@ Ordered by value-to-risk. Each phase is independently shippable and independentl
 | **3** | ~~`structure_agent_skills_spec` behind `--spec-checks`~~ **Done** — 17 rules, default `off`, every committed Behavior Snapshot byte-identical. The advisory rendering of [§3.5](#35-spec-conformance-rules-and-scoring) shipped as the stderr summary line plus the per-finding "not scored" note; only the separate section heading is outstanding | Yes, via opt-in |
 | **4** | ~~**Dependency decision:** accept `tree-sitter` + `tree-sitter-java`~~ **Done** (#23) — accepted in [ADR 0001](adr/0001-tree-sitter-for-java-parsing.md), both ship `cp39-abi3` wheels | N/A |
 | **5** | ~~LangChain4j fixture~~ **Done** (#28, extended by #30 and #31) — `tests/fixtures/langchain4j_shell_skill/` | Yes — test data only |
+| **9** | **Done** — `framework_deepagents_js`, the fourth Framework: the same four Deep Agents Rules read out of the JavaScript distribution's `createDeepAgent({...})` options object with `tree-sitter-typescript` ([ADR 0009](adr/0009-tree-sitter-for-typescript-parsing.md)), the capture at [`docs/references/deepagents-js-skills.md`](references/deepagents-js-skills.md) with its own measured npm range, and detection generalised from pairwise to "exactly one signal". A parser increment, not a rules increment — no new rule id, and every pre-existing Behavior Snapshot byte-identical | Yes, via gate |
 | **6** | ~~`framework_langchain4j` analyzer, gated~~ **Done** (#28, #30, #31) — all five L4J rules; every pre-existing Behavior Snapshot byte-identical | Yes, via gate |
 | **7** | ~~Repository-level discovery for CI/CD~~ **Done** (#29) — `src/skillspector/repository_scan.py` behind `--repo-scan`, JVM build-dir exclusion on that path only | Yes, via flag — **not** if applied unconditionally |
 | **8** | Maven/OSV, `.jar` ingest, `_FILE_TYPES` / `_EXECUTABLE_EXTENSIONS` additions | Mixed — the last two are behavior-affecting; ship separately |
@@ -951,7 +1079,7 @@ Recorded so the reasoning is not relitigated. Each links to where it is implemen
 | Question | Decision |
 |----------|----------|
 | Should an `advisory` run write spec findings into a baseline? | **Yes.** Advisory findings are baseline-eligible by design, and an `advisory` baseline suppresses a later `strict` run — a fingerprint binds to the evidence, and the mode is configuration rather than evidence ([§3.5](#baseline-interaction--decided)) |
-| How far into Java? | **As far as static analysis allows.** Target is production LangChain4j applications, so tree-sitter replaces regex and every definition path is covered, with unresolvable content reported as `L4J-UNRESOLVED` rather than passed over ([§3.6](#36-java-parsing-and-definition-path-coverage)) |
+| How far into Java? | **As far as static analysis allows.** Target is production LangChain4j applications, so tree-sitter replaces regex and every definition path is covered, with unresolvable content reported as `L4J-UNRESOLVED` rather than passed over ([§3.6](#36-host-language-parsing-and-definition-path-coverage)) |
 | Directory-level shadowing check? | **Yes**, as SPEC-17, scored by default ([§3.5](#35-spec-conformance-rules-and-scoring)) |
 | Where does the CLI run? | Primary usage is repository-level with codebase access; CI/CD of a Java or Python application is the production target ([§3.7](#37-repository-level-discovery-cicd)) |
 | `allowed-tools` separator | **Keep current behavior.** Recorded as a known deviation with reopen triggers ([§5](#known-deviation-allowed-tools-separator)) |
@@ -1098,7 +1226,7 @@ Framework fails the gate on the key's appearance.
 The recommendation before that was to make the behavior gate executable before any analyzer
 work, because until it existed every phase in [§5](#5-phasing) carried an acceptance criterion
 nobody could demonstrate. **That is done.** Issue #4, sliced into #5–#9, landed the committed
-snapshot corpus in [`tests/behavior/`](../tests/behavior/): 35 fixtures, blocking in
+snapshot corpus in [`tests/behavior/`](../tests/behavior/): every committed fixture, blocking in
 `make test-unit`, verified in CI, demonstrated red on a real behavior change, with its blind
 spots stated in [`COVERAGE_LIMITS.md`](../tests/behavior/COVERAGE_LIMITS.md). Every phase below
 can now be claimed behavior-preserving against evidence rather than against a promise: the

@@ -1,0 +1,601 @@
+{
+  "analysis_completeness": {
+    "analyzer_statuses": [
+      {
+        "analyzer_id": "behavioral_ast",
+        "completed": 0,
+        "failed": 0,
+        "message": "No files matched this analyzer's applicability contract.",
+        "planned_work": 0,
+        "reason_code": "no_applicable_files",
+        "skipped": 0,
+        "status": "not_applicable",
+        "unaccounted": 0
+      },
+      {
+        "analyzer_id": "behavioral_taint_tracking",
+        "completed": 0,
+        "failed": 0,
+        "message": "No files matched this analyzer's applicability contract.",
+        "planned_work": 0,
+        "reason_code": "no_applicable_files",
+        "skipped": 0,
+        "status": "not_applicable",
+        "unaccounted": 0
+      },
+      {
+        "analyzer_id": "framework_deepagents_js",
+        "completed": 5,
+        "failed": 0,
+        "planned_work": 5,
+        "skipped": 0,
+        "status": "completed",
+        "unaccounted": 0
+      },
+      {
+        "analyzer_id": "mcp_least_privilege",
+        "completed": 0,
+        "failed": 0,
+        "message": "No compatible manifest was present for this analyzer.",
+        "planned_work": 0,
+        "reason_code": "manifest_absent",
+        "skipped": 0,
+        "status": "not_applicable",
+        "unaccounted": 0
+      },
+      {
+        "analyzer_id": "mcp_rug_pull",
+        "completed": 1,
+        "failed": 0,
+        "planned_work": 1,
+        "skipped": 0,
+        "status": "completed",
+        "unaccounted": 0
+      },
+      {
+        "analyzer_id": "mcp_tool_poisoning",
+        "completed": 0,
+        "failed": 0,
+        "message": "No compatible manifest was present for this analyzer.",
+        "planned_work": 0,
+        "reason_code": "manifest_absent",
+        "skipped": 0,
+        "status": "not_applicable",
+        "unaccounted": 0
+      },
+      {
+        "analyzer_id": "meta_analyzer",
+        "completed": 0,
+        "failed": 0,
+        "message": "Analyzer was disabled by the requested configuration.",
+        "planned_work": 0,
+        "reason_code": "disabled_by_configuration",
+        "skipped": 0,
+        "status": "disabled",
+        "unaccounted": 0
+      },
+      {
+        "analyzer_id": "semantic_developer_intent",
+        "completed": 0,
+        "failed": 0,
+        "message": "Analyzer was disabled by the requested configuration.",
+        "planned_work": 0,
+        "reason_code": "disabled_by_configuration",
+        "skipped": 0,
+        "status": "disabled",
+        "unaccounted": 0
+      },
+      {
+        "analyzer_id": "semantic_quality_policy",
+        "completed": 0,
+        "failed": 0,
+        "message": "Analyzer was disabled by the requested configuration.",
+        "planned_work": 0,
+        "reason_code": "disabled_by_configuration",
+        "skipped": 0,
+        "status": "disabled",
+        "unaccounted": 0
+      },
+      {
+        "analyzer_id": "semantic_security_discovery",
+        "completed": 0,
+        "failed": 0,
+        "message": "Analyzer was disabled by the requested configuration.",
+        "planned_work": 0,
+        "reason_code": "disabled_by_configuration",
+        "skipped": 0,
+        "status": "disabled",
+        "unaccounted": 0
+      },
+      {
+        "analyzer_id": "static_patterns_agent_snooping",
+        "completed": 5,
+        "failed": 0,
+        "planned_work": 5,
+        "skipped": 0,
+        "status": "completed",
+        "unaccounted": 0
+      },
+      {
+        "analyzer_id": "static_patterns_anti_refusal",
+        "completed": 5,
+        "failed": 0,
+        "planned_work": 5,
+        "skipped": 0,
+        "status": "completed",
+        "unaccounted": 0
+      },
+      {
+        "analyzer_id": "static_patterns_data_exfiltration",
+        "completed": 5,
+        "failed": 0,
+        "planned_work": 5,
+        "skipped": 0,
+        "status": "completed",
+        "unaccounted": 0
+      },
+      {
+        "analyzer_id": "static_patterns_excessive_agency",
+        "completed": 5,
+        "failed": 0,
+        "planned_work": 5,
+        "skipped": 0,
+        "status": "completed",
+        "unaccounted": 0
+      },
+      {
+        "analyzer_id": "static_patterns_harmful_content",
+        "completed": 5,
+        "failed": 0,
+        "planned_work": 5,
+        "skipped": 0,
+        "status": "completed",
+        "unaccounted": 0
+      },
+      {
+        "analyzer_id": "static_patterns_memory_poisoning",
+        "completed": 5,
+        "failed": 0,
+        "planned_work": 5,
+        "skipped": 0,
+        "status": "completed",
+        "unaccounted": 0
+      },
+      {
+        "analyzer_id": "static_patterns_output_handling",
+        "completed": 5,
+        "failed": 0,
+        "planned_work": 5,
+        "skipped": 0,
+        "status": "completed",
+        "unaccounted": 0
+      },
+      {
+        "analyzer_id": "static_patterns_privilege_escalation",
+        "completed": 5,
+        "failed": 0,
+        "planned_work": 5,
+        "skipped": 0,
+        "status": "completed",
+        "unaccounted": 0
+      },
+      {
+        "analyzer_id": "static_patterns_prompt_injection",
+        "completed": 5,
+        "failed": 0,
+        "planned_work": 5,
+        "skipped": 0,
+        "status": "completed",
+        "unaccounted": 0
+      },
+      {
+        "analyzer_id": "static_patterns_rogue_agent",
+        "completed": 5,
+        "failed": 0,
+        "planned_work": 5,
+        "skipped": 0,
+        "status": "completed",
+        "unaccounted": 0
+      },
+      {
+        "analyzer_id": "static_patterns_ssrf",
+        "completed": 5,
+        "failed": 0,
+        "planned_work": 5,
+        "skipped": 0,
+        "status": "completed",
+        "unaccounted": 0
+      },
+      {
+        "analyzer_id": "static_patterns_supply_chain",
+        "completed": 5,
+        "failed": 0,
+        "planned_work": 5,
+        "skipped": 0,
+        "status": "completed",
+        "unaccounted": 0
+      },
+      {
+        "analyzer_id": "static_patterns_system_prompt_leakage",
+        "completed": 5,
+        "failed": 0,
+        "planned_work": 5,
+        "skipped": 0,
+        "status": "completed",
+        "unaccounted": 0
+      },
+      {
+        "analyzer_id": "static_patterns_tool_misuse",
+        "completed": 5,
+        "failed": 0,
+        "planned_work": 5,
+        "skipped": 0,
+        "status": "completed",
+        "unaccounted": 0
+      },
+      {
+        "analyzer_id": "static_yara",
+        "completed": 5,
+        "failed": 0,
+        "planned_work": 5,
+        "skipped": 0,
+        "status": "completed",
+        "unaccounted": 0
+      }
+    ],
+    "coverage_percent": 100.0,
+    "entirely_uninspected_files": 0,
+    "execution_successful": true,
+    "findings_after_filtering": 4,
+    "findings_before_filtering": 4,
+    "fully_inspected_files": 5,
+    "is_complete": false,
+    "ledger_exceptions": [],
+    "limitations": [
+      "Analyzer was disabled by the requested configuration.",
+      "Analyzer was disabled by the requested configuration.",
+      "Analyzer was disabled by the requested configuration.",
+      "Analyzer was disabled by the requested configuration."
+    ],
+    "partially_inspected_files": 0,
+    "scanned_components": 5,
+    "scope_exclusions": [],
+    "total_components": 5
+  },
+  "component_metadata": [
+    {
+      "executable": false,
+      "lines": 18,
+      "path": "library/skills/personal/ticket-triage/SKILL.md",
+      "size_bytes": 491,
+      "type": "markdown"
+    },
+    {
+      "executable": false,
+      "lines": 18,
+      "path": "library/skills/shared/release-notes/SKILL.md",
+      "size_bytes": 553,
+      "type": "markdown"
+    },
+    {
+      "executable": false,
+      "lines": 18,
+      "path": "library/skills/shared/ticket-triage/SKILL.md",
+      "size_bytes": 601,
+      "type": "markdown"
+    },
+    {
+      "executable": false,
+      "lines": 10,
+      "path": "package.json",
+      "size_bytes": 252,
+      "type": "json"
+    },
+    {
+      "executable": true,
+      "lines": 43,
+      "path": "src/agent.ts",
+      "size_bytes": 1248,
+      "type": "typescript"
+    }
+  ],
+  "findings": [
+    {
+      "category": "Supply Chain",
+      "code_snippet": "  \"type\": \"module\",\n  \"description\": \"A TypeScript support agent that layers a per-user Skill directory over a shared library.\",\n  \"dependencies\": {\n    \"deepagents\": \"^1.9.1\"\n  }\n}",
+      "confidence": 0.4,
+      "context": "  \"type\": \"module\",\n  \"description\": \"A TypeScript support agent that layers a per-user Skill directory over a shared library.\",\n  \"dependencies\": {\n    \"deepagents\": \"^1.9.1\"\n  }\n}",
+      "end_line": null,
+      "explanation": "Dependencies lack version pinning, allowing potential malicious package updates. Consider pinning versions.",
+      "file": "package.json",
+      "finding": "\"deepagents\": \"^1.9.1\"",
+      "intent": null,
+      "matched_text": "\"deepagents\": \"^1.9.1\"",
+      "message": "Unpinned Dependencies",
+      "pattern": "Unpinned Dependencies",
+      "remediation": "Pin all dependency versions in requirements.txt or pyproject.toml. Use exact versions (==) or compatible ranges. Run pip-audit regularly.",
+      "rule_id": "SC1",
+      "severity": "LOW",
+      "start_line": 8,
+      "tags": [
+        "Supply Chain"
+      ]
+    },
+    {
+      "category": "Deep Agents Framework",
+      "code_snippet": null,
+      "confidence": 0.9,
+      "context": null,
+      "end_line": null,
+      "explanation": "A Deep Agents application defines a custom subagent without Skills of its own. Upstream states that only the general-purpose subagent inherits the main agent's Skills and that every custom subagent needs its own skills parameter, so this subagent runs without the Skills the application around it was given. Nothing at runtime reports it: the subagent answers, and it answers without the procedure it was supposed to follow.",
+      "file": "src/agent.ts",
+      "finding": null,
+      "intent": null,
+      "matched_text": null,
+      "message": "This custom subagent is defined without Skills of its own. A custom subagent does not inherit the main agent's Skills, so it runs without the Skills the application around it was given.",
+      "pattern": "Subagent Without Skills",
+      "remediation": "Pass the subagent the Skills it needs by adding a skills entry to its own definition, naming the same sources the main agent is given where the subagent is meant to share them. Where the subagent is deliberately meant to run without Skills, say so beside the definition -- there is nothing at runtime that distinguishes the two.",
+      "rule_id": "DA-SUBAGENT-SKILLS",
+      "severity": "LOW",
+      "start_line": 24,
+      "tags": [
+        "ASI02"
+      ]
+    },
+    {
+      "category": "Deep Agents Framework",
+      "code_snippet": null,
+      "confidence": 0.9,
+      "context": null,
+      "end_line": null,
+      "explanation": "Two Skill sources one Deep Agents application passes to skills: [...] both declare a Skill of the same name. Later sources override earlier ones -- last one wins -- so the Skill the agent loads is the one in the later source and the earlier one never runs. Where the later source is writable, or is where a per-user directory lives, that is a supply-chain substitution expressed entirely in configuration: nothing in either Skill directory read on its own shows it, and a reviewer who vetted the shared library vetted a Skill the agent does not use.",
+      "file": "src/agent.ts",
+      "finding": null,
+      "intent": null,
+      "matched_text": null,
+      "message": "The Skill ticket-triage is declared in both the Skill source /skills/shared/ and the later source /skills/personal/. Later sources override earlier ones for Skills of the same name, so the agent loads library/skills/personal/ticket-triage/SKILL.md and the earlier one never runs.",
+      "pattern": "Shadowed Skill Source",
+      "remediation": "Give the two Skills distinct names, or drop the duplicate from the source that is not meant to provide it. Where the override is deliberate, order skills: [...] so the source that is meant to win is written last and say so beside the call -- the list order is the only thing that decides it. Where it is not, keep a per-user or otherwise writable Skill source out of the same name space as the curated library.",
+      "rule_id": "DA-SHADOW",
+      "severity": "HIGH",
+      "start_line": 34,
+      "tags": [
+        "ASI02"
+      ]
+    },
+    {
+      "category": "Deep Agents Framework",
+      "code_snippet": null,
+      "confidence": 0.9,
+      "context": null,
+      "end_line": null,
+      "explanation": "A Deep Agents agent is given a Skill source path that nothing stops it writing to. Upstream states the default in as many words -- agents can write to skill files if the backend permits it and no permission rule blocks the path -- so an application that adds no denying rule has handed the agent the instructions it runs on. The agent can then rewrite its own Skill, and every later run reads the rewritten one.",
+      "file": "src/agent.ts",
+      "finding": null,
+      "intent": null,
+      "matched_text": null,
+      "message": "The agent is given the Skill source path /skills/personal/ and nothing denies it write access, so it can rewrite the instructions it runs on and no human is asked.",
+      "pattern": "Writable Skill Source",
+      "remediation": "Add a permission rule { operations: [\"write\"], mode: \"deny\" } whose paths pattern covers this Skill source, placing any more specific rule before it. Where the agent is meant to refine its own Skills, keep the writable source separate from the shared library and require approval for the writes with mode: \"interrupt\" or interruptOn.",
+      "rule_id": "DA-SKILL-WRITABLE",
+      "severity": "MEDIUM",
+      "start_line": 34,
+      "tags": [
+        "ASI02"
+      ]
+    }
+  ],
+  "framework": "deepagents_js",
+  "has_executable_scripts": true,
+  "manifest": {},
+  "manifest_status": "absent",
+  "risk_recommendation": "CAUTION",
+  "risk_score": 48,
+  "risk_severity": "MEDIUM",
+  "sarif_report": {
+    "$schema": "https://schemastore.azurewebsites.net/schemas/json/sarif-2.1.0-rtm.4.json",
+    "runs": [
+      {
+        "invocations": [
+          {
+            "executionSuccessful": true,
+            "toolExecutionNotifications": [
+              {
+                "level": "warning",
+                "message": {
+                  "text": "Analyzer was disabled by the requested configuration."
+                },
+                "properties": {
+                  "kind": "inspection_limitation"
+                }
+              },
+              {
+                "level": "warning",
+                "message": {
+                  "text": "Analyzer was disabled by the requested configuration."
+                },
+                "properties": {
+                  "kind": "inspection_limitation"
+                }
+              },
+              {
+                "level": "warning",
+                "message": {
+                  "text": "Analyzer was disabled by the requested configuration."
+                },
+                "properties": {
+                  "kind": "inspection_limitation"
+                }
+              },
+              {
+                "level": "warning",
+                "message": {
+                  "text": "Analyzer was disabled by the requested configuration."
+                },
+                "properties": {
+                  "kind": "inspection_limitation"
+                }
+              }
+            ]
+          }
+        ],
+        "results": [
+          {
+            "level": "note",
+            "locations": [
+              {
+                "physicalLocation": {
+                  "artifactLocation": {
+                    "uri": "package.json"
+                  },
+                  "region": {
+                    "startLine": 8
+                  }
+                }
+              }
+            ],
+            "message": {
+              "text": "Unpinned Dependencies"
+            },
+            "properties": {
+              "category": "Supply Chain",
+              "code_snippet": "  \"type\": \"module\",\n  \"description\": \"A TypeScript support agent that layers a per-user Skill directory over a shared library.\",\n  \"dependencies\": {\n    \"deepagents\": \"^1.9.1\"\n  }\n}",
+              "confidence": 0.4,
+              "explanation": "Dependencies lack version pinning, allowing potential malicious package updates. Consider pinning versions.",
+              "finding": "\"deepagents\": \"^1.9.1\"",
+              "pattern": "Unpinned Dependencies",
+              "remediation": "Pin all dependency versions in requirements.txt or pyproject.toml. Use exact versions (==) or compatible ranges. Run pip-audit regularly.",
+              "severity": "LOW",
+              "tags": [
+                "Supply Chain"
+              ]
+            },
+            "ruleId": "SC1"
+          },
+          {
+            "level": "note",
+            "locations": [
+              {
+                "physicalLocation": {
+                  "artifactLocation": {
+                    "uri": "src/agent.ts"
+                  },
+                  "region": {
+                    "startLine": 24
+                  }
+                }
+              }
+            ],
+            "message": {
+              "text": "This custom subagent is defined without Skills of its own. A custom subagent does not inherit the main agent's Skills, so it runs without the Skills the application around it was given."
+            },
+            "properties": {
+              "category": "Deep Agents Framework",
+              "confidence": 0.9,
+              "explanation": "A Deep Agents application defines a custom subagent without Skills of its own. Upstream states that only the general-purpose subagent inherits the main agent's Skills and that every custom subagent needs its own skills parameter, so this subagent runs without the Skills the application around it was given. Nothing at runtime reports it: the subagent answers, and it answers without the procedure it was supposed to follow.",
+              "pattern": "Subagent Without Skills",
+              "remediation": "Pass the subagent the Skills it needs by adding a skills entry to its own definition, naming the same sources the main agent is given where the subagent is meant to share them. Where the subagent is deliberately meant to run without Skills, say so beside the definition -- there is nothing at runtime that distinguishes the two.",
+              "severity": "LOW",
+              "tags": [
+                "ASI02"
+              ]
+            },
+            "ruleId": "DA-SUBAGENT-SKILLS"
+          },
+          {
+            "level": "error",
+            "locations": [
+              {
+                "physicalLocation": {
+                  "artifactLocation": {
+                    "uri": "src/agent.ts"
+                  },
+                  "region": {
+                    "startLine": 34
+                  }
+                }
+              }
+            ],
+            "message": {
+              "text": "The Skill ticket-triage is declared in both the Skill source /skills/shared/ and the later source /skills/personal/. Later sources override earlier ones for Skills of the same name, so the agent loads library/skills/personal/ticket-triage/SKILL.md and the earlier one never runs."
+            },
+            "properties": {
+              "category": "Deep Agents Framework",
+              "confidence": 0.9,
+              "explanation": "Two Skill sources one Deep Agents application passes to skills: [...] both declare a Skill of the same name. Later sources override earlier ones -- last one wins -- so the Skill the agent loads is the one in the later source and the earlier one never runs. Where the later source is writable, or is where a per-user directory lives, that is a supply-chain substitution expressed entirely in configuration: nothing in either Skill directory read on its own shows it, and a reviewer who vetted the shared library vetted a Skill the agent does not use.",
+              "pattern": "Shadowed Skill Source",
+              "remediation": "Give the two Skills distinct names, or drop the duplicate from the source that is not meant to provide it. Where the override is deliberate, order skills: [...] so the source that is meant to win is written last and say so beside the call -- the list order is the only thing that decides it. Where it is not, keep a per-user or otherwise writable Skill source out of the same name space as the curated library.",
+              "severity": "HIGH",
+              "tags": [
+                "ASI02"
+              ]
+            },
+            "ruleId": "DA-SHADOW"
+          },
+          {
+            "level": "warning",
+            "locations": [
+              {
+                "physicalLocation": {
+                  "artifactLocation": {
+                    "uri": "src/agent.ts"
+                  },
+                  "region": {
+                    "startLine": 34
+                  }
+                }
+              }
+            ],
+            "message": {
+              "text": "The agent is given the Skill source path /skills/personal/ and nothing denies it write access, so it can rewrite the instructions it runs on and no human is asked."
+            },
+            "properties": {
+              "category": "Deep Agents Framework",
+              "confidence": 0.9,
+              "explanation": "A Deep Agents agent is given a Skill source path that nothing stops it writing to. Upstream states the default in as many words -- agents can write to skill files if the backend permits it and no permission rule blocks the path -- so an application that adds no denying rule has handed the agent the instructions it runs on. The agent can then rewrite its own Skill, and every later run reads the rewritten one.",
+              "pattern": "Writable Skill Source",
+              "remediation": "Add a permission rule { operations: [\"write\"], mode: \"deny\" } whose paths pattern covers this Skill source, placing any more specific rule before it. Where the agent is meant to refine its own Skills, keep the writable source separate from the shared library and require approval for the writes with mode: \"interrupt\" or interruptOn.",
+              "severity": "MEDIUM",
+              "tags": [
+                "ASI02"
+              ]
+            },
+            "ruleId": "DA-SKILL-WRITABLE"
+          }
+        ],
+        "tool": {
+          "driver": {
+            "name": "skillspector",
+            "rules": [
+              {
+                "id": "DA-SHADOW",
+                "shortDescription": {
+                  "text": "The Skill ticket-triage is declared in both the Skill source /skills/shared/ and the later source /skills/personal/. Later sources override earlier ones for Skills of the same name, so the agent loads library/skills/personal/ticket-triage/SKILL.md and the earlier one never runs."
+                }
+              },
+              {
+                "id": "DA-SKILL-WRITABLE",
+                "shortDescription": {
+                  "text": "The agent is given the Skill source path /skills/personal/ and nothing denies it write access, so it can rewrite the instructions it runs on and no human is asked."
+                }
+              },
+              {
+                "id": "DA-SUBAGENT-SKILLS",
+                "shortDescription": {
+                  "text": "This custom subagent is defined without Skills of its own. A custom subagent does not inherit the main agent's Skills, so it runs without the Skills the application around it was given."
+                }
+              },
+              {
+                "id": "SC1",
+                "shortDescription": {
+                  "text": "Unpinned Dependencies"
+                }
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "version": "2.1.0"
+  }
+}

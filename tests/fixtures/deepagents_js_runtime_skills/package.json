@@ -1,0 +1,10 @@
+{
+  "name": "tenant-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A TypeScript agent whose Skill sources and backend are chosen per request from the caller's tenant.",
+  "dependencies": {
+    "deepagents": "^1.9.1"
+  }
+}
