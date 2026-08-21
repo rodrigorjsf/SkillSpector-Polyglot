@@ -1493,6 +1493,7 @@ def test_scan_without_transitive_invokes_graph_once(tmp_path: Path, monkeypatch)
         baseline=None,
         show_suppressed: bool = False,
         transitive_traversal=None,
+        **_fork_kwargs: object,
     ) -> dict[str, object]:
         calls.append(input_path)
         return _mock_graph_result(output_format=format.value if format else "json")
@@ -1519,6 +1520,7 @@ def test_scan_transitive_root_graph_shares_budget_with_children(
         baseline=None,
         show_suppressed: bool = False,
         transitive_traversal=None,
+        **_fork_kwargs: object,
     ) -> dict[str, object]:
         assert input_path == str(tmp_path)
         assert transitive_traversal is not None
@@ -1569,6 +1571,7 @@ def test_recursive_transitive_roots_and_children_share_one_traversal(
         baseline=None,
         show_suppressed: bool = False,
         transitive_traversal=None,
+        **_fork_kwargs: object,
     ) -> dict[str, object]:
         assert transitive_traversal is not None
         root_traversals.append(transitive_traversal)
@@ -1630,6 +1633,7 @@ def test_recursive_transitive_roots_consume_child_time_budget(tmp_path: Path, mo
         baseline=None,
         show_suppressed: bool = False,
         transitive_traversal=None,
+        **_fork_kwargs: object,
     ) -> dict[str, object]:
         fake_time["value"] += 61.0
         return _mock_graph_result(file_cache={"SKILL.md": "https://github.com/org/dep.git"})
@@ -1695,6 +1699,7 @@ def test_scan_transitive_depth_one_merges_provenance(tmp_path: Path, monkeypatch
         baseline=None,
         show_suppressed: bool = False,
         transitive_traversal=None,
+        **_fork_kwargs: object,
     ) -> dict[str, object]:
         if input_path == str(tmp_path):
             return _mock_graph_result(
@@ -1723,7 +1728,7 @@ def test_scan_transitive_depth_one_merges_provenance(tmp_path: Path, monkeypatch
         ],
     )
     assert result.exit_code == 0
-    data = json.loads(result.output)
+    data = json.loads(result.stdout)
     issues = data["issues"]
     assert len(issues) == 2
     transitive_issue = next(issue for issue in issues if issue.get("source_url") is not None)
@@ -1750,6 +1755,7 @@ def test_scan_transitive_ignores_non_scannable_urls(tmp_path: Path, monkeypatch)
         baseline=None,
         show_suppressed: bool = False,
         transitive_traversal=None,
+        **_fork_kwargs: object,
     ) -> dict[str, object]:
         calls.append(input_path)
         return _mock_graph_result(
@@ -1772,7 +1778,7 @@ def test_scan_transitive_ignores_non_scannable_urls(tmp_path: Path, monkeypatch)
     )
     assert result.exit_code == 0
     assert len(calls) == 1
-    data = json.loads(result.output)
+    data = json.loads(result.stdout)
     assert len(data["issues"]) == 1
 
 
@@ -1791,6 +1797,7 @@ def test_scan_transitive_allow_prefix_filters_targets(tmp_path: Path, monkeypatc
         baseline=None,
         show_suppressed: bool = False,
         transitive_traversal=None,
+        **_fork_kwargs: object,
     ) -> dict[str, object]:
         calls.append(input_path)
         if input_path == str(tmp_path):
@@ -1822,7 +1829,7 @@ def test_scan_transitive_allow_prefix_filters_targets(tmp_path: Path, monkeypatc
     assert calls[0] == str(tmp_path)
     assert len(calls) == 2
     assert calls[1] == "https://github.com/allowed/dep"
-    data = json.loads(result.output)
+    data = json.loads(result.stdout)
     assert any(
         issue.get("source_url") == "https://github.com/allowed/dep" for issue in data["issues"]
     )
@@ -1845,6 +1852,7 @@ def test_scan_transitive_deny_prefix_skips_targets(tmp_path: Path, monkeypatch) 
         baseline=None,
         show_suppressed: bool = False,
         transitive_traversal=None,
+        **_fork_kwargs: object,
     ) -> dict[str, object]:
         calls.append(input_path)
         if input_path == str(tmp_path):
@@ -1953,6 +1961,7 @@ def test_single_and_recursive_transitive_route_through_shared_helper(
         baseline=None,
         show_suppressed: bool = False,
         transitive_traversal=None,
+        **_fork_kwargs: object,
     ) -> dict[str, object]:
         return _mock_graph_result(
             findings=[_finding("D1", "direct finding")],
@@ -2002,6 +2011,7 @@ def test_transitive_resolver_failure_preserves_direct_report(tmp_path: Path, mon
         baseline=None,
         show_suppressed: bool = False,
         transitive_traversal=None,
+        **_fork_kwargs: object,
     ) -> dict[str, object]:
         if input_path == str(tmp_path):
             return _mock_graph_result(
@@ -2024,7 +2034,7 @@ def test_transitive_resolver_failure_preserves_direct_report(tmp_path: Path, mon
         ],
     )
     assert result.exit_code == 0
-    data = json.loads(result.output)
+    data = json.loads(result.stdout)
     assert len(data["issues"]) == 1
     assert data["issues"][0]["id"] == "D1"
 
@@ -2042,6 +2052,7 @@ def test_scan_transitive_does_not_rescan_root_source(monkeypatch) -> None:
         baseline=None,
         show_suppressed: bool = False,
         transitive_traversal=None,
+        **_fork_kwargs: object,
     ) -> dict[str, object]:
         calls.append(input_path)
         return _mock_graph_result(
@@ -2078,6 +2089,7 @@ def test_scan_transitive_preserves_root_cleanup_and_counts_findings(
         baseline=None,
         show_suppressed: bool = False,
         transitive_traversal=None,
+        **_fork_kwargs: object,
     ) -> dict[str, object]:
         assert input_path == "https://github.com/org/transitive"
         assert baseline is None
@@ -2125,6 +2137,7 @@ def test_scan_transitive_counts_only_active_post_baseline_findings(
         baseline=None,
         show_suppressed: bool = False,
         transitive_traversal=None,
+        **_fork_kwargs: object,
     ) -> dict[str, object]:
         assert input_path == "https://github.com/org/transitive"
         assert baseline is None
@@ -2169,6 +2182,7 @@ def test_scan_transitive_preserves_cached_child_llm_telemetry(monkeypatch) -> No
         baseline=None,
         show_suppressed: bool = False,
         transitive_traversal=None,
+        **_fork_kwargs: object,
     ) -> dict[str, object]:
         assert input_path == "https://github.com/org/transitive"
         result = _mock_graph_result(
@@ -2259,6 +2273,7 @@ def test_recursive_transitive_json_includes_sources(tmp_path: Path, monkeypatch)
         baseline=None,
         show_suppressed: bool = False,
         transitive_traversal=None,
+        **_fork_kwargs: object,
     ) -> dict[str, object]:
         return _mock_graph_result(
             findings=[_finding("D1", "direct finding")],
@@ -2311,6 +2326,7 @@ def test_recursive_transitive_reuses_cached_dependency_results(tmp_path: Path, m
         baseline=None,
         show_suppressed: bool = False,
         transitive_traversal=None,
+        **_fork_kwargs: object,
     ) -> dict[str, object]:
         calls.append(input_path)
         if input_path == shared_dep:
@@ -2427,6 +2443,7 @@ def test_scan_transitive_marks_truncation_when_target_budget_hits(monkeypatch) -
         baseline=None,
         show_suppressed: bool = False,
         transitive_traversal=None,
+        **_fork_kwargs: object,
     ) -> dict[str, object]:
         scanned_targets.append(input_path)
         return {
@@ -2501,6 +2518,7 @@ def test_scan_transitive_merges_current_effective_finding_ids(monkeypatch) -> No
         baseline=None,
         show_suppressed: bool = False,
         transitive_traversal=None,
+        **_fork_kwargs: object,
     ) -> dict[str, object]:
         assert input_path == target
         return {
@@ -2579,6 +2597,7 @@ def test_scan_transitive_child_failure_stays_visible_and_fail_closed(monkeypatch
         baseline=None,
         show_suppressed: bool = False,
         transitive_traversal=None,
+        **_fork_kwargs: object,
     ) -> dict[str, object]:
         assert input_path == failed_target
         raise RuntimeError("secret token should stay private")
@@ -2644,6 +2663,7 @@ def test_scan_transitive_keeps_source_aware_component_coverage(monkeypatch) -> N
         baseline=None,
         show_suppressed: bool = False,
         transitive_traversal=None,
+        **_fork_kwargs: object,
     ) -> dict[str, object]:
         assert input_path == shared_dep
         return {
@@ -2716,6 +2736,7 @@ def test_scan_transitive_source_scopes_identical_child_work_and_evidence(monkeyp
         baseline=None,
         show_suppressed: bool = False,
         transitive_traversal=None,
+        **_fork_kwargs: object,
     ) -> dict[str, object]:
         assert input_path in targets
         child_finding = Finding(
@@ -2890,6 +2911,7 @@ def test_scan_transitive_discovers_hidden_and_nested_refs_only_in_local_cache(
         baseline=None,
         show_suppressed: bool = False,
         transitive_traversal=None,
+        **_fork_kwargs: object,
     ) -> dict[str, object]:
         scanned.append(input_path)
         if input_path == first:
@@ -2946,6 +2968,7 @@ def test_scan_transitive_enforces_shared_output_caps_across_children(monkeypatch
         baseline=None,
         show_suppressed: bool = False,
         transitive_traversal=None,
+        **_fork_kwargs: object,
     ) -> dict[str, object]:
         findings = [
             Finding(
@@ -3224,6 +3247,7 @@ def test_scan_transitive_frontier_limit_is_incomplete_and_caution(monkeypatch) -
         baseline=None,
         show_suppressed: bool = False,
         transitive_traversal=None,
+        **_fork_kwargs: object,
     ) -> dict[str, object]:
         scanned.append(input_path)
         return {
@@ -3522,7 +3546,7 @@ def test_cli_scan_structured_skill_aisop_no_llm_reports_summary(tmp_path: Path) 
     )
     result = runner.invoke(app, ["scan", str(tmp_path), "--format", "json", "--no-llm"])
     assert result.exit_code == 0
-    data = json.loads(result.output)
+    data = json.loads(result.stdout)
     assert data["issues"] == []
     assert data["risk_assessment"]["score"] == 0
     assert data["structured_summaries"][0]["id"] == "SSR-1"

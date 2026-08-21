@@ -953,19 +953,27 @@ class TestConformanceFindingsBypassTheFilter:
 
         assert [f.rule_id for f in kept] == ["SPEC-6"]
 
-    def test_an_unconfirmed_medium_severity_finding_outside_the_catalogue_still_drops(
+    def test_an_unconfirmed_finding_outside_the_catalogue_is_kept_and_tagged(
         self,
     ) -> None:
-        """The scoping, asserted where it decides an existing verdict.
+        """The scoping, at the site where it used to decide a verdict.
 
-        MEDIUM and LOW findings are filtered on confirmation exactly as before;
-        only rule ids unreachable without ``--spec-checks`` are exempt, which is
-        what makes the exemption additive rather than a trade.
+        This asserted a *drop* until upstream's ``73dd1f1`` made ``apply_filter``
+        fail-closed at every severity, so an unconfirmed MEDIUM finding is now
+        kept and tagged ``llm-unconfirmed`` like any other. That makes the
+        conformance exemption's first half -- "a SPEC id is never dropped for
+        want of confirmation" -- true of everything rather than of SPEC ids
+        alone. What the exemption still decides on its own is the second half,
+        which the next test holds: a response naming a SPEC id must not enrich
+        one.
         """
         findings = [_finding("SC4", 4, severity="MEDIUM")]
         batch = Batch(file_path="requirements.txt", content="", findings=findings)
 
-        assert _analyzer().apply_filter(findings, [(batch, [])]) == []
+        kept = _analyzer().apply_filter(findings, [(batch, [])])
+
+        assert [f.rule_id for f in kept] == ["SC4"]
+        assert "llm-unconfirmed" in kept[0].tags
 
     def test_a_confirmed_conformance_finding_keeps_its_own_confidence(self) -> None:
         """The load-bearing half: bypassing must not mean passing through enrichment.

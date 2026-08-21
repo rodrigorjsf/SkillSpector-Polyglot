@@ -1187,10 +1187,20 @@ class TestSupplyChainLedger:
 
 class TestLicenseFiles:
     @staticmethod
-    def _third_party_notice_range(start_line: int, end_line: int) -> str:
+    def _third_party_notice_range(first_line: str, span: int = 3) -> str:
+        """*span* lines of ``THIRD_PARTY_NOTICES.md`` starting at *first_line*.
+
+        Anchored on the text rather than on a line number, which is what upstream
+        wrote and what this fork cannot keep: the two projects' notices declare
+        different dependencies, so upstream's line 92 is a warranty disclaimer
+        there and a dependency table row here -- and every dependency this fork
+        adds or drops moves it again. The disclaimer wording is the stable thing,
+        and it is what the assertion is actually about.
+        """
         notice_path = Path(__file__).resolve().parents[3] / "THIRD_PARTY_NOTICES.md"
         lines = notice_path.read_text(encoding="utf-8").splitlines()
-        return "\n".join(lines[start_line - 1 : end_line]) + "\n"
+        start = next(index for index, line in enumerate(lines) if line == first_line)
+        return "\n".join(lines[start : start + span]) + "\n"
 
     @staticmethod
     def _range_content(range_index: int) -> tuple[str, int]:
@@ -1247,14 +1257,23 @@ class TestLicenseFiles:
         assert any(f.rule_id == "EA3" and f.start_line == attack_line_number for f in findings)
 
     @pytest.mark.parametrize(
-        "start_line,match_line",
-        [(92, 2), (118, 2)],
+        "first_line,match_line",
+        [
+            (
+                'THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR',
+                2,
+            ),
+            (
+                'THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"',
+                2,
+            ),
+        ],
         ids=["mit_notice", "bsd_notice"],
     )
     def test_independent_third_party_ranges_suppress_ea3(
-        self, start_line: int, match_line: int
+        self, first_line: str, match_line: int
     ) -> None:
-        content = self._third_party_notice_range(start_line, start_line + 2)
+        content = self._third_party_notice_range(first_line)
         findings = static_runner.run_static_patterns(
             {"components": ["LICENSE"], "file_cache": {"LICENSE": content}},
             [excessive_agency_module],

@@ -61,7 +61,7 @@ def _scan_cli(root: Path) -> dict:
     result = CliRunner().invoke(app, ["scan", str(root), "--format", "json", "--no-llm"])
     # Exit 1 is the documented high-risk verdict, not a scan execution failure.
     assert result.exit_code in {0, 1}, result.output
-    return json.loads(result.output)
+    return json.loads(result.stdout)
 
 
 def _assert_rule(result: dict, rule_id: str, path: str) -> list:
@@ -171,7 +171,7 @@ async def _assert_rules_across_public_surfaces(
     assert default_cli.exit_code in {0, 1}, default_cli.output
     assert strict_cli.exit_code == default_cli.exit_code, strict_cli.output
     for cli_result in (default_cli, strict_cli):
-        parsed = json.loads(cli_result.output)
+        parsed = json.loads(cli_result.stdout)
         for rule_id, paths in expected_locations.items():
             observed = {
                 issue["location"]["file"] for issue in parsed["issues"] if issue["id"] == rule_id
@@ -241,7 +241,7 @@ async def _assert_incomplete_across_public_surfaces(root: Path, python_result: d
     assert default_cli.exit_code == 0, default_cli.output
     assert strict_cli.exit_code == 1, strict_cli.output
     for cli_result in (default_cli, strict_cli):
-        parsed = json.loads(cli_result.output)
+        parsed = json.loads(cli_result.stdout)
         assert parsed["risk_assessment"]["score"] == expected_score
         assert parsed["risk_assessment"]["recommendation"] == "CAUTION"
         assert parsed["analysis_completeness"]["is_complete"] is False

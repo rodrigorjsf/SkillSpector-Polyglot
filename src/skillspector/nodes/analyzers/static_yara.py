@@ -725,21 +725,11 @@ def node(state: SkillspectorState) -> AnalyzerNodeResponse:
         return {
             "findings": [],
             "inspection_ledger": limit_events,
+            # Every event above is ``PARTIAL``, so the cascade reaches
+            # ``degraded`` on its own; the run-level *reason* is the one thing
+            # this branch knows that the events alone do not say together.
             "analyzer_status_events": [
-                analyzer_status_event(
-                    analyzer_id=ANALYZER_ID,
-                    status="degraded",
-                    reason=reason,
-                    planned_work=[
-                        {
-                            "work_id": event["work_id"],
-                            "path": event["path"],
-                            "start_line": event["start_line"],
-                            "end_line": event["end_line"],
-                        }
-                        for event in limit_events
-                    ],
-                )
+                analyzer_status_for_events(ANALYZER_ID, limit_events, reason=reason)
             ],
         }
 

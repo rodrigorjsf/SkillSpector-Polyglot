@@ -1655,9 +1655,12 @@ def report(state: SkillspectorState) -> dict[str, object]:
     )
     raw_note = state.get("unscored_rule_note")
     unscored_rule_note = raw_note if isinstance(raw_note, str) else ""
-    findings_for_scoring = deduplicate(active_findings)
+    # Scored over ``active_findings`` rather than a deduplicated copy of them:
+    # upstream stopped collapsing the scoring input, and two occurrences of one
+    # Rule in two files are two defects to score. The fork's own addition here
+    # is ``unscored_rule_ids``, which is re-applied on top of that.
     risk_score, risk_severity, risk_recommendation = _compute_risk_score(
-        findings_for_scoring, has_executable_scripts, component_metadata, unscored_rule_ids
+        active_findings, has_executable_scripts, component_metadata, unscored_rule_ids
     )
     reported_findings = _bounded_report_findings(deduplicate(active_findings))
     remaining_output_records = max(

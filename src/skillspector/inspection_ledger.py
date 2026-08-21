@@ -523,9 +523,20 @@ def analyzer_status_event(
 
 
 def analyzer_status_for_events(
-    analyzer_id: str, events: Iterable[InspectionLedgerEvent]
+    analyzer_id: str,
+    events: Iterable[InspectionLedgerEvent],
+    *,
+    reason: LedgerReason | None = None,
 ) -> AnalyzerStatusEvent:
-    """Summarize an analyzer's terminal work without exposing event payloads."""
+    """Summarize an analyzer's terminal work without exposing event payloads.
+
+    *reason* names, at the run level, why the whole analyzer ended where it did
+    -- the resource limit that stopped it before any path was attempted, say.
+    It is for a caller that already knows the answer for every event it is
+    handing over; an analyzer whose events differ from one another has no single
+    run-level reason and passes none. It is ignored when there are no events,
+    because "nothing was applicable" is the more specific statement.
+    """
     terminal_events = list(events)
     if not terminal_events:
         return analyzer_status_event(
@@ -545,6 +556,7 @@ def analyzer_status_for_events(
     return analyzer_status_event(
         analyzer_id=analyzer_id,
         status=status,
+        reason=reason,
         planned_work=[
             {
                 "work_id": event["work_id"],

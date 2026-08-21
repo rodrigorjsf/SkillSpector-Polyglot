@@ -113,6 +113,27 @@ def _callee(call: ast.Call) -> str:
     return ""
 
 
+# The spellings of the *inspection completeness* vocabulary that ``AnalyzerStatus``
+# does not declare. Upstream writes that vocabulary into a local named ``status``
+# too -- ``report._analysis_completeness`` and ``cli._multi_skill_analysis_completeness``
+# both do -- and it shares the spelling ``failed`` with this enum. The two are
+# homonyms, so the discriminator is the company the spelling keeps: an expression
+# offering ``complete`` or ``partial`` is choosing among completeness statuses,
+# and no Analyzer Status expression can contain either. Scoping by that rather
+# than exempting the whole module is what keeps a *real* leak in those files
+# reportable -- the same resolution ``test_max_file_chars_naming`` uses for its
+# own homonym.
+_COMPLETENESS_ONLY_SPELLINGS = frozenset({"complete", "partial"})
+
+
+def _is_completeness_vocabulary(expression: ast.AST) -> bool:
+    """True when *expression* chooses among inspection-completeness statuses."""
+    return any(
+        isinstance(node, ast.Constant) and node.value in _COMPLETENESS_ONLY_SPELLINGS
+        for node in ast.walk(expression)
+    )
+
+
 def _status_expressions(tree: ast.Module) -> list[ast.AST]:
     """Every expression this guard reads as an Analyzer Status."""
     expressions: list[ast.AST] = []
@@ -141,6 +162,8 @@ def leaks(path: Path) -> list[str]:
     spellings = _spellings()
     reported: dict[tuple[int, int], str] = {}
     for expression in _status_expressions(ast.parse(path.read_text(encoding="utf-8"))):
+        if _is_completeness_vocabulary(expression):
+            continue
         for node in ast.walk(expression):
             if not isinstance(node, ast.Constant) or node.value not in spellings:
                 continue
@@ -226,6 +249,36 @@ class TestScope:
             encoding="utf-8",
         )
         assert leaks(allowed) == []
+
+    def test_the_completeness_vocabulary_is_not_reported(self, tmp_path: Path) -> None:
+        # Upstream's own shape, verbatim in structure: a local named ``status``
+        # choosing among ``complete``/``failed``/``partial``. ``failed`` is a
+        # spelling this enum also declares, and reporting it would ask upstream
+        # to import an Analyzer Status for a value that is not one.
+        homonym = tmp_path / "completeness.py"
+        homonym.write_text(
+            'status = "failed" if not ok else "complete" if done else "partial"\n',
+            encoding="utf-8",
+        )
+        assert leaks(homonym) == []
+
+    def test_a_real_leak_beside_the_completeness_vocabulary_is_still_reported(
+        self, tmp_path: Path
+    ) -> None:
+        # The control for the exemption above, and the reason it is scoped to the
+        # expression rather than to the file: ``report.py`` and ``cli.py`` write
+        # both vocabularies, so exempting either module wholesale would hide the
+        # next genuine leak in it.
+        mixed = tmp_path / "mixed.py"
+        mixed.write_text(
+            'status = "failed" if not ok else "complete" if done else "partial"\n'
+            'event = analyzer_status_event(analyzer_id="a", status="degraded")\n',
+            encoding="utf-8",
+        )
+        reported = leaks(mixed)
+        assert len(reported) == 1
+        assert "DEGRADED" in reported[0]
+        assert "mixed.py:2" in reported[0]
 
     def test_an_unrelated_status_argument_is_not_reported(self, tmp_path: Path) -> None:
         # ``mcp_registry`` passes a registry server's own status under the same

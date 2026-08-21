@@ -24,6 +24,7 @@ from skillspector.artifacts import (
 from skillspector.constants import MAX_ANALYZABLE_FILE_BYTES
 from skillspector.graph import graph
 from skillspector.inspection_ledger import LedgerReason
+from skillspector.manifest_status import ManifestStatus
 from skillspector.models import AnalyzerFinding, Finding, Location, Severity
 from skillspector.nodes.analyzers import static_runner
 from skillspector.nodes.analyzers.artifact_integrity import node as artifact_integrity
@@ -188,7 +189,7 @@ def test_manifest_runtime_uses_tighter_caller_deadline(tmp_path: Path) -> None:
     events: list[dict[str, object]] = []
     timestamps = iter((10.0, 10.2))
 
-    manifest = build_context_module._parse_manifest(
+    manifest, status = build_context_module._parse_manifest(
         tmp_path,
         raw_file_cache={"SKILL.md": raw},
         ledger_events=events,
@@ -197,6 +198,10 @@ def test_manifest_runtime_uses_tighter_caller_deadline(tmp_path: Path) -> None:
     )
 
     assert manifest == {}
+    # The fork's second return value: a Manifest the parser could not finish is
+    # unparseable rather than absent, so an empty dict stops being an overloaded
+    # sentinel here too.
+    assert status is ManifestStatus.UNPARSEABLE
     event = next(item for item in events if item.get("reason_code") == "manifest_parse_limit")
     assert event["observed_seconds"] == pytest.approx(0.2)
     assert event["limit_seconds"] == pytest.approx(0.1)
