@@ -255,3 +255,6 @@ When something fails repeatedly, when User has to re-explain, or when a workarou
 - Code-over-prose settles a disagreement; an example is not an enumeration.
 - Anchor every JS/TS detection signal to line start; strings and comments are scanned too.
 - A line-start anchor still fires inside a template literal; its contents are whole lines.
+- A conflict can align two functions' identical tails; diff each spliced function whole.
+- Upstream test fakes need `**kwargs` when the fork threads a new parameter through.
+- Hardcoded line numbers into `THIRD_PARTY_NOTICES.md` break on any dependency change.
