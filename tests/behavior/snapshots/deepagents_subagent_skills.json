@@ -2,9 +2,20 @@
   "analysis_completeness": {
     "analyzer_statuses": [
       {
+        "analyzer_id": "artifact_integrity",
+        "completed": 4,
+        "failed": 0,
+        "partial": 0,
+        "planned_work": 4,
+        "skipped": 0,
+        "status": "completed",
+        "unaccounted": 0
+      },
+      {
         "analyzer_id": "behavioral_ast",
         "completed": 2,
         "failed": 0,
+        "partial": 0,
         "planned_work": 2,
         "skipped": 0,
         "status": "completed",
@@ -14,6 +25,7 @@
         "analyzer_id": "behavioral_taint_tracking",
         "completed": 2,
         "failed": 0,
+        "partial": 0,
         "planned_work": 2,
         "skipped": 0,
         "status": "completed",
@@ -23,6 +35,7 @@
         "analyzer_id": "framework_deepagents",
         "completed": 4,
         "failed": 0,
+        "partial": 0,
         "planned_work": 4,
         "skipped": 0,
         "status": "completed",
@@ -33,6 +46,7 @@
         "completed": 0,
         "failed": 0,
         "message": "No compatible manifest was present for this analyzer.",
+        "partial": 0,
         "planned_work": 0,
         "reason_code": "manifest_absent",
         "skipped": 0,
@@ -41,9 +55,10 @@
       },
       {
         "analyzer_id": "mcp_rug_pull",
-        "completed": 1,
+        "completed": 4,
         "failed": 0,
-        "planned_work": 1,
+        "partial": 0,
+        "planned_work": 4,
         "skipped": 0,
         "status": "completed",
         "unaccounted": 0
@@ -53,6 +68,7 @@
         "completed": 0,
         "failed": 0,
         "message": "No compatible manifest was present for this analyzer.",
+        "partial": 0,
         "planned_work": 0,
         "reason_code": "manifest_absent",
         "skipped": 0,
@@ -64,6 +80,7 @@
         "completed": 0,
         "failed": 0,
         "message": "Analyzer was disabled by the requested configuration.",
+        "partial": 0,
         "planned_work": 0,
         "reason_code": "disabled_by_configuration",
         "skipped": 0,
@@ -75,6 +92,7 @@
         "completed": 0,
         "failed": 0,
         "message": "Analyzer was disabled by the requested configuration.",
+        "partial": 0,
         "planned_work": 0,
         "reason_code": "disabled_by_configuration",
         "skipped": 0,
@@ -86,6 +104,7 @@
         "completed": 0,
         "failed": 0,
         "message": "Analyzer was disabled by the requested configuration.",
+        "partial": 0,
         "planned_work": 0,
         "reason_code": "disabled_by_configuration",
         "skipped": 0,
@@ -97,6 +116,7 @@
         "completed": 0,
         "failed": 0,
         "message": "Analyzer was disabled by the requested configuration.",
+        "partial": 0,
         "planned_work": 0,
         "reason_code": "disabled_by_configuration",
         "skipped": 0,
@@ -107,6 +127,7 @@
         "analyzer_id": "static_patterns_agent_snooping",
         "completed": 4,
         "failed": 0,
+        "partial": 0,
         "planned_work": 4,
         "skipped": 0,
         "status": "completed",
@@ -116,6 +137,7 @@
         "analyzer_id": "static_patterns_anti_refusal",
         "completed": 4,
         "failed": 0,
+        "partial": 0,
         "planned_work": 4,
         "skipped": 0,
         "status": "completed",
@@ -125,6 +147,17 @@
         "analyzer_id": "static_patterns_data_exfiltration",
         "completed": 4,
         "failed": 0,
+        "partial": 0,
+        "planned_work": 4,
+        "skipped": 0,
+        "status": "completed",
+        "unaccounted": 0
+      },
+      {
+        "analyzer_id": "static_patterns_deserialization",
+        "completed": 4,
+        "failed": 0,
+        "partial": 0,
         "planned_work": 4,
         "skipped": 0,
         "status": "completed",
@@ -134,6 +167,7 @@
         "analyzer_id": "static_patterns_excessive_agency",
         "completed": 4,
         "failed": 0,
+        "partial": 0,
         "planned_work": 4,
         "skipped": 0,
         "status": "completed",
@@ -143,6 +177,7 @@
         "analyzer_id": "static_patterns_harmful_content",
         "completed": 4,
         "failed": 0,
+        "partial": 0,
         "planned_work": 4,
         "skipped": 0,
         "status": "completed",
@@ -152,6 +187,7 @@
         "analyzer_id": "static_patterns_memory_poisoning",
         "completed": 4,
         "failed": 0,
+        "partial": 0,
         "planned_work": 4,
         "skipped": 0,
         "status": "completed",
@@ -161,6 +197,7 @@
         "analyzer_id": "static_patterns_output_handling",
         "completed": 4,
         "failed": 0,
+        "partial": 0,
         "planned_work": 4,
         "skipped": 0,
         "status": "completed",
@@ -170,6 +207,7 @@
         "analyzer_id": "static_patterns_privilege_escalation",
         "completed": 4,
         "failed": 0,
+        "partial": 0,
         "planned_work": 4,
         "skipped": 0,
         "status": "completed",
@@ -179,6 +217,7 @@
         "analyzer_id": "static_patterns_prompt_injection",
         "completed": 4,
         "failed": 0,
+        "partial": 0,
         "planned_work": 4,
         "skipped": 0,
         "status": "completed",
@@ -188,6 +227,7 @@
         "analyzer_id": "static_patterns_rogue_agent",
         "completed": 4,
         "failed": 0,
+        "partial": 0,
         "planned_work": 4,
         "skipped": 0,
         "status": "completed",
@@ -197,6 +237,7 @@
         "analyzer_id": "static_patterns_ssrf",
         "completed": 4,
         "failed": 0,
+        "partial": 0,
         "planned_work": 4,
         "skipped": 0,
         "status": "completed",
@@ -206,6 +247,7 @@
         "analyzer_id": "static_patterns_supply_chain",
         "completed": 4,
         "failed": 0,
+        "partial": 0,
         "planned_work": 4,
         "skipped": 0,
         "status": "completed",
@@ -215,6 +257,7 @@
         "analyzer_id": "static_patterns_system_prompt_leakage",
         "completed": 4,
         "failed": 0,
+        "partial": 0,
         "planned_work": 4,
         "skipped": 0,
         "status": "completed",
@@ -224,6 +267,7 @@
         "analyzer_id": "static_patterns_tool_misuse",
         "completed": 4,
         "failed": 0,
+        "partial": 0,
         "planned_work": 4,
         "skipped": 0,
         "status": "completed",
@@ -233,6 +277,7 @@
         "analyzer_id": "static_yara",
         "completed": 4,
         "failed": 0,
+        "partial": 0,
         "planned_work": 4,
         "skipped": 0,
         "status": "completed",
@@ -245,17 +290,14 @@
     "findings_after_filtering": 1,
     "findings_before_filtering": 1,
     "fully_inspected_files": 4,
-    "is_complete": false,
+    "is_complete": true,
     "ledger_exceptions": [],
-    "limitations": [
-      "Analyzer was disabled by the requested configuration.",
-      "Analyzer was disabled by the requested configuration.",
-      "Analyzer was disabled by the requested configuration.",
-      "Analyzer was disabled by the requested configuration."
-    ],
+    "limitations": [],
     "partially_inspected_files": 0,
+    "references": [],
     "scanned_components": 4,
     "scope_exclusions": [],
+    "status": "complete",
     "total_components": 4
   },
   "component_metadata": [
@@ -295,20 +337,27 @@
       "confidence": 0.9,
       "context": null,
       "end_line": null,
+      "evidence": {},
       "explanation": "A Deep Agents application defines a custom subagent without Skills of its own. Upstream states that only the general-purpose subagent inherits the main agent's Skills and that every custom subagent needs its own skills parameter, so this subagent runs without the Skills the application around it was given. Nothing at runtime reports it: the subagent answers, and it answers without the procedure it was supposed to follow.",
       "file": "src/support_agent/agent.py",
       "finding": null,
       "intent": null,
+      "match_fingerprint": null,
       "matched_text": null,
       "message": "This custom subagent is defined without Skills of its own. A custom subagent does not inherit the main agent's Skills, so it runs without the Skills the application around it was given.",
+      "occurrences": [],
       "pattern": "Subagent Without Skills",
       "remediation": "Pass the subagent the Skills it needs by adding a skills entry to its own definition, naming the same sources the main agent is given where the subagent is meant to share them. Where the subagent is deliberately meant to run without Skills, say so beside the definition -- there is nothing at runtime that distinguishes the two.",
       "rule_id": "DA-SUBAGENT-SKILLS",
       "severity": "LOW",
+      "source_digest": null,
+      "source_identity": null,
+      "source_url": null,
       "start_line": 38,
       "tags": [
         "ASI02"
-      ]
+      ],
+      "transitive_depth": 0
     }
   ],
   "framework": "deepagents",
@@ -325,44 +374,22 @@
         "invocations": [
           {
             "executionSuccessful": true,
-            "toolExecutionNotifications": [
-              {
-                "level": "warning",
-                "message": {
-                  "text": "Analyzer was disabled by the requested configuration."
-                },
-                "properties": {
-                  "kind": "inspection_limitation"
-                }
-              },
-              {
-                "level": "warning",
-                "message": {
-                  "text": "Analyzer was disabled by the requested configuration."
-                },
-                "properties": {
-                  "kind": "inspection_limitation"
-                }
-              },
-              {
-                "level": "warning",
-                "message": {
-                  "text": "Analyzer was disabled by the requested configuration."
-                },
-                "properties": {
-                  "kind": "inspection_limitation"
-                }
-              },
-              {
-                "level": "warning",
-                "message": {
-                  "text": "Analyzer was disabled by the requested configuration."
-                },
-                "properties": {
-                  "kind": "inspection_limitation"
-                }
+            "properties": {
+              "analysisCompleteness": {
+                "coveragePercent": 100.0,
+                "entirelyUninspectedFiles": 0,
+                "fullyInspectedFiles": 4,
+                "isComplete": true,
+                "ledgerExceptionCount": 0,
+                "limitationCount": 0,
+                "notificationRecordLimit": 10000,
+                "notificationsTruncated": false,
+                "partiallyInspectedFiles": 0,
+                "scopeExclusionCount": 0,
+                "status": "complete",
+                "totalComponents": 4
               }
-            ]
+            }
           }
         ],
         "results": [
@@ -386,6 +413,7 @@
             "properties": {
               "category": "Deep Agents Framework",
               "confidence": 0.9,
+              "evidence": {},
               "explanation": "A Deep Agents application defines a custom subagent without Skills of its own. Upstream states that only the general-purpose subagent inherits the main agent's Skills and that every custom subagent needs its own skills parameter, so this subagent runs without the Skills the application around it was given. Nothing at runtime reports it: the subagent answers, and it answers without the procedure it was supposed to follow.",
               "pattern": "Subagent Without Skills",
               "remediation": "Pass the subagent the Skills it needs by adding a skills entry to its own definition, naming the same sources the main agent is given where the subagent is meant to share them. Where the subagent is deliberately meant to run without Skills, say so beside the definition -- there is nothing at runtime that distinguishes the two.",
