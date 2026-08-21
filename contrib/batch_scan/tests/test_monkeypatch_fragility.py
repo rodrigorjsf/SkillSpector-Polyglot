@@ -34,7 +34,6 @@ See also: ``test_monkeypatch_invasiveness.py`` (thread-scoping proof).
 from __future__ import annotations
 
 import asyncio
-import dataclasses
 import inspect
 import sys
 import unittest
@@ -46,29 +45,26 @@ _project_root = Path(__file__).resolve().parents[3]
 if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
+from contrib.batch_scan.runner import (
+    _apply_patches,
+    _check_signature,
+    _original_asyncio_run,
+    _original_base_build_prompt,
+    _original_base_init,
+    _original_base_parse,
+    _original_meta_build_prompt,
+    _original_meta_parse,
+    _patched_base_init,
+    _verify_patch_targets,
+    deepseek_compat,
+)
 from skillspector.llm_analyzer_base import (
     Batch,
-    LLMAnalyzerBase,
     LLMAnalysisResult,
+    LLMAnalyzerBase,
     LLMFinding,
 )
 from skillspector.nodes.meta_analyzer import LLMMetaAnalyzer, MetaAnalyzerResult
-
-from contrib.batch_scan.runner import (
-    _check_signature,
-    _original_asyncio_run,
-    _original_base_init,
-    _original_base_parse,
-    _original_base_build_prompt,
-    _original_meta_parse,
-    _original_meta_build_prompt,
-    _patched_base_init,
-    _verify_patch_targets,
-    _apply_patches,
-    _restore_patches,
-    deepseek_compat,
-)
-
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Helpers

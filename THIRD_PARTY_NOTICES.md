@@ -55,12 +55,6 @@ and project URL.
 - **Copyright:** Copyright (c) 2024 LangChain, Inc.
 - **URL:** https://github.com/langchain-ai/langgraph
 
-### langgraph-cli
-
-- **License:** MIT
-- **Copyright:** Copyright (c) 2024 LangChain, Inc.
-- **URL:** https://github.com/langchain-ai/langgraph
-
 ### langchain-anthropic
 
 - **License:** MIT

@@ -81,10 +81,7 @@ _SEARCHED_SUFFIXES = (".md", ".py")
 # *not* say it -- the guard the rename shipped with. This module is the guard's
 # own home: it names the retired spelling in order to retire it, the way
 # ``vocabulary.py`` is excluded from the LangChain4j spelling guard.
-_GUARD_EXEMPT: tuple[str, ...] = (
-    "tests/nodes/analyzers/test_static_runner_filtering.py",
-    "tests/unit/test_max_file_chars_naming.py",
-)
+_GUARD_EXEMPT: tuple[str, ...] = ("tests/unit/test_max_file_chars_naming.py",)
 
 # Upstream reused the retired spelling for a different cap, so the name is now a
 # homonym rather than drift. ``MAX_FILE_BYTES`` in these two modules is the
@@ -98,6 +95,7 @@ _GUARD_EXEMPT: tuple[str, ...] = (
 # exists to catch and the exemption would otherwise hide it.
 _READ_CAP_EXEMPT: tuple[str, ...] = (
     "src/skillspector/constants.py",
+    "src/skillspector/nested_artifacts.py",
     "src/skillspector/nodes/build_context.py",
 )
 

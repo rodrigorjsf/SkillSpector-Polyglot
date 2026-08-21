@@ -69,22 +69,17 @@ try:
 except ImportError:
     pass
 
-from skillspector.llm_analyzer_base import LLMAnalyzerBase
-
 from contrib.batch_scan.runner import (
-    _apply_patches,
     _original_asyncio_run,
     _original_base_build_prompt,
     _original_base_init,
     _original_base_parse,
     _original_meta_build_prompt,
     _original_meta_parse,
-    _patches_depth,
-    _restore_patches,
     deepseek_compat,
     setup_deepseek_compat,
 )
-
+from skillspector.llm_analyzer_base import LLMAnalyzerBase
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Helpers

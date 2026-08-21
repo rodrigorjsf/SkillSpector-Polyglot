@@ -21,7 +21,9 @@ Areas: 1) Pool acquire/release  2) 429 backoff/recovery
 
 from __future__ import annotations
 
-import unittest, sys, time
+import sys
+import time
+import unittest
 from pathlib import Path
 
 _project_root = Path(__file__).resolve().parents[4]
@@ -58,6 +60,7 @@ def mutate(label: str, module: str, target: str, broken_fn, test_specs: list[tup
 
 # Mutation 1a: acquire forgets to increment active_requests
 import contrib.batch_scan.api_pool as _ap
+
 _orig_acquire = _ap.ApiKeyPool.acquire
 
 
@@ -564,7 +567,7 @@ _orig_restore = _runner._restore_patches
 
 
 def _broken_restore():
-    
+
     if _runner._patches_depth == 0:
         return
     _runner._patches_depth -= 1
@@ -638,6 +641,7 @@ _runner.set_api_pool = _orig_set_api
 
 # Mutation 5f: annotate_findings broken — always returns incompatible
 import contrib.batch_scan.annotation as _ann
+
 _orig_annotate = _ann.annotate_findings
 
 
@@ -760,6 +764,7 @@ _ap.create_api_key_pool_from_env = _orig_create_pool
 
 # Mutation 6g: deepseek_compat broken — doesn't restore on exception
 from contextlib import contextmanager as _ctx_mgr
+
 _orig_ds_compat = _runner.deepseek_compat
 
 
@@ -783,7 +788,7 @@ _runner.deepseek_compat = _orig_ds_compat
 # Summary
 # ═══════════════════════════════════════════════════════════════════════
 print(f"\n{'='*60}")
-print(f"Mutation Test Results — Max's 4 Risk Areas")
+print("Mutation Test Results — Max's 4 Risk Areas")
 print(f"{'='*60}")
 for label, cls, caught in results:
     status = "✅ CAUGHT" if caught else "❌ MISSED"

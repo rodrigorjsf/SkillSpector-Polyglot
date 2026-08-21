@@ -32,13 +32,12 @@ automatically — the caller controls when they take effect.
 from __future__ import annotations
 
 import json
-import os
 import shutil
 from datetime import UTC, datetime
 from pathlib import Path
 
 from skillspector.graph import graph
-from skillspector.llm_analyzer_base import LLMAnalyzerBase, LLMAnalysisResult
+from skillspector.llm_analyzer_base import LLMAnalysisResult, LLMAnalyzerBase
 from skillspector.logging_config import get_logger
 from skillspector.nodes.meta_analyzer import LLMMetaAnalyzer, MetaAnalyzerResult
 
@@ -50,12 +49,12 @@ logger = get_logger(__name__)
 # API Key Pool — shared across graph-internal and gap-fill LLM calls
 # ═══════════════════════════════════════════════════════════════════════════
 
-_api_pool: "ApiKeyPool | None" = None
+_api_pool: ApiKeyPool | None = None
 
 _original_get_chat_model = None  # saved on first set_api_pool call
 
 
-def set_api_pool(pool: "ApiKeyPool | None") -> None:
+def set_api_pool(pool: ApiKeyPool | None) -> None:
     """Replace the LLM chat-model factory with a pooled version.
 
     When *pool* is set, every call to :func:`skillspector.llm_utils.get_chat_model`
@@ -67,8 +66,8 @@ def set_api_pool(pool: "ApiKeyPool | None") -> None:
     """
     global _api_pool, _original_get_chat_model
 
-    import skillspector.llm_utils as _llm_utils
     import skillspector.llm_analyzer_base as _llm_analyzer_base
+    import skillspector.llm_utils as _llm_utils
 
     if pool is None:
         _api_pool = None

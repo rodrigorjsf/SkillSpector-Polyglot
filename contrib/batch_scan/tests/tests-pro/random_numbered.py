@@ -17,7 +17,10 @@
 
 from __future__ import annotations
 
-import unittest, sys, time, random, os
+import random
+import sys
+import time
+import unittest
 from pathlib import Path
 
 _project_root = Path(__file__).resolve().parents[4]

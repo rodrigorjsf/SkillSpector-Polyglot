@@ -332,14 +332,14 @@ class TestTheOutputContracts:
             combined["skills"][0]
         )
 
-    def test_sarif_output_is_concatenated_documents_not_one_log(self, tmp_path: Path) -> None:
-        """``--format sarif --output`` writes text separators between SARIF bodies.
+    def test_sarif_output_is_one_merged_log(self, tmp_path: Path) -> None:
+        """``--format sarif --output`` writes one valid SARIF log, a run per Skill.
 
-        The file is therefore **not parseable as SARIF**, which the code says in
-        as many words (``cli.py``: "not merged SARIF"). ``--repo-scan`` answers
-        the same question with one valid log carrying one run per Skill. Anything
-        that makes ``--recursive`` produce valid SARIF is an improvement *and* a
-        behavior change for whoever splits this file on the separator today.
+        This characterised the opposite until upstream's own recursive SARIF
+        merge arrived with the 2.9.6 sync: the file used to carry text separators
+        between SARIF bodies and so was not parseable as SARIF at all. It is
+        recorded as the contract now, because whoever split this file on the
+        separator has to stop.
         """
         _write_skill(tmp_path / "alpha", "alpha")
         _write_skill(tmp_path / "beta", "beta")
@@ -352,11 +352,7 @@ class TestTheOutputContracts:
 
         assert result.exit_code == 0, result.output
         written = output.read_text(encoding="utf-8")
-        assert written.startswith("--- alpha ---")
-        assert "\n--- beta ---\n" in written
-        try:
-            json.loads(written)
-        except json.JSONDecodeError:
-            pass
-        else:  # pragma: no cover - a pass here means the contract changed
-            raise AssertionError("the concatenated output parsed as JSON; see issue #39")
+        assert "--- alpha ---" not in written
+        log = json.loads(written)
+        assert log["version"] == "2.1.0"
+        assert log["runs"]

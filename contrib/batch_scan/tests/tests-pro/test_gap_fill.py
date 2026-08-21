@@ -30,17 +30,15 @@ _project_root = Path(__file__).resolve().parents[3]
 if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
-from skillspector.llm_analyzer_base import Batch
-from skillspector.models import Finding
-
 from contrib.batch_scan.gap_fill import (
+    _GAP_FILL_RULE_IDS,
     GapFillAnalyzer,
     GapFillFinding,
     GapFillResult,
-    _GAP_FILL_RULE_IDS,
     run_gap_fill,
 )
-
+from skillspector.llm_analyzer_base import Batch
+from skillspector.models import Finding
 
 # ---------------------------------------------------------------------------
 # Factory (#4: replaces mutable module-level dict)

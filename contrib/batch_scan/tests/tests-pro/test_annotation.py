@@ -28,7 +28,6 @@ _project_root = Path(__file__).resolve().parents[3]
 if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
-from skillspector.models import Finding
 
 from contrib.batch_scan.annotation import annotate_findings, is_language_compatible
 
