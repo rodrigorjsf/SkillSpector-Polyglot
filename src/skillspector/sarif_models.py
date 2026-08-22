@@ -160,6 +160,9 @@ class SarifRun(BaseModel):
     results: list[SarifResult] = Field(default_factory=list)
     artifacts: list[SarifArtifact] | None = None
     invocations: list[SarifInvocation] | None = None
+    # Run-level facts that are properties of the whole scan rather than of any
+    # one result -- the rule ids reported without being scored travel here.
+    properties: dict[str, object] | None = None
 
 
 class SarifLog(BaseModel):

@@ -624,8 +624,17 @@ def _build_sarif(
     analysis_completeness: Mapping[str, object] | None = None,
     execution_successful: bool = True,
     structured_summaries: list[dict[str, object]] | None = None,
+    unscored_rule_ids: Collection[str] = (),
 ) -> dict[str, object]:
-    """Build one SARIF invocation with canonical inspection notifications."""
+    """Build one SARIF invocation with canonical inspection notifications.
+
+    *unscored_rule_ids* is published on the run rather than on any result. It is
+    the same opaque set the scorer and the prose writers already receive, and
+    naming it for what it holds is the whole of the constraint: this module does
+    not know which Analyzer published the ids or what switched them on, and a key
+    named after that switch would move the catalogue knowledge out of the
+    Analyzer and into the output layer.
+    """
     results: list[SarifResult] = []
     # rule id -> the message of the first Finding seen for it, kept only as the
     # fall-back for a rule id the catalogue does not describe.
@@ -910,6 +919,11 @@ def _build_sarif(
                     ),
                     results=results,
                     invocations=invocations,
+                    # Present and empty rather than conditionally absent: a
+                    # consumer joining this against ``results[].ruleId`` gets one
+                    # contract, not one per mode. Sorted because the state key is
+                    # a frozenset by the time it reaches here.
+                    properties={"unscoredRuleIds": sorted(unscored_rule_ids)},
                 )
             ],
         }
@@ -1190,6 +1204,7 @@ def _build_metadata(
     transitive_targets_scanned: int | None = None,
     transitive_bytes_scanned: int | None = None,
     transitive_truncation_reasons: Sequence[str] | None = None,
+    unscored_rule_ids: Collection[str] = (),
 ) -> dict[str, object]:
     """Build the metadata section shared by all output formats."""
     llm_call_log = llm_call_log or []
@@ -1237,6 +1252,12 @@ def _build_metadata(
         # means the provider/transport supplied no counters; it is never an
         # estimated zero-cost assertion.
         "inference_usage": sanitize_inference_usage(inference_usage),
+        # The rule ids this run reported without letting them reach the Risk
+        # Score. Unconditional, unlike the transitive keys below: a consumer
+        # joining it against ``issues[].id`` reads one contract on every run, and
+        # an empty list is the honest answer for a Scan that scored everything.
+        # Analyzer-agnostic on purpose -- see ``_build_sarif``.
+        "unscored_rule_ids": sorted(unscored_rule_ids),
     }
     if not meta_analysis_applied:
         meta["filtering_mode"] = "heuristic"
@@ -1286,6 +1307,7 @@ def _format_json(
     transitive_bytes_scanned: int | None = None,
     transitive_truncation_reasons: Sequence[str] | None = None,
     structured_summaries: list[dict[str, object]] | None = None,
+    unscored_rule_ids: Collection[str] = (),
 ) -> str:
     """Generate JSON report string."""
     suppressed = suppressed or []
@@ -1327,6 +1349,7 @@ def _format_json(
             transitive_targets_scanned,
             transitive_bytes_scanned,
             transitive_truncation_reasons,
+            unscored_rule_ids,
         ),
         "execution_successful": execution_successful,
     }
@@ -1725,6 +1748,7 @@ def report(state: SkillspectorState) -> dict[str, object]:
         analysis_completeness=analysis_completeness,
         execution_successful=execution_successful,
         structured_summaries=structured_summaries,
+        unscored_rule_ids=unscored_rule_ids,
     )
     if output_format == "terminal":
         report_body = _format_terminal(
@@ -1774,6 +1798,7 @@ def report(state: SkillspectorState) -> dict[str, object]:
             ),
             transitive_truncation_reasons=transitive_truncation_reasons,
             structured_summaries=structured_summaries,
+            unscored_rule_ids=unscored_rule_ids,
         )
     elif output_format == "markdown":
         report_body = _format_markdown(
