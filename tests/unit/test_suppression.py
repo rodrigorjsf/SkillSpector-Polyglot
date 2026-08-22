@@ -719,7 +719,11 @@ def test_effective_findings_keeps_an_empty_filtered_list() -> None:
 
 
 def test_effective_findings_subtracts_the_suppressed_partition() -> None:
-    """`filtered_findings` is kept+suppressed, so suppressed must be removed."""
+    """`filtered_findings` and `suppressed_findings` are one partition wherever a
+    caller holds both, so the suppressed side is subtracted rather than assumed
+    absent. Upstream `73dd1f1` narrowed what the report node writes to the kept
+    side alone; this asserts the subtraction against a state that still carries
+    both, which is what the transitive merge path hands over."""
     kept = _partitioned_finding("SQP-1")
     dropped = _partitioned_finding("SQP-2")
     result = {

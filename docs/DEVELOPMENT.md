@@ -100,7 +100,7 @@ All targets assume the virtual environment is **already created and activated**.
 | `show_suppressed` | When True, baseline-suppressed findings are listed in the report (still excluded from the risk score) |
 | `suppressed_findings` | List of `SuppressedFinding` (finding + reason) produced by the report node |
 | `findings` | All raw findings from analyzers (reducer: `operator.add`) |
-| `filtered_findings` | The findings the report node kept after baseline partition, deduplicated and output-bounded; `suppressed_findings` is the other half. Read it through `suppression.effective_findings`, never directly |
+| `filtered_findings` | **As the report node writes it:** the findings it kept after baseline partition, deduplicated and output-bounded, with `suppressed_findings` as the other half. Mid-graph the same key carries whatever the writer put there — the transitive merge writes the pre-partition merged population into it before `report` runs. So a consumer asking *which findings does a finished Scan report* reads it through `suppression.effective_findings`; the merge path reads it directly, because at that point nothing has been partitioned yet |
 | `model_config` | Optional model IDs per node (e.g. default, meta_analyzer) |
 | `risk_severity` | Severity band from risk score: LOW, MEDIUM, HIGH, CRITICAL |
 | `risk_recommendation` | SAFE, CAUTION, or DO_NOT_INSTALL (from report node) |

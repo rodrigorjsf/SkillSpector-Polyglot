@@ -3737,9 +3737,11 @@ def _combined_json_counts(results: list[dict[str, Any]], tmp_path: Path) -> list
 def test_cli_recursive_json_count_excludes_suppressed_findings(tmp_path: Path) -> None:
     """Combined JSON counts the active findings, not the pre-partition set.
 
-    `report` returns `filtered_findings` as kept+suppressed and scores only the
-    kept subset, so counting `filtered_findings` made a fully suppressed
-    sub-skill report risk 0 alongside a non-zero finding count.
+    Where a state carries both partitions -- which the transitive merge hands
+    over, and which `report` itself wrote before upstream `73dd1f1` narrowed the
+    key to the kept side -- the risk score is computed over the kept subset
+    alone. Counting `filtered_findings` there made a fully suppressed sub-skill
+    report risk 0 alongside a non-zero finding count.
     """
     findings = [
         Finding(rule_id="SQP-1", message="one"),
