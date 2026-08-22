@@ -412,6 +412,74 @@ class TestARepositoryScan:
         assert merged["analysis_completeness"]["partially_inspected_files"] == 2
         assert merged["risk_recommendation"] == "CAUTION"
 
+    def test_a_repository_whose_every_skill_raised_still_merges_to_no_run(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A discovery *hit* must not borrow the discovery *miss*'s report.
+
+        The miss emits one run holding no result, which reads as "the tool ran
+        and found nothing". Here it ran over two Skills and every one of them
+        raised, so nothing was inspected at all — and because a Skill only joins
+        the scanned results when the graph returns, that reaches the merge with
+        an empty list too. A fall-back keyed on *that* emptiness rather than on
+        discovery's would put ``executionSuccessful: true`` beside an exit code
+        of ``2``, in the one field GitHub code scanning reads.
+
+        The zero-run log this asserts is byte-for-byte what the mode emitted
+        before #115 and #116, which is the other half of why it is asserted: a
+        discovery hit changed in no format. That the log is *also* refused by
+        ``validate_sarif_report`` is a separate, older defect —
+        [#138](https://github.com/rodrigorjsf/SkillSpector-Polyglot/issues/138) —
+        whose answer is a run declaring ``executionSuccessful`` **false**, not
+        this input dressed up as a success. Rewrite this test when #138 lands;
+        do not work around it.
+        """
+        repository = self._repository(tmp_path)
+
+        def _explode(*args: object, **kwargs: object) -> dict[str, object]:
+            raise RuntimeError("the graph came apart")
+
+        monkeypatch.setattr("skillspector.cli.graph", SimpleNamespace(invoke=_explode))
+
+        result = runner.invoke(
+            app, ["scan", str(repository), "--repo-scan", "--no-llm", "-f", "sarif"]
+        )
+
+        assert result.exit_code == 2
+        assert json.loads(result.stdout)["runs"] == []
+        assert "executionSuccessful" not in result.stdout
+
+    def test_a_child_that_failed_without_raising_merges_to_no_run_either(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The same claim on the variant that never raises, which takes another path.
+
+        A Skill can run to completion, report ``execution_successful`` false and
+        carry no ``sarif_report``; it lands *among* the scanned results, so the
+        merge loop does run and skips it. The list of runs is empty for a
+        different reason than above, and a guard on that emptiness would fire
+        here too — so both variants are pinned, not one standing in for the
+        other.
+        """
+        repository = self._repository(tmp_path)
+        failed = {
+            "report_body": '{"skill": {"name": "one"}}',
+            "risk_score": 0,
+            "risk_severity": "LOW",
+            "execution_successful": False,
+        }
+        monkeypatch.setattr(
+            "skillspector.cli.graph", SimpleNamespace(invoke=lambda *a, **k: dict(failed))
+        )
+
+        result = runner.invoke(
+            app, ["scan", str(repository), "--repo-scan", "--no-llm", "-f", "sarif"]
+        )
+
+        assert result.exit_code == 2
+        assert json.loads(result.stdout)["runs"] == []
+        assert "executionSuccessful" not in result.stdout
+
     def test_a_markdown_repository_report_is_still_concatenated(self, tmp_path: Path) -> None:
         """The half #116 deliberately left alone, pinned so the README cannot rot.
 
@@ -520,6 +588,32 @@ class TestARepositoryScan:
         assert [finding for run in log["runs"] for finding in run["results"]] == []
         assert "no skill found under" in _unwrapped(result.stderr)
         assert "no skill found under" not in result.stdout
+
+    def test_the_empty_sarif_log_declares_the_schema_a_discovery_hit_declares(
+        self, tmp_path: Path
+    ) -> None:
+        """One scanner, one ``$schema`` — asserted as an equivalence, not a literal.
+
+        ``_merge_repository_sarif`` copies the field off the children it merges,
+        so a hit declares whatever ``sarif_models`` built. A miss has no child to
+        copy from and used to fall back to an unrelated schemastore URL, which
+        made the scanner describe itself two ways depending on whether discovery
+        matched. ``validate_sarif_report`` does not read the field, so only this
+        catches it — and comparing against the hit rather than against a constant
+        keeps the two from drifting apart later.
+        """
+        empty = tmp_path / "empty"
+        (empty / "src").mkdir(parents=True)
+        repository = self._repository(tmp_path / "found")
+
+        miss = runner.invoke(app, ["scan", str(empty), "--repo-scan", "--no-llm", "-f", "sarif"])
+        hit = runner.invoke(
+            app, ["scan", str(repository), "--repo-scan", "--no-llm", "-f", "sarif"]
+        )
+
+        assert miss.exit_code == 0, miss.output
+        assert hit.exit_code == 0, hit.output
+        assert json.loads(miss.stdout)["$schema"] == json.loads(hit.stdout)["$schema"]
 
     def test_finding_no_skill_at_all_still_answers_in_json(self, tmp_path: Path) -> None:
         """#115: the empty case of the very object a discovery hit emits.

@@ -2715,13 +2715,18 @@ def _merge_repository_sarif(scanned: list[tuple[DiscoveredSkill, dict]]) -> dict
     Skill was a separate Scan and keeping them separate preserves which tool
     invocation produced what.
 
-    With no Skill to run over -- discovery matched nothing -- the log carries one
-    run holding no result rather than no run at all. The SARIF 2.1.0 schema
-    permits ``"minItems": 0`` on ``runs``, but GitHub code scanning, the consumer
-    this output is shaped for, documents "an array of **one or more** runs"; a
-    zero-run log is therefore not acceptable to both, and this project's own
-    ``validate_sarif_report`` refuses one as well. One run with no result says
-    what actually happened: the tool ran, and it found nothing.
+    This merges what a discovery *hit* produced and nothing else, so it answers
+    whatever those Scans answered -- including no run at all when every one of
+    them raised, which is what it has always answered there. A discovery *miss*
+    has its own document, ``_empty_repository_sarif``: an empty ``scanned`` is
+    not evidence that discovery matched nothing, and a fall-back keyed on it
+    would claim a successful run of a Scan that inspected nothing.
+
+    That leaves a zero-run log on a hit whose every Skill failed, which this
+    project's own ``validate_sarif_report`` refuses. It is what the mode has
+    always emitted there, it is not what any of #114, #115 or #116 is about, and
+    issue #138 carries it: the answer is a run declaring
+    ``executionSuccessful`` **false**, never the successful one above.
     """
     runs: list[dict] = []
     version = "2.1.0"
@@ -2733,14 +2738,6 @@ def _merge_repository_sarif(scanned: list[tuple[DiscoveredSkill, dict]]) -> dict
         version = str(report.get("version", version))
         schema = str(report.get("$schema", schema))
         runs.extend(_relocate_sarif_run(run, skill.relative_path) for run in report.get("runs", []))
-    if not runs:
-        runs.append(
-            {
-                "tool": {"driver": {"name": "skillspector", "version": __version__}},
-                "results": [],
-                "invocations": [{"executionSuccessful": True}],
-            }
-        )
     return {"$schema": schema, "version": version, "runs": runs}
 
 
@@ -2807,6 +2804,41 @@ def _merge_repository_json(
     )
 
 
+def _empty_repository_sarif() -> dict[str, object]:
+    """The SARIF log a Repository Scan writes when discovery matched no Skill.
+
+    The log carries one run holding no result rather than no run at all. The
+    SARIF 2.1.0 schema permits ``"minItems": 0`` on ``runs``, but GitHub code
+    scanning, the consumer this output is shaped for, documents "an array of
+    **one or more** runs"; a zero-run log is therefore not acceptable to both,
+    and this project's own ``validate_sarif_report`` refuses one as well. One run
+    with no result says what actually happened: the tool ran, and it found
+    nothing.
+
+    That claim is only true of a discovery *miss*, which is why this is a
+    document of its own rather than a fall-back inside ``_merge_repository_sarif``
+    keyed on an empty ``runs`` list. A Repository Scan whose every discovered
+    Skill raised also reaches the merge with nothing to merge, and there the same
+    run would assert ``executionSuccessful`` over a Scan that inspected nothing,
+    beside an exit code of ``2``.
+
+    ``$schema`` is ``SARIF_SCHEMA_URI``, the one every other SARIF document this
+    tool builds declares, so a consumer that pins or diffs the field does not see
+    the scanner describe itself two ways depending on whether discovery matched.
+    """
+    return {
+        "$schema": SARIF_SCHEMA_URI,
+        "version": "2.1.0",
+        "runs": [
+            {
+                "tool": {"driver": {"name": "skillspector", "version": __version__}},
+                "results": [],
+                "invocations": [{"executionSuccessful": True}],
+            }
+        ],
+    }
+
+
 def _empty_repository_markdown(repository_root: Path, roots: tuple[str, ...]) -> str:
     """The Markdown a Repository Scan writes when discovery matched no Skill.
 
@@ -2839,19 +2871,29 @@ def _repository_report_body(
     with no existing shape in this codebase to reuse -- and ``terminal`` keeps it
     because that separator is the natural shape between rendered reports.
 
-    Discovery matching nothing is the zero-Skill case of all four rather than a
-    path of its own: the merges answer with an empty log and an empty skill list,
-    and Markdown says so in prose. ``None`` is the answer for ``terminal`` alone,
-    and it means *there is no report shape for this*, which is distinct from an
-    empty body: a rendered report of no Skills is nothing, and writing that would
-    put a bare newline on the very stdout a caller pipes. The warning on stderr
-    is what a ``terminal`` reader gets, exactly as before.
+    Discovery matching nothing answers in every format but ``terminal``, and
+    ``json`` answers it as the zero-Skill case of the very merge a hit takes.
+    ``sarif`` and ``markdown`` each need a document of their own instead, for the
+    same reason: the merge of nothing is not a report *about* nothing. Markdown's
+    would be an empty file, indistinguishable from a crashed run; SARIF's would
+    be a zero-run log, which is what ``_merge_repository_sarif`` still answers on
+    a *hit* whose every Skill failed -- an outcome that must not be dressed up as
+    a successful run of no findings.
+
+    ``None`` is the answer for ``terminal`` alone, and it means *there is no
+    report shape for this*, which is distinct from an empty body: a rendered
+    report of no Skills is nothing, and writing that would put a bare newline on
+    the very stdout a caller pipes. The warning on stderr is what a ``terminal``
+    reader gets, exactly as before.
     """
+    discovery_missed = not scanned and not failures
     if format == FormatChoice.sarif:
+        if discovery_missed:
+            return json.dumps(_empty_repository_sarif(), indent=2)
         return json.dumps(_merge_repository_sarif(scanned), indent=2)
     if format == FormatChoice.json:
         return json.dumps(_merge_repository_json(scanned, failures), indent=2)
-    if not scanned and not failures:
+    if discovery_missed:
         if format == FormatChoice.markdown:
             return _empty_repository_markdown(repository_root, roots)
         return None
