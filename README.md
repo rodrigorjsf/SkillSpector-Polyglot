@@ -797,7 +797,7 @@ and not helpfully so: it walks build output that `--repo-scan` skips.
 | `--format sarif --output` | one valid SARIF log, one run per skill | one valid SARIF log, one run per skill — upstream's own recursive SARIF merge arrived with the 2.9.6 sync and replaced the `--- path ---` concatenation this row used to describe, so anything splitting the file on that separator has to stop |
 | `--format json --output` | one object: `multi_skill`, `skill_count`, `max_risk_score`, `execution_successful`, `skills` — the *same* object `--recursive` builds, so a consumer tells the two modes apart by the flag it ran rather than by the body it parses | one object: `multi_skill`, `skill_count`, `max_risk_score`, `execution_successful`, `skills` |
 | `--format markdown --output` | per-skill bodies concatenated behind `--- <path> ---` — merging Markdown has no shape to reuse and was left alone | per-skill bodies concatenated behind `--- <path> ---` |
-| **No** `--output` | the report is written to stdout, in every format; `sarif` and `json` are each one merged document, `markdown` and `terminal` are the `--- path ---` concatenation of the rows above | no report at all — the combined body is only ever written to a file ([#114](https://github.com/rodrigorjsf/SkillSpector-Polyglot/issues/114)). With `--format terminal` stdout carries the summary table and nothing else; with `json`, `sarif` or `markdown` stdout is **empty** and the format flag is silently ignored. As with `--baseline`, **only** once the flag engages: below the two-skill threshold it falls through to an ordinary scan, which does write a report to stdout in the requested format |
+| **No** `--output` | the report is written to stdout, in every format; `sarif` and `json` are each one merged document, `markdown` and `terminal` are the `--- path ---` concatenation of the rows above | `json` and `terminal` write to stdout the same body `--output` would have received; `sarif` and `markdown` write **nothing** there and still need `--output`. Markdown has no merged document to print; SARIF has one, and is pending only because [#114](https://github.com/rodrigorjsf/SkillSpector-Polyglot/issues/114) scoped itself to `json` ([#136](https://github.com/rodrigorjsf/SkillSpector-Polyglot/issues/136)). As with `--baseline`, all of this describes the flag **once it engages**: below the two-skill threshold it falls through to an ordinary scan, which writes a report to stdout in the requested format |
 | Discovery roots | `--repo-scan-root`, repeatable | not configurable |
 
 Use `--recursive` only for the shape it was built for: a flat directory whose immediate children are
@@ -1523,25 +1523,29 @@ either of them. `--format markdown` still puts the per-skill bodies on stdout co
 reads that as a single document — merging it is a separate question with no shape to reuse. For a
 Markdown pipeline, scan each skill separately.
 
-`--recursive` is the one path where the distinction has to be argued rather than applied, because
-once it engages it writes its combined report **only** to `--output` — there is no report on stdout
-for the summary table to sit beside
-([#114](https://github.com/rodrigorjsf/SkillSpector-Polyglot/issues/114)). With `--format terminal`
-and no `--output`, that `═══ Multi-Skill Summary ═══` table is the whole of what the scan produced,
-so it *is* the report and stays on stdout, keeping
-`skillspector scan ./skills --recursive | less` worth running.
+`--recursive` used to be the one path where the distinction had to be argued rather than applied:
+once it engaged it wrote its combined report **only** to `--output`, so with `--format terminal` and
+nothing else the `═══ Multi-Skill Summary ═══` table was the whole of what the scan produced and had
+to stay on stdout to keep `skillspector scan ./skills --recursive | less` worth running.
+[#114](https://github.com/rodrigorjsf/SkillSpector-Polyglot/issues/114) gave the path the fall-back
+every other one already had, and the argument went with it. The table is a digest of a report now,
+so it goes to **stderr** on every path, and stdout carries the report:
 
-That is the only case. Pass `--output` and the file becomes the report, the table drops to a digest
-of it, and it moves to stderr with everything else. Ask for `--format json`, `sarif` or `markdown`
-without an `--output` and there is no report anywhere, so stdout stays **empty** rather than
-carrying a table that `jq` cannot read — the rule above holds, and `#114` is what would put a report
-back on that stream.
+```bash
+skillspector scan ./skills --recursive --format json | jq '.max_risk_score'
+```
+
+Two formats are still `--output`-only under `--recursive`: `--format markdown`, which has no merged
+document to print, and `--format sarif`, which has one — the combined log described in the table
+above — and is pending only because #114 scoped its fall-back to `json`
+([#136](https://github.com/rodrigorjsf/SkillSpector-Polyglot/issues/136)). For those two, stdout is
+empty and the file is the report.
 
 All of that describes `--recursive` **once it engages**, exactly as the comparison table's
 `--baseline` row does. The flag needs two or more immediate child skills; below that threshold it
 never engages at all, and the scan that runs instead is an ordinary one that prints its report to
-stdout in whatever format was asked for. So `skillspector scan ./skills --recursive -f json | jq` is
-safe on one child skill and silent on two — the difference is the threshold, not the flag.
+stdout in whatever format was asked for — so `--format sarif` and `--format markdown` do reach
+stdout there. The difference is the threshold, not the flag.
 
 #### What moved, and what that costs
 
@@ -1557,10 +1561,11 @@ This is a change in where output appears, not in what is produced. Previously **
 - every `Error:` line and traceback, and the `baseline` command's
   `Wrote baseline with N suppressed finding(s)`.
 
-All of them are on **stderr** now. One further line moved *conditionally*: `--recursive`'s
-`═══ Multi-Skill Summary ═══` table was always on stdout and is now on stdout in the single case
-argued above — `--format terminal` with no `--output`, where it is the report — and on stderr in
-every other.
+All of them are on **stderr** now, and so is `--recursive`'s `═══ Multi-Skill Summary ═══` table.
+That table was the one line that moved *conditionally* at first — it stayed on stdout under
+`--format terminal` with no `--output`, the single case in which it was the report rather than a
+digest of one. #114 gave that path a report of its own, so the case is gone and the table is on
+stderr unconditionally.
 
 So a piped `--format json` or `--format sarif` report is parseable without redirecting anything.
 Nothing was removed and no exit code changed, and a script reading a combined stream (`2>&1`) still
@@ -1584,18 +1589,20 @@ something:
   repository, found nothing to scan" is a legitimate success; no new exit code was added.
   `--format terminal` is the one exception: a rendered report of no skills is nothing, so stdout
   stays empty there and the warning on stderr is the whole answer.
-- **`--recursive` with `--format json`, `sarif` or `markdown` and no `--output`** is the same hazard
-  on a more common input, and it is the one shape closest to the pipeline this change exists to fix.
-  It never wrote a report to stdout ([#114](https://github.com/rodrigorjsf/SkillSpector-Polyglot/issues/114));
-  what it wrote there was the detection banner, the progress lines and the summary table, so
-  in `skillspector scan ./skills --recursive -f json | jq .` it was `jq` that failed, with a parse
-  error and its own exit `5` — the scanner exited `0` throughout. That stdout is now empty, so `jq`
-  succeeds on nothing and the pipeline exits `0` silently. The mitigation is the same:
-  pass `--output` and read the file, or gate on content with `jq -e`. #114 is what puts a report
-  back on that stream and removes the case.
-- **`skillspector scan ./skills --recursive | less`** now shows the `═══ Multi-Skill Summary ═══`
-  table alone, where it used to show the detection banner and the per-skill progress and score lines
-  above it. Every per-skill score is still there, in the table's own rows.
+- **`--recursive` with `--format json` and no `--output`** was the same hazard on a more common
+  input, and the shape closest to the pipeline this change exists to serve. It never wrote a report
+  to stdout at all; what it wrote there was the detection banner, the progress lines and the summary
+  table, so in `skillspector scan ./skills --recursive -f json | jq .` it was `jq` that failed, with
+  a parse error and its own exit `5` — the scanner exited `0` throughout. Moving those notes to
+  stderr then left stdout empty, so `jq` succeeded on nothing and the pipeline exited `0` silently.
+  [#114](https://github.com/rodrigorjsf/SkillSpector-Polyglot/issues/114) closed it: stdout now
+  carries the combined object, and that pipeline works. `--format sarif` and `--format markdown` are
+  still `--output`-only under an engaged `--recursive` — for those two, pass `--output` and read the
+  file; [#136](https://github.com/rodrigorjsf/SkillSpector-Polyglot/issues/136) tracks the SARIF
+  half.
+- **`skillspector scan ./skills --recursive | less`** shows the combined terminal report, where it
+  used to show the detection banner, the per-skill progress and score lines, and the summary table.
+  The table is still printed, on stderr, so a terminal shows it and a pipe does not.
 
 ### Recommended gate mapping
 

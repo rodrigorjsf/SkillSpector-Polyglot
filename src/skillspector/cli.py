@@ -2332,6 +2332,22 @@ def _ensure_recursive_output_bound(rendered: str) -> None:
         raise RuntimeError("recursive report could not fit the configured output budget")
 
 
+def _emit_multi_skill_body(rendered: str, output: Path | None) -> None:
+    """Write the combined recursive report to *output*, or print it when there is none.
+
+    The fall-back is the half issue #114 was missing: every other report-producing
+    path prints its body when no ``--output`` was given, and without it a
+    ``--recursive`` Scan built the body and discarded it. ``Combined report saved
+    to`` is a note about a file rather than part of the report, so it is printed
+    only in the branch where a file exists, and to stderr.
+    """
+    if output:
+        Path(output).write_text(rendered, encoding="utf-8")
+        advice.print(f"[green]Combined report saved to:[/green] {output}")
+    else:
+        print(rendered)
+
+
 def _scan_multi_skill(
     detection: MultiSkillDetectionResult,
     format: FormatChoice,
@@ -2351,26 +2367,29 @@ def _scan_multi_skill(
 ) -> None:
     """Scan each detected sub-skill independently and produce a combined report.
 
-    Which stream each line goes to is decided by one question: *does stdout carry
-    the report here?* Unlike every other Scan path, this one writes the combined
-    report **only** to ``--output`` -- there is no ``print(body)`` fall-back, the
-    limitation issue #114 records -- so with ``-f terminal`` and no ``--output``
-    the Multi-Skill Summary table is not a digest of a report printed elsewhere.
-    It is the whole of what the Scan produced, and ``skillspector scan ./skills
-    --recursive | less`` has it or has nothing, so it goes to stdout.
+    The combined body is built once and then either written to ``--output`` or
+    printed, exactly as every other report-producing path does. Before issue
+    #114 the build itself was guarded on ``--output``, so ``-f json`` without one
+    scanned every Skill and discarded the result: the flag was accepted and
+    silently ignored, and stdout was empty.
 
-    That is the *only* case in which it does. ``--output`` makes the file the
-    report and demotes the table to a digest of it; and with ``-f json``,
-    ``-f sarif`` or ``-f markdown`` and no ``--output`` there is no report
-    anywhere -- printing a rich table to stdout would then leave a caller piping
-    to ``jq`` with exactly the unparseable stream issue #99 was filed about, so
-    stdout stays empty and the table goes to stderr with everything else. Fixing
-    #114 makes the table a digest on every path and collapses ``summary`` to
-    plain ``advice``.
+    ``-f sarif`` and ``-f markdown`` are deliberately still file-only, for two
+    different reasons. Markdown has no merged document to print at all: its
+    ``--output`` shape is the per-Skill bodies concatenated behind ``--- path
+    ---`` separators, and printing that would put unparseable text on the very
+    pipeline the fall-back exists to serve. SARIF *does* have one -- upstream's
+    recursive merge arrived with the 2.9.6 sync and ``_multi_skill_sarif_report``
+    builds a single validated log -- so nothing but scope keeps it off stdout.
+    Issue #114 was written before that sync and scoped itself to ``-f json`` on
+    the premise that SARIF was still a concatenation; printing it is a
+    straightforward follow-up rather than the breaking change that premise
+    implied, and issue #136 tracks it.
 
-    Everything around it -- the detection banner, the per-skill progress and
-    score lines, a per-skill error, "Combined report saved to" -- is a note about
-    the Scan on every path, and goes to stderr always.
+    Every line this function prints besides that body is a note about the Scan --
+    the detection banner, the per-skill progress and score lines, a per-skill
+    error, "Combined report saved to", and the Multi-Skill Summary table, which
+    is a digest of a report rather than the report itself now that one is written
+    on every path that has a shape for it. All of them go to stderr, always.
     """
     if yara_dir is None and isinstance(legacy_kwargs.get("yara_rules_dir"), Path):
         yara_dir = str(legacy_kwargs["yara_rules_dir"])
@@ -2521,47 +2540,42 @@ def _scan_multi_skill(
     )
     analysis_incomplete = not bool(aggregate_completeness["is_complete"])
 
-    # The predicate is "does stdout carry the report here?", and it is true in
-    # one case only: `-f terminal` with no `--output`, where this table is the
-    # entire product of the Scan. See this function's docstring, and #114 for the
-    # missing fall-back that makes the case exist at all.
-    summary = console if (output is None and format == FormatChoice.terminal) else advice
-
-    summary.print("\n[bold]═══ Multi-Skill Summary ═══[/bold]\n")
-    summary.print(
+    # `advice` unconditionally: a report is now written on every path that has a
+    # shape for one, so this table is a digest of it rather than the whole
+    # product of the Scan. Issue #114 removed the case that made it the report.
+    advice.print("\n[bold]═══ Multi-Skill Summary ═══[/bold]\n")
+    advice.print(
         f"  {'Skill':<30} {'Score':<8} {'Severity':<12} {'Findings':<10} {'Execution':<10}"
     )
-    summary.print(f"  {'─' * 30} {'─' * 8} {'─' * 12} {'─' * 10} {'─' * 10}")
+    advice.print(f"  {'─' * 30} {'─' * 8} {'─' * 12} {'─' * 10} {'─' * 10}")
 
     for skill, result in zip(processed_skills, results, strict=True):
         if "error" in result:
-            summary.print(f"  {skill.name:<30} {'ERROR':<8} {'—':<12} {'—':<10} {'error':<10}")
+            advice.print(f"  {skill.name:<30} {'ERROR':<8} {'—':<12} {'—':<10} {'error':<10}")
             continue
         score = result.get("risk_score", 0)
         severity = result.get("risk_severity", "LOW")
         finding_count = len(reported_findings(result))
         execution = "failed" if result.get("execution_successful") is False else "successful"
-        summary.print(
+        advice.print(
             f"  {skill.name:<30} {score:<8} {severity:<12} {finding_count:<10} {execution:<10}"
         )
 
-    summary.print("")
+    advice.print("")
 
-    # `advice`, never `summary`: the console above is stdout in the one case
-    # where the table *is* the report, and this note never is.
     _advise_on_advisory_findings(
         sum(_count_advisory(result) for result in results if "error" not in result)
     )
     if omitted_skill_count:
-        summary.print(
+        advice.print(
             f"  {'<omitted>':<30} {'—':<8} {'—':<12} {omitted_skill_count:<10} {'partial':<10}"
         )
-        summary.print(
+        advice.print(
             "[yellow]Recursive scan incomplete:[/yellow] one or more skills were omitted "
             "after an aggregate safety limit."
         )
 
-    if output and format == FormatChoice.json:
+    if format == FormatChoice.json:
         combined_skills: list[dict[str, object]] = []
         for skill, result in zip(processed_skills, results, strict=True):
             if "error" in result:
@@ -2625,8 +2639,7 @@ def _scan_multi_skill(
             }
             rendered = json.dumps(combined, indent=2)
         _ensure_recursive_output_bound(rendered)
-        Path(output).write_text(rendered, encoding="utf-8")
-        advice.print(f"[green]Combined report saved to:[/green] {output}")
+        _emit_multi_skill_body(rendered, output)
     elif output and format == FormatChoice.sarif:
         merged_sarif = _multi_skill_sarif_report(
             processed_skills,
@@ -2642,9 +2655,8 @@ def _scan_multi_skill(
             merged_sarif = _multi_skill_sarif_report([], [], aggregate_completeness)
             rendered = json.dumps(merged_sarif, indent=2)
         _ensure_recursive_output_bound(rendered)
-        Path(output).write_text(rendered, encoding="utf-8")
-        advice.print(f"[green]Combined report saved to:[/green] {output}")
-    elif output:
+        _emit_multi_skill_body(rendered, output)
+    elif output or format == FormatChoice.terminal:
         sections: list[str] = []
         for skill, result in zip(processed_skills, results, strict=True):
             if "error" not in result:
@@ -2665,8 +2677,7 @@ def _scan_multi_skill(
                 "Status: partial\n\n" + "\n".join(f"- {item}" for item in aggregate_limitations)
             )
         _ensure_recursive_output_bound(rendered)
-        Path(output).write_text(rendered, encoding="utf-8")
-        advice.print(f"[green]Combined report saved to:[/green] {output}")
+        _emit_multi_skill_body(rendered, output)
 
     for result in results:
         cleanup_result(result)

@@ -259,4 +259,7 @@ When something fails repeatedly, when User has to re-explain, or when a workarou
 - A conflict can align two functions' identical tails; diff each spliced function whole.
 - Upstream test fakes need `**kwargs` when the fork threads a new parameter through.
 - Hardcoded line numbers into `THIRD_PARTY_NOTICES.md` break on any dependency change.
+- `dict.update` keeps a key's position; re-assert identity keys to fix JSON key order.
+- A discovery-miss report needs one SARIF run, not zero; GitHub documents "one or more".
+- An issue's premise can predate a sync; measure the shape before repeating it in prose.
 - README rule tables and the pattern counts sit below the Inherited-documentation marker.

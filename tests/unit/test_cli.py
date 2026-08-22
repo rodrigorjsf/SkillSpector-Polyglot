@@ -3628,6 +3628,11 @@ def test_cli_recursive_summary_count_excludes_suppressed(
 
     Pinned separately from the JSON path: the two call sites are independent
     lines, so a regression in one is invisible to a test covering the other.
+
+    Read off **stderr**: issue #114 gave this path a stdout fall-back, so the
+    summary table became a digest of a report rather than the report, and moved
+    to stderr with the rest of the notes. What this test measures — the count in
+    the Findings column — is unchanged.
     """
     findings = [Finding(rule_id="SQP-1", message="one"), Finding(rule_id="SQP-2", message="two")]
     result = {
@@ -3651,7 +3656,7 @@ def test_cli_recursive_summary_count_excludes_suppressed(
             detection, FormatChoice.terminal, None, no_llm=True, yara_rules_dir=None, verbose=False
         )
 
-    summary = re.sub(r"\x1b\[[0-9;]*m", "", capsys.readouterr().out)
+    summary = re.sub(r"\x1b\[[0-9;]*m", "", capsys.readouterr().err)
     row = next(line for line in summary.splitlines() if line.strip().startswith("solo"))
     assert row.split() == ["solo", "0", "LOW", "0", "successful"]
 
