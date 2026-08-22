@@ -16,9 +16,10 @@ The GitHub repository is `SkillSpector-Polyglot`; the distribution, the package 
 
 This repo is indexed (`.codegraph/`), so CodeGraph applies to every code lookup here.
 
-- The MCP tool and the CLI both take symbol names or a plain question, and return verbatim line-numbered source plus a **blast radius**: every caller and which tests cover each symbol. That coverage signal is what grep cannot give you and what tells you whether a change is safe.
+- **Semantic code search goes through the `codegraph_explore` MCP tool.** Any question of the form *how does this work*, *where does this behavior live*, *what calls this*, or *what would this change touch* is a CodeGraph query, and it is asked **before** grep, before Glob and before opening a file. When the tool is listed but deferred, load it by name with tool search first. The `codegraph explore "<query>"` CLI is the fallback for when MCP is unavailable — not an equal alternative to reach for by habit.
+- Both forms take symbol names or a plain question, and return verbatim line-numbered source plus a **blast radius**: every caller and which tests cover each symbol. That coverage signal is what grep cannot give you and what tells you whether a change is safe.
 - `maxFiles` truncates by file without re-ranking, so a low cap can drop a file the blast radius just named. Narrow the query rather than the cap.
-- Use grep for non-code text (markdown, YAML, logs) and literal string matching.
+- Grep is for non-code text (markdown, YAML, logs) and for **literal** matching — a known spelling, a rule id, a flag name, a fixture path. It is not the tool for *where does X happen*.
 
 ## Remote
 
