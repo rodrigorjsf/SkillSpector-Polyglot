@@ -125,13 +125,17 @@ _MULTI_SKILL_MAX_REPORT_CHARACTERS = 4 * 1024 * 1024
 
 # `advice` carries everything that is a note *about* the scan rather than the
 # scan's product: advisories, progress lines, "Report saved to", per-skill
-# summaries that duplicate a report written elsewhere, errors and tracebacks. A
-# pipe leaves stderr alone and a terminal still shows it, so nothing is lost.
+# summaries that duplicate a report written elsewhere -- `--repo-scan`'s digest
+# and `_scan_multi_skill`'s `═══ Multi-Skill Summary ═══` table alike -- errors and
+# tracebacks. A pipe leaves stderr alone and a terminal still shows it, so
+# nothing is lost.
 #
-# The one line that has to be argued rather than classified is the Multi-Skill
-# Summary table; see `_scan_multi_skill`, which explains why that table *is* the
-# report of a `-f terminal --recursive` scan that was given no `--output`, and
-# only of that one.
+# No line here is an exception to argue: a new print site is classified by the
+# rule above, never by its neighbour. The Multi-Skill Summary table was the one
+# case that used to be argued -- `--recursive` wrote its combined report only to
+# `--output`, so once the flag engaged the table was the whole product of a
+# `-f terminal` scan given none -- and issue #114 gave that path the fall-back
+# every other one already had, so the table is a digest like the rest.
 advice = Console(stderr=True)
 
 _FALLTHROUGH_PREFIX = (
@@ -356,8 +360,8 @@ def _advise_on_advisory_findings(advisory: int) -> None:
     expression of the same fact. It is a note about the scan rather than part of
     it, so it goes to stderr like its siblings -- the report on stdout stays
     parseable, which is the rule `test_cli_streams.py` holds every line here to.
-    `advice` and never the `summary` console a Multi-Skill Scan picks: that
-    console is stdout in one case, and this line is never part of a report.
+    `advice` on every path, a Multi-Skill Scan's included: this line is never
+    part of a report, whichever discovery mode reached it.
 
     *advisory* is a total rather than one scan's count, because `--recursive` and
     `--repo-scan` invoke the graph once per discovered Skill and the note is
@@ -2135,8 +2139,15 @@ def _multi_skill_analysis_completeness(
     failed_skills: int,
     omitted_skills: int,
     limitations: list[str],
+    scope: str = "recursive_skills",
 ) -> dict[str, object]:
-    """Build one conservative machine-readable completeness summary for recursion."""
+    """Build one conservative machine-readable completeness summary for a multi-skill Scan.
+
+    *scope* names which discovery mode produced the summary. It defaults to the
+    recursive one this was written for; a Repository Scan passes its own, because
+    ``CONTEXT.md`` lists "recursive scan" among the spellings a Repository Scan is
+    never called -- and a machine-readable field is prose too.
+    """
     is_complete = (
         not limitations and not partial_skills and not failed_skills and not omitted_skills
     )
@@ -2153,7 +2164,86 @@ def _multi_skill_analysis_completeness(
         "entirely_uninspected_files": failed_skills + omitted_skills,
         "total_files": total_skills,
         "limitations": limitations,
-        "scope": "recursive_skills",
+        "scope": scope,
+    }
+
+
+def _combined_skill_entry(
+    name: str,
+    relative_path: str,
+    result: dict[str, object],
+) -> dict[str, object]:
+    """One ``skills`` entry of the combined JSON report, for either discovery mode.
+
+    The Skill's own JSON report body is folded in whole, so a reader gets the
+    same document a single Scan would have printed, and the eight keys below are
+    then re-asserted over it: they identify the Skill within the combination and
+    a child body must not be able to redefine them.
+
+    ``update`` keeps an existing key where it already sits, so writing them once
+    before the payload and once after fixes their order without a second pass --
+    remove either call and the key order of every combined report changes.
+    """
+    identity: dict[str, object] = {
+        "name": name,
+        "path": relative_path,
+        "risk_score": result.get("risk_score", 0),
+        "risk_severity": result.get("risk_severity", "LOW"),
+        "finding_count": len(reported_findings(result)),
+        "execution_successful": result.get("execution_successful", True),
+        "transitive_finding_count": result.get("transitive_finding_count", 0),
+        "transitive_sources": result.get("transitive_sources", []),
+    }
+    entry = dict(identity)
+    entry.update(_recursive_json_payload(result) or {})
+    entry.update(identity)
+    return entry
+
+
+def _combined_json_report(
+    *,
+    skill_count: int,
+    max_score: int,
+    execution_failed: bool,
+    analysis_incomplete: bool,
+    completeness: dict[str, object],
+    skills_scanned: int,
+    skills_omitted: int,
+    public_finding_records: int,
+    report_characters: int,
+    transitive_finding_count: int,
+    transitive_sources: list[str],
+    skills: list[dict[str, object]],
+) -> dict[str, object]:
+    """The one combined JSON object both discovery modes answer in.
+
+    ``--recursive`` and ``--repo-scan`` find Skills differently and say so with
+    the flag that was run, not with the body they emit -- a consumer parses one
+    shape either way. ``public_finding_records`` and ``report_characters`` count
+    a recursive Scan's consumption of its aggregate budgets; a Repository Scan
+    has no such budgets and so reports zero of them rather than a number that
+    would read as consumption of a ceiling that does not exist.
+    """
+    return {
+        "multi_skill": True,
+        "skill_count": skill_count,
+        "max_risk_score": max_score,
+        "execution_successful": not execution_failed,
+        "risk_recommendation": (
+            "DO_NOT_INSTALL"
+            if execution_failed or max_score > RISK_THRESHOLD
+            else "CAUTION"
+            if analysis_incomplete
+            else "SAFE"
+        ),
+        "analysis_completeness": completeness,
+        "skills_scanned": skills_scanned,
+        "skills_omitted": skills_omitted,
+        "public_finding_records": public_finding_records,
+        "report_characters": report_characters,
+        "transitive_finding_count": transitive_finding_count,
+        "transitive_sources": transitive_sources,
+        "skills": skills,
     }
 
 
@@ -2246,6 +2336,22 @@ def _ensure_recursive_output_bound(rendered: str) -> None:
         raise RuntimeError("recursive report could not fit the configured output budget")
 
 
+def _emit_multi_skill_body(rendered: str, output: Path | None) -> None:
+    """Write the combined recursive report to *output*, or print it when there is none.
+
+    The fall-back is the half issue #114 was missing: every other report-producing
+    path prints its body when no ``--output`` was given, and without it a
+    ``--recursive`` Scan built the body and discarded it. ``Combined report saved
+    to`` is a note about a file rather than part of the report, so it is printed
+    only in the branch where a file exists, and to stderr.
+    """
+    if output:
+        Path(output).write_text(rendered, encoding="utf-8")
+        advice.print(f"[green]Combined report saved to:[/green] {output}")
+    else:
+        print(rendered)
+
+
 def _scan_multi_skill(
     detection: MultiSkillDetectionResult,
     format: FormatChoice,
@@ -2265,26 +2371,29 @@ def _scan_multi_skill(
 ) -> None:
     """Scan each detected sub-skill independently and produce a combined report.
 
-    Which stream each line goes to is decided by one question: *does stdout carry
-    the report here?* Unlike every other Scan path, this one writes the combined
-    report **only** to ``--output`` -- there is no ``print(body)`` fall-back, the
-    limitation issue #114 records -- so with ``-f terminal`` and no ``--output``
-    the Multi-Skill Summary table is not a digest of a report printed elsewhere.
-    It is the whole of what the Scan produced, and ``skillspector scan ./skills
-    --recursive | less`` has it or has nothing, so it goes to stdout.
+    The combined body is built once and then either written to ``--output`` or
+    printed, exactly as every other report-producing path does. Before issue
+    #114 the build itself was guarded on ``--output``, so ``-f json`` without one
+    scanned every Skill and discarded the result: the flag was accepted and
+    silently ignored, and stdout was empty.
 
-    That is the *only* case in which it does. ``--output`` makes the file the
-    report and demotes the table to a digest of it; and with ``-f json``,
-    ``-f sarif`` or ``-f markdown`` and no ``--output`` there is no report
-    anywhere -- printing a rich table to stdout would then leave a caller piping
-    to ``jq`` with exactly the unparseable stream issue #99 was filed about, so
-    stdout stays empty and the table goes to stderr with everything else. Fixing
-    #114 makes the table a digest on every path and collapses ``summary`` to
-    plain ``advice``.
+    ``-f sarif`` and ``-f markdown`` are deliberately still file-only, for two
+    different reasons. Markdown has no merged document to print at all: its
+    ``--output`` shape is the per-Skill bodies concatenated behind ``--- path
+    ---`` separators, and printing that would put unparseable text on the very
+    pipeline the fall-back exists to serve. SARIF *does* have one -- upstream's
+    recursive merge arrived with the 2.9.6 sync and ``_multi_skill_sarif_report``
+    builds a single validated log -- so nothing but scope keeps it off stdout.
+    Issue #114 was written before that sync and scoped itself to ``-f json`` on
+    the premise that SARIF was still a concatenation; printing it is a
+    straightforward follow-up rather than the breaking change that premise
+    implied, and issue #136 tracks it.
 
-    Everything around it -- the detection banner, the per-skill progress and
-    score lines, a per-skill error, "Combined report saved to" -- is a note about
-    the Scan on every path, and goes to stderr always.
+    Every line this function prints besides that body is a note about the Scan --
+    the detection banner, the per-skill progress and score lines, a per-skill
+    error, "Combined report saved to", and the Multi-Skill Summary table, which
+    is a digest of a report rather than the report itself now that one is written
+    on every path that has a shape for it. All of them go to stderr, always.
     """
     if yara_dir is None and isinstance(legacy_kwargs.get("yara_rules_dir"), Path):
         yara_dir = str(legacy_kwargs["yara_rules_dir"])
@@ -2435,95 +2544,64 @@ def _scan_multi_skill(
     )
     analysis_incomplete = not bool(aggregate_completeness["is_complete"])
 
-    # The predicate is "does stdout carry the report here?", and it is true in
-    # one case only: `-f terminal` with no `--output`, where this table is the
-    # entire product of the Scan. See this function's docstring, and #114 for the
-    # missing fall-back that makes the case exist at all.
-    summary = console if (output is None and format == FormatChoice.terminal) else advice
-
-    summary.print("\n[bold]═══ Multi-Skill Summary ═══[/bold]\n")
-    summary.print(
+    # `advice` unconditionally: a report is now written on every path that has a
+    # shape for one, so this table is a digest of it rather than the whole
+    # product of the Scan. Issue #114 removed the case that made it the report.
+    advice.print("\n[bold]═══ Multi-Skill Summary ═══[/bold]\n")
+    advice.print(
         f"  {'Skill':<30} {'Score':<8} {'Severity':<12} {'Findings':<10} {'Execution':<10}"
     )
-    summary.print(f"  {'─' * 30} {'─' * 8} {'─' * 12} {'─' * 10} {'─' * 10}")
+    advice.print(f"  {'─' * 30} {'─' * 8} {'─' * 12} {'─' * 10} {'─' * 10}")
 
     for skill, result in zip(processed_skills, results, strict=True):
         if "error" in result:
-            summary.print(f"  {skill.name:<30} {'ERROR':<8} {'—':<12} {'—':<10} {'error':<10}")
+            advice.print(f"  {skill.name:<30} {'ERROR':<8} {'—':<12} {'—':<10} {'error':<10}")
             continue
         score = result.get("risk_score", 0)
         severity = result.get("risk_severity", "LOW")
         finding_count = len(reported_findings(result))
         execution = "failed" if result.get("execution_successful") is False else "successful"
-        summary.print(
+        advice.print(
             f"  {skill.name:<30} {score:<8} {severity:<12} {finding_count:<10} {execution:<10}"
         )
 
-    summary.print("")
+    advice.print("")
 
-    # `advice`, never `summary`: the console above is stdout in the one case
-    # where the table *is* the report, and this note never is.
     _advise_on_advisory_findings(
         sum(_count_advisory(result) for result in results if "error" not in result)
     )
     if omitted_skill_count:
-        summary.print(
+        advice.print(
             f"  {'<omitted>':<30} {'—':<8} {'—':<12} {omitted_skill_count:<10} {'partial':<10}"
         )
-        summary.print(
+        advice.print(
             "[yellow]Recursive scan incomplete:[/yellow] one or more skills were omitted "
             "after an aggregate safety limit."
         )
 
-    if output and format == FormatChoice.json:
-        combined: dict[str, object] = {
-            "multi_skill": True,
-            "skill_count": len(skills),
-            "max_risk_score": max_score,
-            "execution_successful": not execution_failed,
-            "risk_recommendation": (
-                "DO_NOT_INSTALL"
-                if execution_failed or max_score > RISK_THRESHOLD
-                else "CAUTION"
-                if analysis_incomplete
-                else "SAFE"
-            ),
-            "analysis_completeness": aggregate_completeness,
-            "skills_scanned": len(processed_skills),
-            "skills_omitted": omitted_skill_count,
-            "public_finding_records": retained_public_records,
-            "report_characters": retained_report_characters,
-            "transitive_finding_count": transitive_finding_count,
-            "transitive_sources": sorted(transitive_sources),
-            "skills": [],
-        }
-        combined_skills = cast(list[dict[str, object]], combined["skills"])
+    if format == FormatChoice.json:
+        combined_skills: list[dict[str, object]] = []
         for skill, result in zip(processed_skills, results, strict=True):
             if "error" in result:
                 combined_skills.append({"name": skill.name, "error": result["error"]})
             else:
-                payload = _recursive_json_payload(result) or {}
-                finding_count = len(reported_findings(result))
-                entry = {
-                    "name": skill.name,
-                    "path": skill.relative_path,
-                    "risk_score": result.get("risk_score", 0),
-                    "risk_severity": result.get("risk_severity", "LOW"),
-                    "finding_count": finding_count,
-                    "execution_successful": result.get("execution_successful", True),
-                    "transitive_finding_count": result.get("transitive_finding_count", 0),
-                    "transitive_sources": result.get("transitive_sources", []),
-                }
-                entry.update(payload)
-                entry["name"] = skill.name
-                entry["path"] = skill.relative_path
-                entry["risk_score"] = result.get("risk_score", 0)
-                entry["risk_severity"] = result.get("risk_severity", "LOW")
-                entry["finding_count"] = finding_count
-                entry["execution_successful"] = result.get("execution_successful", True)
-                combined_skills.append(entry)
-                entry["transitive_finding_count"] = result.get("transitive_finding_count", 0)
-                entry["transitive_sources"] = result.get("transitive_sources", [])
+                combined_skills.append(
+                    _combined_skill_entry(skill.name, skill.relative_path, result)
+                )
+        combined = _combined_json_report(
+            skill_count=len(skills),
+            max_score=max_score,
+            execution_failed=execution_failed,
+            analysis_incomplete=analysis_incomplete,
+            completeness=aggregate_completeness,
+            skills_scanned=len(processed_skills),
+            skills_omitted=omitted_skill_count,
+            public_finding_records=retained_public_records,
+            report_characters=retained_report_characters,
+            transitive_finding_count=transitive_finding_count,
+            transitive_sources=sorted(transitive_sources),
+            skills=combined_skills,
+        )
         if omitted_skill_count:
             combined_skills.append(
                 {
@@ -2565,8 +2643,7 @@ def _scan_multi_skill(
             }
             rendered = json.dumps(combined, indent=2)
         _ensure_recursive_output_bound(rendered)
-        Path(output).write_text(rendered, encoding="utf-8")
-        advice.print(f"[green]Combined report saved to:[/green] {output}")
+        _emit_multi_skill_body(rendered, output)
     elif output and format == FormatChoice.sarif:
         merged_sarif = _multi_skill_sarif_report(
             processed_skills,
@@ -2582,9 +2659,8 @@ def _scan_multi_skill(
             merged_sarif = _multi_skill_sarif_report([], [], aggregate_completeness)
             rendered = json.dumps(merged_sarif, indent=2)
         _ensure_recursive_output_bound(rendered)
-        Path(output).write_text(rendered, encoding="utf-8")
-        advice.print(f"[green]Combined report saved to:[/green] {output}")
-    elif output:
+        _emit_multi_skill_body(rendered, output)
+    elif output or format == FormatChoice.terminal:
         sections: list[str] = []
         for skill, result in zip(processed_skills, results, strict=True):
             if "error" not in result:
@@ -2605,8 +2681,7 @@ def _scan_multi_skill(
                 "Status: partial\n\n" + "\n".join(f"- {item}" for item in aggregate_limitations)
             )
         _ensure_recursive_output_bound(rendered)
-        Path(output).write_text(rendered, encoding="utf-8")
-        advice.print(f"[green]Combined report saved to:[/green] {output}")
+        _emit_multi_skill_body(rendered, output)
 
     for result in results:
         cleanup_result(result)
@@ -2643,6 +2718,19 @@ def _merge_repository_sarif(scanned: list[tuple[DiscoveredSkill, dict]]) -> dict
     SARIF carries several runs in one log, which is exactly the shape here: each
     Skill was a separate Scan and keeping them separate preserves which tool
     invocation produced what.
+
+    This merges what a discovery *hit* produced and nothing else, so it answers
+    whatever those Scans answered -- including no run at all when every one of
+    them raised, which is what it has always answered there. A discovery *miss*
+    has its own document, ``_empty_repository_sarif``: an empty ``scanned`` is
+    not evidence that discovery matched nothing, and a fall-back keyed on it
+    would claim a successful run of a Scan that inspected nothing.
+
+    That leaves a zero-run log on a hit whose every Skill failed, which this
+    project's own ``validate_sarif_report`` refuses. It is what the mode has
+    always emitted there, it is not what any of #114, #115 or #116 is about, and
+    issue #138 carries it: the answer is a run declaring
+    ``executionSuccessful`` **false**, never the successful one above.
     """
     runs: list[dict] = []
     version = "2.1.0"
@@ -2655,6 +2743,175 @@ def _merge_repository_sarif(scanned: list[tuple[DiscoveredSkill, dict]]) -> dict
         schema = str(report.get("$schema", schema))
         runs.extend(_relocate_sarif_run(run, skill.relative_path) for run in report.get("runs", []))
     return {"$schema": schema, "version": version, "runs": runs}
+
+
+def _merge_repository_json(
+    scanned: list[tuple[DiscoveredSkill, dict]],
+    failures: list[tuple[DiscoveredSkill, str]],
+) -> dict[str, object]:
+    """One JSON object for a whole Repository Scan, an entry per Skill.
+
+    The object is the one ``--recursive --format json`` already emits, built by
+    the same helpers: the two discovery modes are told apart by the flag that was
+    run, not by the shape a consumer has to parse. Before this, every format but
+    SARIF fell through to the per-Skill bodies concatenated behind
+    ``--- path ---`` separators, which no JSON reader accepts as one document.
+
+    The two aggregate claims this object makes are read off the children rather
+    than off *failures*, which holds only the Skills that raised. A Skill can come
+    back having run to completion and reported ``execution_successful`` false, or
+    having inspected only part of itself -- neither raises, so counting exceptions
+    alone would print ``execution_successful: true`` and ``SAFE`` beside an exit
+    code of 2, and would assert a complete inspection over a partial one. An
+    Inspection Ledger exists to keep an absence of Findings distinguishable from
+    an absence of inspection; an aggregate that rounds a partial child up to
+    complete erases exactly that.
+
+    ``skills_scanned`` counts every Skill that was attempted, failures included,
+    which is what the recursive mode's own counter means -- it is the length of
+    the processed list, not of the successful one. That keeps
+    ``skills_scanned + skills_omitted == skill_count`` an identity in both modes,
+    and a Repository Scan omits nothing, so counting only the Skills that came
+    back would answer ``0 + 0`` against a ``skill_count`` of two and leave a
+    consumer unable to read either number the same way twice.
+    """
+    max_score = max((int(result.get("risk_score") or 0) for _, result in scanned), default=0)
+    entries: list[dict[str, object]] = [
+        _combined_skill_entry(skill.name, skill.relative_path, result) for skill, result in scanned
+    ]
+    entries.extend({"name": skill.name, "error": message} for skill, message in failures)
+    failed_skills = len(failures)
+    partial_skills = 0
+    for _, result in scanned:
+        if result.get("execution_successful") is False:
+            failed_skills += 1
+            continue
+        completeness_value = result.get("analysis_completeness")
+        if isinstance(completeness_value, dict) and not bool(
+            completeness_value.get("is_complete", True)
+        ):
+            partial_skills += 1
+    completeness = _multi_skill_analysis_completeness(
+        total_skills=len(scanned) + len(failures),
+        complete_skills=len(scanned) + len(failures) - failed_skills - partial_skills,
+        partial_skills=partial_skills,
+        failed_skills=failed_skills,
+        omitted_skills=0,
+        limitations=[],
+        scope="repository_skills",
+    )
+    return _combined_json_report(
+        skill_count=len(scanned) + len(failures),
+        max_score=max_score,
+        execution_failed=bool(failed_skills),
+        analysis_incomplete=not bool(completeness["is_complete"]),
+        completeness=completeness,
+        skills_scanned=len(scanned) + len(failures),
+        skills_omitted=0,
+        public_finding_records=0,
+        report_characters=0,
+        transitive_finding_count=0,
+        transitive_sources=[],
+        skills=entries,
+    )
+
+
+def _empty_repository_sarif() -> dict[str, object]:
+    """The SARIF log a Repository Scan writes when discovery matched no Skill.
+
+    The log carries one run holding no result rather than no run at all. The
+    SARIF 2.1.0 schema permits ``"minItems": 0`` on ``runs``, but GitHub code
+    scanning, the consumer this output is shaped for, documents "an array of
+    **one or more** runs"; a zero-run log is therefore not acceptable to both,
+    and this project's own ``validate_sarif_report`` refuses one as well. One run
+    with no result says what actually happened: the tool ran, and it found
+    nothing.
+
+    That claim is only true of a discovery *miss*, which is why this is a
+    document of its own rather than a fall-back inside ``_merge_repository_sarif``
+    keyed on an empty ``runs`` list. A Repository Scan whose every discovered
+    Skill raised also reaches the merge with nothing to merge, and there the same
+    run would assert ``executionSuccessful`` over a Scan that inspected nothing,
+    beside an exit code of ``2``.
+
+    ``$schema`` is ``SARIF_SCHEMA_URI``, the one every other SARIF document this
+    tool builds declares, so a consumer that pins or diffs the field does not see
+    the scanner describe itself two ways depending on whether discovery matched.
+    """
+    return {
+        "$schema": SARIF_SCHEMA_URI,
+        "version": "2.1.0",
+        "runs": [
+            {
+                "tool": {"driver": {"name": "skillspector", "version": __version__}},
+                "results": [],
+                "invocations": [{"executionSuccessful": True}],
+            }
+        ],
+    }
+
+
+def _empty_repository_markdown(repository_root: Path, roots: tuple[str, ...]) -> str:
+    """The Markdown a Repository Scan writes when discovery matched no Skill.
+
+    The concatenation every other Markdown Repository Scan emits is empty when
+    there is nothing to concatenate, and an empty file is indistinguishable from
+    a run that crashed. This says which root patterns were searched and which
+    flag widens them -- the same two facts the stderr warning carries, for a
+    reader who has only the report.
+    """
+    return (
+        "# SkillSpector Repository Scan\n\n"
+        f"No skill was found under `{repository_root}`.\n\n"
+        "Searched these directory patterns at any depth: "
+        f"{', '.join(f'`{root}`' for root in roots)}.\n\n"
+        "Use `--repo-scan-root` for a layout that does not follow them.\n"
+    )
+
+
+def _repository_report_body(
+    format: FormatChoice,
+    scanned: list[tuple[DiscoveredSkill, dict]],
+    failures: list[tuple[DiscoveredSkill, str]],
+    repository_root: Path,
+    roots: tuple[str, ...],
+) -> str | None:
+    """The one report body a Repository Scan writes, whether to ``--output`` or stdout.
+
+    ``sarif`` and ``json`` are each merged into a single document. ``markdown``
+    keeps the ``--- path ---`` concatenation -- merging Markdown is a question
+    with no existing shape in this codebase to reuse -- and ``terminal`` keeps it
+    because that separator is the natural shape between rendered reports.
+
+    Discovery matching nothing answers in every format but ``terminal``, and
+    ``json`` answers it as the zero-Skill case of the very merge a hit takes.
+    ``sarif`` and ``markdown`` each need a document of their own instead, for the
+    same reason: the merge of nothing is not a report *about* nothing. Markdown's
+    would be an empty file, indistinguishable from a crashed run; SARIF's would
+    be a zero-run log, which is what ``_merge_repository_sarif`` still answers on
+    a *hit* whose every Skill failed -- an outcome that must not be dressed up as
+    a successful run of no findings.
+
+    ``None`` is the answer for ``terminal`` alone, and it means *there is no
+    report shape for this*, which is distinct from an empty body: a rendered
+    report of no Skills is nothing, and writing that would put a bare newline on
+    the very stdout a caller pipes. The warning on stderr is what a ``terminal``
+    reader gets, exactly as before.
+    """
+    discovery_missed = not scanned and not failures
+    if format == FormatChoice.sarif:
+        if discovery_missed:
+            return json.dumps(_empty_repository_sarif(), indent=2)
+        return json.dumps(_merge_repository_sarif(scanned), indent=2)
+    if format == FormatChoice.json:
+        return json.dumps(_merge_repository_json(scanned, failures), indent=2)
+    if discovery_missed:
+        if format == FormatChoice.markdown:
+            return _empty_repository_markdown(repository_root, roots)
+        return None
+    return "\n\n".join(
+        f"--- {skill.relative_path} ---\n{_result_body(result)}" for skill, result in scanned
+    )
 
 
 def _scan_repository(
@@ -2675,13 +2932,19 @@ def _scan_repository(
     repository root declares no Skill, so an ordinary Scan reports the whole
     tree as one anonymous Skill with an empty Manifest and scores it as such.
 
-    Everything printed here except ``body`` goes to stderr. Unlike
-    ``_scan_multi_skill``, this path always writes the report -- to ``--output``
-    or, failing that, to stdout -- so its per-Skill table never has to stand in
-    for one: with ``-f sarif`` and no ``--output``, stdout carries a single
-    merged SARIF log that a progress line or a table would make unparseable, and
-    with ``-f terminal`` it carries every per-Skill report in full, of which the
-    table is a digest.
+    Everything printed here except ``body`` goes to stderr. This path always
+    writes the report -- to ``--output`` or, failing that, to stdout -- so its
+    per-Skill table never has to stand in for one: with ``-f sarif`` and no
+    ``--output``, stdout carries a single merged SARIF log that a progress line
+    or a table would make unparseable, and with ``-f terminal`` it carries every
+    per-Skill report in full, of which the table is a digest.
+
+    Discovery matching no Skill is the zero-Skill case of that same path rather
+    than an early exit from it, the defect issue #115 records: the warning is
+    printed and the requested ``--format`` is then honoured with an empty report
+    body, so a gate reading stdout gets a designed answer instead of a stream it
+    cannot tell from success. ``-f terminal`` is the one format with no such body
+    and is unchanged.
     """
     discovered = discover_skills(repository_root, roots=roots)
     if not discovered:
@@ -2690,7 +2953,6 @@ def _scan_repository(
             f"Searched these directory patterns at any depth: {', '.join(roots)}. "
             "Use --repo-scan-root for a layout that does not follow them."
         )
-        return
 
     yara_dir = str(yara_rules_dir.resolve()) if yara_rules_dir else None
     scanned: list[tuple[DiscoveredSkill, dict]] = []
@@ -2727,7 +2989,11 @@ def _scan_repository(
             if result is not None:
                 cleanup_result(result)
 
-    advice.print(f"\n{'Skill':<28} {'Score':>6} {'Severity':>10} {'Findings':>9}")
+    # Only when there is a row to head. Discovery matching nothing already said
+    # so in its own warning above, and a bare column heading beneath it would be
+    # new noise on the one path issue #115 exists to leave untouched.
+    if discovered:
+        advice.print(f"\n{'Skill':<28} {'Score':>6} {'Severity':>10} {'Findings':>9}")
     for skill, result in scanned:
         findings = reported_findings(result)
         advice.print(
@@ -2744,12 +3010,12 @@ def _scan_repository(
     # sign of being advisory at all.
     _advise_on_advisory_findings(sum(_count_advisory(result) for _, result in scanned))
 
-    if format == FormatChoice.sarif:
-        body = json.dumps(_merge_repository_sarif(scanned), indent=2)
-    else:
-        body = "\n\n".join(
-            f"--- {skill.relative_path} ---\n{_result_body(result)}" for skill, result in scanned
-        )
+    body = _repository_report_body(format, scanned, failures, repository_root, roots)
+    if body is None:
+        # `-f terminal` with nothing discovered: there is no rendered report of no
+        # Skills, so nothing is written and nothing is saved. See
+        # `_repository_report_body`.
+        return
     if output:
         Path(output).write_text(body, encoding="utf-8")
         advice.print(f"Report saved to: {output}")

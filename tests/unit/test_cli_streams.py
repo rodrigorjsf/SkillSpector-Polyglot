@@ -26,19 +26,20 @@ folds the two streams and therefore passes whichever stream a line went to. Thes
 read ``result.stdout`` and ``result.stderr`` apart, which is the only way the
 distinction is visible at all.
 
-The one line that is a judgement call rather than a classification is the
-Multi-Skill Summary table, and ``TestTheMultiSkillSummaryIsTheReport`` below
-records every half of it: measured, ``--recursive`` writes its combined report
-**only** to ``--output`` *once the flag engages* (issue #114), so with
-``-f terminal`` and no ``--output`` that table is the whole of what the Scan
-produced and ``skillspector scan ./skills --recursive | less`` has it or has
-nothing. Ask for ``-f json`` without an ``--output`` and there is no report
-anywhere, so the table is not one either and stdout stays empty rather than
-unparseable. Below the two-skill threshold the flag never engages: the Scan falls
-through to an ordinary one, which does print a report to stdout in the requested
-format, and that counterexample is pinned here too.
-``--repo-scan``'s table is not the same case at all — that path always prints a
-report, so its table only ever duplicates one, and it goes to stderr.
+The Multi-Skill Summary table used to be the one line that was a judgement call
+rather than a classification, because ``--recursive`` wrote its combined report
+**only** to ``--output`` *once the flag engaged* — so with ``-f terminal`` and no
+``--output`` the table was the whole of what the Scan produced and
+``skillspector scan ./skills --recursive | less`` had it or had nothing. Issue
+#114 gave that path the ``print`` fall-back every other one already had, and
+``TestTheMultiSkillSummaryIsADigest`` below records what is left: the table is a
+digest of a report on every format that has a shape for one, so it goes to stderr
+unconditionally, exactly like ``--repo-scan``'s. ``-f sarif`` and ``-f markdown``
+are the formats with no such shape — neither has a merged document to print — so
+stdout stays empty there, and that half is pinned too. Below the two-skill
+threshold the flag never engages: the Scan falls through to an ordinary one,
+which prints a report to stdout in the requested format, and that counterexample
+is pinned here as well.
 
 Any assertion here that matches a *path* inside rich output needs ``_wide_console``
 below, and the module-level fixture applies it to everything so that no future one
@@ -46,15 +47,16 @@ can be written without it.
 
 Every site in ``cli`` that writes user-facing output is covered *individually and
 in both directions* across ``tests/unit/``: moving any one of them to the other
-stream — an ``advice`` site to ``console``, a ``console``/``summary`` site to
-``advice``, or any of the three bare ``print()`` calls that put a report on stdout
-(in ``_write_result``, in the ``--mcp-registry`` branch, and at the end of
-``_scan_repository``) onto ``advice`` — fails a test on its own, with no other
-site moving with it. Those three are counted deliberately: they are how the report
-reaches stdout at all, so a claim about print sites that skipped them would omit
-the very thing the rule exists to protect. That was all measured by flipping each
-site in turn, not assumed; all but two of them fail a test *in this
-file*. The two exceptions are ``_advise_on_a_fallthrough``'s
+stream — an ``advice`` site to ``console``, a ``console`` site to ``advice``, or
+any of the bare ``print()`` calls that put a report on stdout (in
+``_write_result``, in the ``--mcp-registry`` branch, at the end of
+``_scan_repository``, and in ``_emit_multi_skill_body``) onto ``advice`` — fails
+a test on its own, with no other site moving with it. Those are enumerated
+deliberately: they are how the report reaches stdout at all, so a claim about
+print sites that skipped them would omit the very thing the rule exists to
+protect. That was all measured by flipping each site in turn, not assumed; all
+but two of them fail a test *in this file*. The two exceptions are
+``_advise_on_a_fallthrough``'s
 ``--repo-scan finds N skill(s) here`` branch — its other two branches *are* pinned
 here — and the older ``Found N skills in this directory`` warning in ``scan``,
 both pinned by ``TestTheAdvisoryStaysOutOfTheReport`` in
@@ -85,6 +87,7 @@ from skillspector import __version__
 from skillspector.cli import app
 from skillspector.models import Finding
 from skillspector.nodes.report import reported_findings
+from skillspector.sarif_models import validate_sarif_report
 from skillspector.suppression import SuppressedFinding
 
 runner = CliRunner()
@@ -127,6 +130,23 @@ def _write_skill(directory: Path, name: str) -> Path:
 def _unwrapped(output: str) -> str:
     """*output* with rich's line wrapping collapsed, so a phrase can be matched."""
     return " ".join(output.split())
+
+
+def _without_timestamps(document: object) -> object:
+    """*document* with every ``scanned_at`` replaced, so two Scans can be compared.
+
+    The only field that legitimately differs between two Scans of the same input.
+    Dropping the key instead would let a report that stopped emitting one compare
+    equal to a report that still does.
+    """
+    if isinstance(document, dict):
+        return {
+            key: "<scanned_at>" if key == "scanned_at" else _without_timestamps(value)
+            for key, value in document.items()
+        }
+    if isinstance(document, list):
+        return [_without_timestamps(item) for item in document]
+    return document
 
 
 def _explode(*_args: object, **_kwargs: object) -> dict[str, object]:
@@ -235,9 +255,12 @@ class TestARepositoryScan:
     """``--repo-scan``, which always prints a report and so never needs its table.
 
     That the report reaches stdout is the rule; that it is *parseable* is a
-    separate property this path only has under ``-f sarif``, and
-    ``test_a_json_repository_report_is_concatenated_not_merged`` pins the
-    difference so neither claim is read as the other.
+    separate property, and one this path has under ``-f sarif`` and — since
+    [#116](https://github.com/rodrigorjsf/SkillSpector-Polyglot/issues/116) —
+    under ``-f json`` as well. ``-f markdown`` and ``-f terminal`` keep the
+    ``--- path ---`` concatenation, and
+    ``test_a_markdown_repository_report_is_still_concatenated`` pins that half so
+    neither claim is read as the other.
     """
 
     def _repository(self, root: Path) -> Path:
@@ -262,17 +285,17 @@ class TestARepositoryScan:
         assert len(json.loads(result.stdout)["runs"]) == 2
         assert "Scanning" not in result.stdout
 
-    def test_a_json_repository_report_is_concatenated_not_merged(self, tmp_path: Path) -> None:
-        """Characterisation: what stdout carries here is the report, and unparseable anyway.
+    def test_a_json_repository_report_is_one_merged_document(self, tmp_path: Path) -> None:
+        """This pinned the concatenation until #116 merged it; it now pins the merged shape.
 
-        The stream rule holds — this concatenation *is* the report, so stdout is
-        where it belongs, and no line was moved off it. What it is not is a
-        single document: only ``-f sarif`` is merged, and every other format
-        falls through to the per-Skill bodies glued behind ``--- path ---``
-        separators. Pinned here so the README clause saying so cannot rot, and
-        so that fixing it
-        ([#116](https://github.com/rodrigorjsf/SkillSpector-Polyglot/issues/116))
-        is a visible, intended change to this test rather than a silent one.
+        The stream rule was never the defect — the body *is* the report, so
+        stdout is where it belongs. What it was not was a single document: only
+        ``-f sarif`` was merged and every other format fell through to the
+        per-Skill bodies glued behind ``--- path ---`` separators, which no JSON
+        reader accepts.
+        [#116](https://github.com/rodrigorjsf/SkillSpector-Polyglot/issues/116)
+        gave this format the merge SARIF already had, and each Skill is
+        identified in it by its repository-relative path.
         """
         repository = self._repository(tmp_path)
 
@@ -281,10 +304,295 @@ class TestARepositoryScan:
         )
 
         assert result.exit_code == 0, result.output
+        merged = json.loads(result.stdout)
+        assert merged["skill_count"] == 2
+        assert [entry["path"] for entry in merged["skills"]] == ["skills/one", "skills/two"]
+        assert "--- skills/one ---" not in result.stdout
+
+    def test_it_answers_in_the_same_vocabulary_as_the_other_discovery_mode(
+        self, tmp_path: Path
+    ) -> None:
+        """The point of #116: one object shape, told apart by the flag that was run.
+
+        Asserted as an equivalence between the two modes rather than against a
+        literal key list copied into this file, so the shape cannot drift in one
+        mode while a hand-written expectation keeps agreeing with the other. The
+        *values* differ — the paths are relative to different roots and each mode
+        reports its own ``scope`` — so it is the keys that are compared.
+        """
+        repository = self._repository(tmp_path)
+        flat = tmp_path / "flat"
+        _write_skill(flat / "one", "one")
+        _write_skill(flat / "two", "two")
+        combined = tmp_path / "recursive.json"
+
+        repo_scan = runner.invoke(
+            app, ["scan", str(repository), "--repo-scan", "--no-llm", "-f", "json"]
+        )
+        recursive = runner.invoke(
+            app,
+            ["scan", str(flat), "--recursive", "--no-llm", "-f", "json", "-o", str(combined)],
+        )
+
+        assert repo_scan.exit_code == 0, repo_scan.output
+        assert recursive.exit_code == 0, recursive.output
+        merged = json.loads(repo_scan.stdout)
+        reference = json.loads(combined.read_text(encoding="utf-8"))
+        assert list(merged) == list(reference)
+        assert list(merged["analysis_completeness"]) == list(reference["analysis_completeness"])
+        assert [sorted(entry) for entry in merged["skills"]] == [
+            sorted(entry) for entry in reference["skills"]
+        ]
+
+    def test_each_mode_names_its_own_discovery_in_the_scope_field(self, tmp_path: Path) -> None:
+        """The one field that says which mode built the object, asserted per mode.
+
+        The shared keys are compared as an equivalence above; ``scope`` is the
+        deliberate difference and so cannot be asserted that way. It is also the
+        only field that lets a reader tell a Repository Scan's zeroed
+        ``public_finding_records`` and ``report_characters`` -- budgets that mode
+        does not have -- from a recursive Scan that really consumed none of its
+        own. And it is a vocabulary contract: ``CONTEXT.md`` lists "recursive
+        scan" among the spellings a Repository Scan is never called, and a
+        machine-readable field is prose too.
+        """
+        repository = self._repository(tmp_path)
+        flat = tmp_path / "flat"
+        _write_skill(flat / "one", "one")
+        _write_skill(flat / "two", "two")
+
+        repo_scan = runner.invoke(
+            app, ["scan", str(repository), "--repo-scan", "--no-llm", "-f", "json"]
+        )
+        recursive = runner.invoke(app, ["scan", str(flat), "--recursive", "--no-llm", "-f", "json"])
+
+        assert repo_scan.exit_code == 0, repo_scan.output
+        assert recursive.exit_code == 0, recursive.output
+        assert json.loads(repo_scan.stdout)["analysis_completeness"]["scope"] == "repository_skills"
+        assert json.loads(recursive.stdout)["analysis_completeness"]["scope"] == "recursive_skills"
+
+    def test_a_raising_child_is_still_counted_as_scanned_in_both_modes(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """``skills_scanned + skills_omitted == skill_count``, whichever mode was run.
+
+        The recursive mode counts every Skill it *attempted*, so a child whose
+        graph invocation raised is scanned-and-failed rather than never reached,
+        and its omitted count is the discovery total minus that -- the identity
+        holds there by construction. A Repository Scan omits nothing, so counting
+        only the children that came back answered ``0 + 0`` against a
+        ``skill_count`` of two: the same key meaning two different things in the
+        one object both modes are supposed to answer in.
+
+        Asserted with one child raising rather than all of them, because the
+        all-raising case makes the two counters disagree by the same amount and
+        an equality between the modes would still hold if one of them were
+        counting the wrong thing.
+        """
+        repository = self._repository(tmp_path)
+        flat = tmp_path / "flat"
+        _write_skill(flat / "one", "one")
+        _write_skill(flat / "two", "two")
+        calls = {"n": 0}
+
+        def _explode_once(*args: object, **kwargs: object) -> dict[str, object]:
+            calls["n"] += 1
+            if calls["n"] % 2 == 1:
+                raise RuntimeError("the graph came apart")
+            return {
+                "report_body": '{"skill": {"name": "two"}}',
+                "risk_score": 0,
+                "risk_severity": "LOW",
+                "execution_successful": True,
+            }
+
+        monkeypatch.setattr("skillspector.cli.graph", SimpleNamespace(invoke=_explode_once))
+
+        repo_scan = runner.invoke(
+            app, ["scan", str(repository), "--repo-scan", "--no-llm", "-f", "json"]
+        )
+        recursive = runner.invoke(app, ["scan", str(flat), "--recursive", "--no-llm", "-f", "json"])
+
+        assert repo_scan.exit_code == 2
+        assert recursive.exit_code == 2
+        merged = json.loads(repo_scan.stdout)
+        reference = json.loads(recursive.stdout)
+        for body in (merged, reference):
+            assert body["skills_scanned"] + body["skills_omitted"] == body["skill_count"]
+        assert merged["skills_scanned"] == reference["skills_scanned"] == 2
+
+    def test_a_child_that_failed_without_raising_is_still_a_failure_in_the_body(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The merged object's own claims have to agree with the exit code.
+
+        A Skill can run to completion and report ``execution_successful`` false;
+        that raises nothing, so it lands among the scanned results rather than
+        among the failures. Reading the aggregate off the failures alone printed
+        ``execution_successful: true`` and ``SAFE`` beside an exit code of ``2``
+        — a contradiction the concatenated body could not have, because it never
+        made an aggregate claim at all. Merging created the claim, so merging
+        owes it.
+        """
+        repository = self._repository(tmp_path)
+        failed = {
+            "report_body": '{"skill": {"name": "one"}}',
+            "risk_score": 0,
+            "risk_severity": "LOW",
+            "execution_successful": False,
+        }
+        monkeypatch.setattr(
+            "skillspector.cli.graph", SimpleNamespace(invoke=lambda *a, **k: dict(failed))
+        )
+
+        result = runner.invoke(
+            app, ["scan", str(repository), "--repo-scan", "--no-llm", "-f", "json"]
+        )
+
+        assert result.exit_code == 2
+        merged = json.loads(result.stdout)
+        assert merged["execution_successful"] is False
+        assert merged["risk_recommendation"] == "DO_NOT_INSTALL"
+        assert merged["analysis_completeness"]["execution_successful"] is False
+
+    def test_a_partially_inspected_child_is_not_rounded_up_to_complete(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A partial inspection must survive the merge, or the Ledger's point is lost.
+
+        An Inspection Ledger is what makes an absence of Findings distinguishable
+        from an absence of inspection. A child reporting an incomplete
+        `analysis_completeness` raises nothing and exits `0`, so an aggregate that
+        counted only exceptions called the repository fully inspected — and a
+        reader would take "no findings" for "nothing found" rather than "not all
+        of it was read".
+        """
+        repository = self._repository(tmp_path)
+        partial = {
+            "report_body": '{"skill": {"name": "one"}}',
+            "risk_score": 0,
+            "risk_severity": "LOW",
+            "execution_successful": True,
+            "analysis_completeness": {"is_complete": False, "status": "partial"},
+        }
+        monkeypatch.setattr(
+            "skillspector.cli.graph", SimpleNamespace(invoke=lambda *a, **k: dict(partial))
+        )
+
+        result = runner.invoke(
+            app, ["scan", str(repository), "--repo-scan", "--no-llm", "-f", "json"]
+        )
+
+        assert result.exit_code == 0, result.output
+        merged = json.loads(result.stdout)
+        assert merged["analysis_completeness"]["is_complete"] is False
+        assert merged["analysis_completeness"]["partially_inspected_files"] == 2
+        assert merged["risk_recommendation"] == "CAUTION"
+
+    def test_a_repository_whose_every_skill_raised_still_merges_to_no_run(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A discovery *hit* must not borrow the discovery *miss*'s report.
+
+        The miss emits one run holding no result, which reads as "the tool ran
+        and found nothing". Here it ran over two Skills and every one of them
+        raised, so nothing was inspected at all — and because a Skill only joins
+        the scanned results when the graph returns, that reaches the merge with
+        an empty list too. A fall-back keyed on *that* emptiness rather than on
+        discovery's would put ``executionSuccessful: true`` beside an exit code
+        of ``2``, in the one field GitHub code scanning reads.
+
+        The zero-run log this asserts is byte-for-byte what the mode emitted
+        before #115 and #116, which is the other half of why it is asserted: a
+        discovery hit changed in no format. That the log is *also* refused by
+        ``validate_sarif_report`` is a separate, older defect —
+        [#138](https://github.com/rodrigorjsf/SkillSpector-Polyglot/issues/138) —
+        whose answer is a run declaring ``executionSuccessful`` **false**, not
+        this input dressed up as a success. Rewrite this test when #138 lands;
+        do not work around it.
+        """
+        repository = self._repository(tmp_path)
+
+        def _explode(*args: object, **kwargs: object) -> dict[str, object]:
+            raise RuntimeError("the graph came apart")
+
+        monkeypatch.setattr("skillspector.cli.graph", SimpleNamespace(invoke=_explode))
+
+        result = runner.invoke(
+            app, ["scan", str(repository), "--repo-scan", "--no-llm", "-f", "sarif"]
+        )
+
+        assert result.exit_code == 2
+        assert json.loads(result.stdout)["runs"] == []
+        assert "executionSuccessful" not in result.stdout
+
+    def test_a_child_that_failed_without_raising_merges_to_no_run_either(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The same claim on the variant that never raises, which takes another path.
+
+        A Skill can run to completion, report ``execution_successful`` false and
+        carry no ``sarif_report``; it lands *among* the scanned results, so the
+        merge loop does run and skips it. The list of runs is empty for a
+        different reason than above, and a guard on that emptiness would fire
+        here too — so both variants are pinned, not one standing in for the
+        other.
+        """
+        repository = self._repository(tmp_path)
+        failed = {
+            "report_body": '{"skill": {"name": "one"}}',
+            "risk_score": 0,
+            "risk_severity": "LOW",
+            "execution_successful": False,
+        }
+        monkeypatch.setattr(
+            "skillspector.cli.graph", SimpleNamespace(invoke=lambda *a, **k: dict(failed))
+        )
+
+        result = runner.invoke(
+            app, ["scan", str(repository), "--repo-scan", "--no-llm", "-f", "sarif"]
+        )
+
+        assert result.exit_code == 2
+        assert json.loads(result.stdout)["runs"] == []
+        assert "executionSuccessful" not in result.stdout
+
+    def test_a_markdown_repository_report_is_still_concatenated(self, tmp_path: Path) -> None:
+        """The half #116 deliberately left alone, pinned so the README cannot rot.
+
+        Merging Markdown is a separate question with no shape in this codebase to
+        reuse, so ``-f markdown`` keeps the per-Skill bodies behind
+        ``--- path ---`` separators. Without this assertion the claim that #116
+        merged *json* would read as a claim that it merged everything.
+        """
+        repository = self._repository(tmp_path)
+
+        result = runner.invoke(
+            app, ["scan", str(repository), "--repo-scan", "--no-llm", "-f", "markdown"]
+        )
+
+        assert result.exit_code == 0, result.output
         assert result.stdout.startswith("--- skills/one ---")
         assert "--- skills/two ---" in result.stdout
-        with pytest.raises(json.JSONDecodeError):
-            json.loads(result.stdout)
+
+    def test_the_merged_json_written_to_a_file_is_the_one_it_prints(self, tmp_path: Path) -> None:
+        """``--output`` changed shape with stdout, rather than keeping the old one."""
+        repository = self._repository(tmp_path)
+        report = tmp_path / "merged.json"
+
+        printed = runner.invoke(
+            app, ["scan", str(repository), "--repo-scan", "--no-llm", "-f", "json"]
+        )
+        saved = runner.invoke(
+            app,
+            ["scan", str(repository), "--repo-scan", "--no-llm", "-f", "json", "-o", str(report)],
+        )
+
+        assert saved.exit_code == 0, saved.output
+        assert saved.stdout == ""
+        on_disk = json.loads(report.read_text(encoding="utf-8"))
+        assert list(on_disk) == list(json.loads(printed.stdout))
+        assert on_disk["skill_count"] == 2
 
     def test_the_progress_and_the_digest_are_on_stderr(self, tmp_path: Path) -> None:
         """Moved, not silenced — an operator watching a long Scan still sees it."""
@@ -314,13 +622,169 @@ class TestARepositoryScan:
         assert "--- skills/one ---" in result.stdout
         assert "SkillSpector Security Report" in result.stdout
 
-    def test_finding_no_skill_at_all_leaves_stdout_empty(self, tmp_path: Path) -> None:
+    def test_finding_no_skill_at_all_still_leaves_a_terminal_stdout_empty(
+        self, tmp_path: Path
+    ) -> None:
+        """The one format
+        [#115](https://github.com/rodrigorjsf/SkillSpector-Polyglot/issues/115) left alone.
+
+        This pinned an *empty stdout on every format* until #115 flipped it. A
+        rendered report of no Skills is nothing, so ``-f terminal`` still writes
+        nothing at all and the warning on stderr is the whole answer — which is
+        what it always was for a human reader. Every machine-readable format now
+        answers instead; the three tests below are the flipped half.
+        """
         (tmp_path / "src").mkdir()
 
         result = runner.invoke(app, ["scan", str(tmp_path), "--repo-scan", "--no-llm"])
 
+        assert result.exit_code == 0, result.output
         assert result.stdout == ""
         assert "no skill found under" in _unwrapped(result.stderr)
+
+        # The warning is the whole of stderr, not merely present in it. Discovery
+        # matching nothing skips the per-skill column heading, and a containment
+        # check on the warning cannot see a bare heading printed beneath it.
+        assert "Severity" not in _unwrapped(result.stderr)
+        assert "Findings" not in _unwrapped(result.stderr)
+
+    def test_finding_no_skill_at_all_still_answers_in_sarif(self, tmp_path: Path) -> None:
+        """#115: a discovery miss is a report of no findings, not an absent report.
+
+        The log carries **one** run holding no result rather than no run at all.
+        The SARIF 2.1.0 schema allows ``runs`` to be empty, but GitHub code
+        scanning documents "an array of one or more runs", so a zero-run log is
+        not acceptable to both — and this project's own ``validate_sarif_report``
+        refuses one too, which is what this asserts against rather than a
+        hand-written key check.
+        """
+        (tmp_path / "src").mkdir()
+
+        result = runner.invoke(
+            app, ["scan", str(tmp_path), "--repo-scan", "--no-llm", "-f", "sarif"]
+        )
+
+        assert result.exit_code == 0, result.output
+        log = json.loads(result.stdout)
+        validate_sarif_report(log)
+        assert len(log["runs"]) == 1
+        assert [finding for run in log["runs"] for finding in run["results"]] == []
+        assert "no skill found under" in _unwrapped(result.stderr)
+        assert "no skill found under" not in result.stdout
+
+    def test_the_empty_sarif_log_declares_the_schema_a_discovery_hit_declares(
+        self, tmp_path: Path
+    ) -> None:
+        """One scanner, one ``$schema`` — asserted as an equivalence, not a literal.
+
+        ``_merge_repository_sarif`` copies the field off the children it merges,
+        so a hit declares whatever ``sarif_models`` built. A miss has no child to
+        copy from and used to fall back to an unrelated schemastore URL, which
+        made the scanner describe itself two ways depending on whether discovery
+        matched. ``validate_sarif_report`` does not read the field, so only this
+        catches it — and comparing against the hit rather than against a constant
+        keeps the two from drifting apart later.
+        """
+        empty = tmp_path / "empty"
+        (empty / "src").mkdir(parents=True)
+        repository = self._repository(tmp_path / "found")
+
+        miss = runner.invoke(app, ["scan", str(empty), "--repo-scan", "--no-llm", "-f", "sarif"])
+        hit = runner.invoke(
+            app, ["scan", str(repository), "--repo-scan", "--no-llm", "-f", "sarif"]
+        )
+
+        assert miss.exit_code == 0, miss.output
+        assert hit.exit_code == 0, hit.output
+        assert json.loads(miss.stdout)["$schema"] == json.loads(hit.stdout)["$schema"]
+
+    def test_finding_no_skill_at_all_still_answers_in_json(self, tmp_path: Path) -> None:
+        """#115: the empty case of the very object a discovery hit emits.
+
+        The shape is #116's merged object with the counts at zero, not a second
+        vocabulary invented for the empty case — so a gate parses one shape
+        whether or not discovery matched.
+        """
+        (tmp_path / "src").mkdir()
+
+        result = runner.invoke(
+            app, ["scan", str(tmp_path), "--repo-scan", "--no-llm", "-f", "json"]
+        )
+
+        assert result.exit_code == 0, result.output
+        merged = json.loads(result.stdout)
+        assert merged["skill_count"] == 0
+        assert merged["skills"] == []
+        assert merged["max_risk_score"] == 0
+        assert merged["execution_successful"] is True
+        assert "no skill found under" in _unwrapped(result.stderr)
+
+    def test_the_empty_json_body_is_the_shape_a_discovery_hit_emits(self, tmp_path: Path) -> None:
+        """Asserted as an equivalence, so the empty case cannot drift from the hit case."""
+        empty = tmp_path / "empty"
+        (empty / "src").mkdir(parents=True)
+        repository = self._repository(tmp_path / "found")
+
+        miss = runner.invoke(app, ["scan", str(empty), "--repo-scan", "--no-llm", "-f", "json"])
+        hit = runner.invoke(app, ["scan", str(repository), "--repo-scan", "--no-llm", "-f", "json"])
+
+        assert miss.exit_code == 0, miss.output
+        assert hit.exit_code == 0, hit.output
+        assert list(json.loads(miss.stdout)) == list(json.loads(hit.stdout))
+
+    def test_finding_no_skill_at_all_still_answers_in_markdown(self, tmp_path: Path) -> None:
+        """#115: a report naming the miss, never an empty document.
+
+        The concatenation Markdown emits is empty when there is nothing to
+        concatenate, and an empty file cannot be told from a crashed run.
+        """
+        (tmp_path / "src").mkdir()
+
+        result = runner.invoke(
+            app, ["scan", str(tmp_path), "--repo-scan", "--no-llm", "-f", "markdown"]
+        )
+
+        assert result.exit_code == 0, result.output
+        assert result.stdout.startswith("# SkillSpector Repository Scan")
+        assert "No skill was found under" in result.stdout
+        assert "`--repo-scan-root`" in result.stdout
+
+    def test_an_empty_repository_report_goes_to_the_output_file_instead(
+        self, tmp_path: Path
+    ) -> None:
+        """``--output`` takes the same body, and stdout keeps none of it."""
+        (tmp_path / "src").mkdir()
+        report = tmp_path / "empty.sarif"
+
+        result = runner.invoke(
+            app,
+            ["scan", str(tmp_path), "--repo-scan", "--no-llm", "-f", "sarif", "-o", str(report)],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert result.stdout == ""
+        assert f"Report saved to: {report}" in _unwrapped(result.stderr)
+        validate_sarif_report(json.loads(report.read_text(encoding="utf-8")))
+
+    def test_a_terminal_discovery_miss_writes_no_output_file_either(self, tmp_path: Path) -> None:
+        """The deliberate gap, pinned so a later reader does not "fix" it into an empty file.
+
+        ``-f terminal`` has no report shape for zero Skills, so #115 left it
+        writing nothing — with ``--output`` as without. An empty ``report.txt``
+        would be indistinguishable from a run that crashed before writing, which
+        is the confusion this whole issue exists to remove.
+        """
+        (tmp_path / "src").mkdir()
+        report = tmp_path / "empty.txt"
+
+        result = runner.invoke(
+            app, ["scan", str(tmp_path), "--repo-scan", "--no-llm", "-o", str(report)]
+        )
+
+        assert result.exit_code == 0, result.output
+        assert result.stdout == ""
+        assert not report.exists()
+        assert "Report saved to" not in _unwrapped(result.stderr)
 
     def test_its_own_saved_to_note_does_not_reach_stdout(self, tmp_path: Path) -> None:
         """``_scan_repository`` writes its own note, separate from ``_write_result``."""
@@ -338,23 +802,30 @@ class TestARepositoryScan:
         assert len(json.loads(report.read_text(encoding="utf-8"))["runs"]) == 2
 
 
-class TestTheMultiSkillSummaryIsTheReport:
-    """``--recursive``, the one path whose table has to be argued about.
+class TestTheMultiSkillSummaryIsADigest:
+    """``--recursive``, whose table stopped having to be argued about at #114.
 
-    It writes its combined report **only** to ``--output``; there is no
-    fall-back that prints one. So the stream this table goes to is not a
-    cosmetic question either way: on stderr with no ``--output``, stdout would
-    be empty and ``| less`` would show nothing at all.
+    It used to write its combined report **only** to ``--output``, so with
+    ``-f terminal`` and nothing else the table *was* the whole product of the
+    Scan and had to sit on stdout to keep ``| less`` worth running.
+    [#114](https://github.com/rodrigorjsf/SkillSpector-Polyglot/issues/114) gave
+    the path the ``print`` fall-back every other one already had. A report is
+    written on every format that has a shape for one, the table is a digest of it
+    like ``--repo-scan``'s, and it goes to stderr with the rest of the notes —
+    the conditional that used to pick between the two consoles is gone.
     """
 
-    def test_without_an_output_file_the_table_is_on_stdout(self, tmp_path: Path) -> None:
-        """The positive assertion that stops a later sweep from moving it.
+    def test_without_an_output_file_the_table_is_now_a_digest_on_stderr(
+        self, tmp_path: Path
+    ) -> None:
+        """This pinned the table on **stdout** until #114 put a report there instead.
 
         The table is built from five separate ``print`` calls — banner, column
         headings, rule, one row per Skill, trailing spacer — and each is its own
-        site that a sweep could move on its own. Asserting only the banner and one
-        row would leave three of them free to drift to stderr, which would leave
-        ``| less`` showing a headerless fragment.
+        site that a sweep could move on its own, so each is asserted separately;
+        asserting only the banner and one row would leave three of them free to
+        drift back. What changed is the stream, not the content: ``| less`` now
+        shows the combined terminal report, of which this is the digest.
         """
         _write_skill(tmp_path / "alpha", "alpha")
         _write_skill(tmp_path / "beta", "beta")
@@ -362,15 +833,33 @@ class TestTheMultiSkillSummaryIsTheReport:
         result = runner.invoke(app, ["scan", str(tmp_path), "--recursive", "--no-llm"])
 
         assert result.exit_code == 0, result.output
-        unwrapped = _unwrapped(result.stdout)
+        unwrapped = _unwrapped(result.stderr)
         assert "═══ Multi-Skill Summary ═══" in unwrapped
         assert "Skill Score Severity Findings Execution" in unwrapped
         assert "─" * 30 in unwrapped
         assert "alpha 0 LOW 0 successful" in unwrapped
         assert "beta 0 LOW 0 successful" in unwrapped
-        # The trailing spacer, printed after the last row and the last thing this
-        # path writes to stdout at all, so a blank line is what stdout ends with.
-        assert result.stdout.endswith("\n\n")
+        assert "═══ Multi-Skill Summary ═══" not in result.stdout
+
+    def test_without_an_output_file_stdout_carries_the_combined_terminal_report(
+        self, tmp_path: Path
+    ) -> None:
+        """What the table gave way to: the report itself, on the stream it belongs to.
+
+        Without this the change above would read as "the table was silenced",
+        which would leave ``skillspector scan ./skills --recursive | less``
+        showing nothing at all — the exact regression the old stdout placement
+        existed to prevent.
+        """
+        _write_skill(tmp_path / "alpha", "alpha")
+        _write_skill(tmp_path / "beta", "beta")
+
+        result = runner.invoke(app, ["scan", str(tmp_path), "--recursive", "--no-llm"])
+
+        assert result.exit_code == 0, result.output
+        assert result.stdout.startswith("--- alpha ---")
+        assert "--- beta ---" in result.stdout
+        assert "SkillSpector Security Report" in result.stdout
 
     def test_the_progress_around_it_is_not(self, tmp_path: Path) -> None:
         """Chrome in every format, so it goes to stderr on every format."""
@@ -386,14 +875,15 @@ class TestTheMultiSkillSummaryIsTheReport:
         assert "[1/2] Scanning alpha (alpha/)" in unwrapped
         assert "Score: 0/100 (LOW)" in unwrapped
 
-    def test_a_machine_readable_format_alone_leaves_stdout_empty(self, tmp_path: Path) -> None:
-        """The other half of the judgement call, and #99's failure mode exactly.
+    def test_json_alone_now_puts_the_combined_object_on_stdout(self, tmp_path: Path) -> None:
+        """This pinned an **empty** stdout until #114; it now pins the report on it.
 
-        ``-f json`` with no ``--output`` writes the combined report *nowhere*
-        (issue #114), so there is nothing on stdout for the table to be. Printed
-        there anyway it is a rich table in front of a caller's ``jq``, which is
-        the defect this whole change exists to remove — so it goes to stderr
-        with the rest of the notes and stdout stays empty and honest.
+        ``-f json`` with no ``--output`` used to write the combined report
+        nowhere: every Skill was scanned, the exit code was right, and the format
+        flag was accepted and discarded. The table stayed on stderr then because
+        a rich table in front of a caller's ``jq`` is #99's defect exactly — and
+        it stays there now for the better reason that the object beside it is the
+        report.
         """
         _write_skill(tmp_path / "alpha", "alpha")
         _write_skill(tmp_path / "beta", "beta")
@@ -403,8 +893,64 @@ class TestTheMultiSkillSummaryIsTheReport:
         )
 
         assert result.exit_code == 0, result.output
-        assert result.stdout == ""
+        combined = json.loads(result.stdout)
+        assert combined["multi_skill"] is True
+        assert combined["skill_count"] == 2
+        assert [entry["name"] for entry in combined["skills"]] == ["alpha", "beta"]
         assert "═══ Multi-Skill Summary ═══" in _unwrapped(result.stderr)
+        assert "═══ Multi-Skill Summary ═══" not in result.stdout
+        assert "Scanning" not in result.stdout
+
+    def test_the_printed_object_is_the_one_output_would_have_saved(self, tmp_path: Path) -> None:
+        """#114 reused the existing combined body rather than defining a second shape.
+
+        Compared as documents — only ``scanned_at`` may differ, since the two
+        Scans ran at different moments — so a divergence anywhere else in the
+        object fails here rather than being discovered by a consumer.
+        """
+        _write_skill(tmp_path / "alpha", "alpha")
+        _write_skill(tmp_path / "beta", "beta")
+        combined = tmp_path / "combined.json"
+
+        printed = runner.invoke(
+            app, ["scan", str(tmp_path), "--recursive", "--no-llm", "-f", "json"]
+        )
+        saved = runner.invoke(
+            app,
+            ["scan", str(tmp_path), "--recursive", "--no-llm", "-f", "json", "-o", str(combined)],
+        )
+
+        assert printed.exit_code == 0, printed.output
+        assert saved.exit_code == 0, saved.output
+        assert _without_timestamps(json.loads(printed.stdout)) == _without_timestamps(
+            json.loads(combined.read_text(encoding="utf-8"))
+        )
+
+    def test_sarif_and_markdown_alone_still_leave_stdout_empty(self, tmp_path: Path) -> None:
+        """The half #114 deliberately did not deliver, pinned so the README cannot rot.
+
+        Markdown has no merged document to print: its ``--output`` shape is the
+        per-Skill bodies concatenated behind ``--- path ---`` separators, and
+        printing that would put unparseable text on the very pipeline the
+        fall-back exists to serve. SARIF is a different case — measured, its
+        ``--output`` shape *is* one merged log, since upstream's recursive merge
+        arrived with the 2.9.6 sync — so only #114's scope keeps it off stdout,
+        not the concatenation the issue was written against, and #136 tracks
+        printing it. Pinned so that doing so is a deliberate change to this test
+        rather than a silent one.
+        """
+        _write_skill(tmp_path / "alpha", "alpha")
+        _write_skill(tmp_path / "beta", "beta")
+
+        for machine_readable in ("sarif", "markdown"):
+            result = runner.invoke(
+                app,
+                ["scan", str(tmp_path), "--recursive", "--no-llm", "-f", machine_readable],
+            )
+
+            assert result.exit_code == 0, result.output
+            assert result.stdout == "", machine_readable
+            assert "═══ Multi-Skill Summary ═══" in _unwrapped(result.stderr)
 
     def test_with_an_output_file_the_file_is_the_report_and_stdout_is_empty(
         self, tmp_path: Path
@@ -450,12 +996,13 @@ class TestTheMultiSkillSummaryIsTheReport:
     def test_a_failing_skill_reports_its_error_off_the_report_stream(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """A per-Skill failure is a note about the Scan, not a row of its report.
+        """A per-Skill failure is a note about the Scan, not part of its report.
 
         ``--recursive`` keeps going when one Skill fails, so this line is printed
-        in the middle of the run. It is the site that would reintroduce #99 the
-        moment #114 puts a report back on stdout, and no other assertion reaches
-        it: the summary table's ``ERROR`` row is a separate ``print``.
+        in the middle of the run — and since #114 put the combined object back on
+        stdout, printing it there would land it *inside* that object, which is
+        #99 exactly. The report still reaches stdout, with the failure recorded
+        as data rather than as a stray line.
         """
         _write_skill(tmp_path / "alpha", "alpha")
         _write_skill(tmp_path / "beta", "beta")
@@ -466,20 +1013,26 @@ class TestTheMultiSkillSummaryIsTheReport:
         )
 
         assert result.exit_code == 2
-        assert result.stdout == ""
+        combined = json.loads(result.stdout)
+        assert [entry["error"] for entry in combined["skills"]] == [
+            "the graph came apart",
+            "the graph came apart",
+        ]
         assert "Error: the graph came apart" in _unwrapped(result.stderr)
+        assert "Error: the graph came apart" not in result.stdout
 
-    def test_a_failing_skill_still_gets_its_row_in_the_table_that_is_the_report(
+    def test_a_failing_skill_gets_its_row_in_the_digest_on_stderr(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """The ``ERROR`` row, which is a separate ``print`` from the per-Skill error line.
 
-        The test above runs under ``-f json``, where the whole table is on stderr,
-        so it never reaches this row on the stream that matters. Here — ``-f
-        terminal``, no ``--output`` — the table *is* the report, and a Skill that
-        failed has to appear in it or the report silently omits a Skill the Scan
-        was pointed at. The per-Skill error line printed while the Scan is still
-        going stays a note either way, which is the other half of the assertion.
+        No other assertion reaches this site: the digest test above exercises the
+        rows of Skills that *succeeded*. Before #114 this row was on stdout under
+        ``-f terminal``, because the table was then the whole report and a Skill
+        that failed had to appear in it or the report silently omitted a Skill the
+        Scan was pointed at. The report is on stdout itself now, so the row went
+        to stderr with the rest of the digest — and moving it back on its own
+        fails here.
         """
         _write_skill(tmp_path / "alpha", "alpha")
         _write_skill(tmp_path / "beta", "beta")
@@ -488,11 +1041,11 @@ class TestTheMultiSkillSummaryIsTheReport:
         result = runner.invoke(app, ["scan", str(tmp_path), "--recursive", "--no-llm"])
 
         assert result.exit_code == 2
-        unwrapped = _unwrapped(result.stdout)
+        unwrapped = _unwrapped(result.stderr)
         assert "alpha ERROR" in unwrapped
         assert "beta ERROR" in unwrapped
-        assert "the graph came apart" not in unwrapped
-        assert "Error: the graph came apart" in _unwrapped(result.stderr)
+        assert "ERROR" not in result.stdout
+        assert "Error: the graph came apart" in unwrapped
 
     def test_below_the_threshold_the_flag_never_engages_and_stdout_carries_a_report(
         self, tmp_path: Path
@@ -875,9 +1428,8 @@ class TestTheSpecConformanceAdvisory:
     def test_a_recursive_scan_reports_its_advisory_total(self, tmp_path: Path) -> None:
         """``--recursive`` needs two Skills to engage, and the note is one total for both.
 
-        ``advice`` and never the ``summary`` console this path picks: that console
-        is stdout with ``-f terminal`` and no ``--output``, which is exactly the
-        shape asked for here.
+        ``advice`` on this path as on every other: since #114 the combined report
+        reaches stdout here, so a note printed there would land inside it.
         """
         self._nonconforming(tmp_path / "weather--report")
         self._nonconforming(tmp_path / "tide--report").joinpath("SKILL.md").write_text(
