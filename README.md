@@ -44,7 +44,7 @@ What SkillSpector-Polyglot does with a scanned tree depends on the framework it 
 
 | Framework | Language | Detection | Framework-specific rules | Status |
 |---|---|---|---|---|
-| **Agent Skills** (Claude Code, Codex CLI, Gemini CLI, …) | any | default | — (the full 77-pattern base catalog applies) | **Shipped** — upstream behavior, unchanged |
+| **Agent Skills** (Claude Code, Codex CLI, Gemini CLI, …) | any | default | — (the full base catalog applies: 86 patterns, the 95 tabled rows minus the 9 framework rules) | **Shipped** — upstream behavior, unchanged |
 | **LangChain4j** | Java / Kotlin | `langchain4j` Maven coordinate, `dev.langchain4j` import, or `src/main/resources/skills/` layout | 5 rules — `L4J-SHELL`, `L4J-UNRESOLVED`, `L4J-TOOL-DESC`, `L4J-MCP-FILTER`, `L4J-WORKDIR` | **Shipped** |
 | **Deep Agents** (Python) | Python | `deepagents` distribution, `import deepagents`, or `create_deep_agent(` | 4 rules — `DA-SKILL-WRITABLE`, `DA-SHADOW`, `DA-SUBAGENT-SKILLS`, `DA-UNRESOLVED` | **Shipped** — `framework_deepagents` reads the host-side `create_deep_agent(...)` configuration, says per skill source path whether the agent can rewrite it, reports a skill in a later source that silently replaces a same-named one in an earlier source, reports a custom subagent defined without skills of its own, and reports where resolution stopped ([design](docs/MULTI_FRAMEWORK_SKILL_ANALYSIS.md), [shape](docs/adr/0008-deepagents-analyzer-resolves-one-module-deep.md)) |
 | **Deep Agents** (JavaScript) | TypeScript / JavaScript | `"deepagents"` in a `package.json` `dependencies`, `devDependencies`, `peerDependencies` or `optionalDependencies` block — read out of the parsed manifest, so a key of that name elsewhere in the file is not a signal — plus `import`/`require` of `deepagents`, or `createDeepAgent(` where a statement could start, so a help string, a `//` line or a JSDoc line quoting the SDK is not a signal, while a template literal quoting it still is, because its contents are whole lines ([#127](https://github.com/rodrigorjsf/SkillSpector-Polyglot/issues/127)) — every signal gated on a `.ts`/`.tsx`/`.mts`/`.cts`/`.js`/`.mjs`/`.cjs` file or a `package.json`, because the npm and PyPI distribution names are identical | the **same 4 rules** — `DA-SKILL-WRITABLE`, `DA-SHADOW`, `DA-SUBAGENT-SKILLS`, `DA-UNRESOLVED` | **Shipped** — `framework_deepagents_js` asks the same four questions of the host-side `createDeepAgent({...})` options object, parsed with `tree-sitter-typescript`. The rule ids are reused rather than duplicated: it is the same upstream framework in a second language, so a glob suppression rule keyed on `rule_id` covers both tracks and the catalogue stays one entry per question. What differs is the shapes read — an options object rather than keyword arguments, a plain object literal rather than `FilesystemPermission(...)`, a positional route map rather than `routes=`, and `interruptOn` rather than `interrupt_on`. The four rules mean the same thing in both tracks and are asked over the same two write tools, so a configuration reported one way in Python is reported the same way in TypeScript ([design](docs/MULTI_FRAMEWORK_SKILL_ANALYSIS.md), [shape](docs/adr/0009-tree-sitter-for-typescript-parsing.md), [capture](docs/references/deepagents-js-skills.md)) |
@@ -507,7 +507,7 @@ which stream a line is printed to updates this README in the *same* pull request
 | A change to… | …updates, in the same PR |
 |---|---|
 | Framework detection or a framework analyzer | the [Framework support](#framework-support) matrix — including its **Status** column. A framework whose analyzer reuses another framework's rule ids says so in its row, so the [Vulnerability Patterns](#vulnerability-patterns) count stays one entry per question rather than one per language |
-| Any detection rule | the relevant [Vulnerability Patterns](#vulnerability-patterns) table and the pattern count in [Features](#features) — which is the number of rows those tables carry, so it is a claim a reader can check on the page. A conformance rule is counted in its own line there rather than among the 86, because it assesses conformance rather than risk |
+| Any detection rule | the relevant [Vulnerability Patterns](#vulnerability-patterns) table and the pattern count in [Features](#features) — which is the number of rows those tables carry, so it is a claim a reader can check on the page. A conformance rule is counted in its own line there rather than among the 95, because it assesses conformance rather than risk |
 | A CLI flag or subcommand | [CLI Options](#cli-options), and [Usage in an agentic project](#usage-in-an-agentic-project) if it changes the recommended invocation |
 | `--mcp-registry` behavior: an input shape, a check, a rejected flag, or the network rule | [Scanning the MCP Registry](#scanning-the-mcp-registry) and the walkthrough in [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) |
 | A domain term, or the meaning of one | [`CONTEXT.md`](CONTEXT.md) — the glossary is the vocabulary the prose, the docstrings and the test names are held to |
@@ -531,6 +531,13 @@ stays legible. It describes the scanner both projects share; where it says "Skil
 the tool this fork is built on. Install URLs in this section point at upstream by design — see
 [Install](#install) above for this fork.
 
+Two kinds of line below carry the fork's reconciliation rather than upstream's text, and a syncer
+resolving a conflict on one should keep the fork's side: the **pattern counts** (the totals in
+[Features](#features) and above the [Vulnerability Patterns](#vulnerability-patterns) tables) and
+the **per-category counts in the `###` headings**. Upstream's numbers were already stale for this
+fork before they were ever conflicted — the fork ships rules upstream does not, and the counts are
+defined as the number of rows the tables carry. Everything else below is upstream's to own.
+
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/NVIDIA/SkillSpector/badge)](https://scorecard.dev/viewer/?uri=github.com/NVIDIA/SkillSpector)
 
 ## Overview
@@ -551,7 +558,7 @@ SkillSpector is part of the [NVIDIA Verified Skills pipeline](https://docs.nvidi
 ## Features
 
 - **Multi-format input**: Scan Git repos, URLs, zip files, directories, or single files
-- **86 vulnerability patterns** across 20 categories: prompt injection, data exfiltration, privilege escalation, supply chain, excessive agency, output handling, system prompt leakage, memory poisoning, tool misuse, rogue agent, anti-refusal, trigger abuse, dangerous code (AST), taint tracking, insecure deserialization, YARA signatures, MCP least privilege, MCP tool poisoning, LangChain4j framework, and Deep Agents framework
+- **95 vulnerability patterns** across 22 categories: prompt injection, data exfiltration, privilege escalation, supply chain, excessive agency, output handling, system prompt leakage, memory poisoning, tool misuse, rogue agent, anti-refusal, trigger abuse, agent snooping, server-side request forgery, dangerous code (AST), taint tracking, insecure deserialization, YARA signatures, MCP least privilege, MCP tool poisoning, LangChain4j framework, and Deep Agents framework
 - **17 Agent Skills conformance rules** — 15 from the specification, 2 from loader behavior (`SPEC-14`, `SPEC-17`) — counted apart from the patterns above because they assess conformance rather than risk, and off unless `--spec-checks` asks for them ([Specification conformance](#specification-conformance----spec-checks))
 - **Two-stage analysis**: Fast static analysis + optional LLM semantic evaluation
 - **Live vulnerability lookups**: SC4 queries [OSV.dev](https://osv.dev) for real-time CVE data with automatic offline fallback
@@ -1000,7 +1007,7 @@ claude mcp add skillspector -- skillspector mcp
 
 ## Vulnerability Patterns
 
-SkillSpector detects **86 vulnerability patterns** across 20 categories, plus **17 specification
+SkillSpector detects **95 vulnerability patterns** across 22 categories, plus **17 specification
 conformance rules** that are counted separately and run only under `--spec-checks` — see
 [Specification Conformance](#specification-conformance-17-rules-opt-in) at the end of this section:
 
@@ -1023,7 +1030,7 @@ conformance rules** that are counted separately and run only under `--spec-check
 | AR2 | Disclaimer Suppression | HIGH | Instructions to omit warnings, disclaimers, or ethical commentary (e.g. "no disclaimers", "do not moralize") |
 | AR3 | Safety Policy Nullification | HIGH | Jailbreak framing that nullifies guardrails (e.g. "you have no restrictions", "ignore your guidelines", "do anything now") |
 
-### Data Exfiltration (4 patterns)
+### Data Exfiltration (5 patterns)
 
 | ID | Pattern | Severity | Description |
 |----|---------|----------|-------------|
@@ -1031,6 +1038,7 @@ conformance rules** that are counted separately and run only under `--spec-check
 | E2 | Env Variable Harvesting | HIGH | Enumerating, copying, or searching environment data to collect secrets |
 | E3 | File System Enumeration | MEDIUM | Scanning directories for sensitive files |
 | E4 | Context Leakage | HIGH | Transmitting conversation context externally |
+| E5 | Cloud Storage Exfiltration | MEDIUM | Uploading data to S3 / GCS / Azure Blob storage |
 
 ### Privilege Escalation (3 patterns)
 
@@ -1040,7 +1048,7 @@ conformance rules** that are counted separately and run only under `--spec-check
 | PE2 | Sudo/Root Execution | MEDIUM | Invoking elevated system privileges |
 | PE3 | Credential Access | HIGH | Reading SSH keys, tokens, passwords |
 
-### Supply Chain (9+ patterns)
+### Supply Chain (9 patterns)
 
 | ID | Pattern | Severity | Description |
 |----|---------|----------|-------------|
@@ -1050,6 +1058,7 @@ conformance rules** that are counted separately and run only under `--spec-check
 | SC4 | Known Vulnerable Dependencies | HIGH | Dependencies with known CVEs (live OSV.dev lookup) |
 | SC5 | Abandoned Dependencies | MEDIUM | Unmaintained packages without security updates |
 | SC6 | Typosquatting | HIGH | Package names similar to popular packages |
+| SC7 | Untrusted Container Image | HIGH | Container image pulled with signature or registry verification disabled (`--disable-content-trust`, `--insecure-registry`) |
 | SC8 | Shipped Python Bytecode | HIGH | `__pycache__` / `.pyc` present (discovery skips; malicious bytecode bypass) |
 | SC9 | Concealed Executable Artifact | HIGH | Executable nested in a document container or hidden/disguised artifact |
 
@@ -1086,13 +1095,14 @@ conformance rules** that are counted separately and run only under `--spec-check
 | MP2 | Context Window Stuffing | MEDIUM | Filler content displacing safety constraints |
 | MP3 | Memory Manipulation | HIGH | Tampering with agent memory or stored state |
 
-### Tool Misuse (3 patterns)
+### Tool Misuse (4 patterns)
 
 | ID | Pattern | Severity | Description |
 |----|---------|----------|-------------|
 | TM1 | Tool Parameter Abuse | HIGH | Crafted parameters for unintended behavior (shell=True, --force) |
 | TM2 | Chaining Abuse | HIGH | Tool chains that bypass individual safety checks |
 | TM3 | Unsafe Defaults | MEDIUM | Overly permissive defaults (disabled TLS, no auth) |
+| TM4 | Privileged Kubernetes Workload | HIGH | Privileged container, hostPath mount, or host namespaces granting root on the node |
 
 ### Rogue Agent (2 patterns)
 
@@ -1108,6 +1118,22 @@ conformance rules** that are counted separately and run only under `--spec-check
 | TR1 | Overly Broad Trigger | MEDIUM | Trigger patterns matching common words |
 | TR2 | Shadow Command Trigger | HIGH | Triggers that shadow built-in commands or other skills |
 | TR3 | Keyword Baiting Trigger | MEDIUM | Generic triggers designed to maximize activation |
+
+### Agent Snooping (3 patterns)
+
+| ID | Pattern | Severity | Description |
+|----|---------|----------|-------------|
+| AS1 | Agent Config Directory Access | HIGH | Reading agent config directories (`.claude/`, `.codex/`, `.gemini/`, `.continue/`) that hold keys and settings |
+| AS2 | MCP Config Access | HIGH | Reading `mcp.json` server config — server URLs, auth tokens, and tool definitions |
+| AS3 | Skill Enumeration | MEDIUM | Enumerating or reading other installed skills and their `SKILL.md` instructions |
+
+### Server-Side Request Forgery (3 patterns)
+
+| ID | Pattern | Severity | Description |
+|----|---------|----------|-------------|
+| SSRF1 | Cloud Metadata Access | HIGH | Requests to a cloud instance metadata endpoint (`169.254.169.254`), which returns temporary IAM credentials |
+| SSRF2 | Internal Network Request | MEDIUM | Requests to loopback or private-range hosts that reach internal services |
+| SSRF3 | Dynamic Request Target | MEDIUM | Request host built from a dynamic or untrusted value |
 
 ### Behavioral AST (10 patterns)
 
@@ -1225,7 +1251,7 @@ subagent without its own skills as a bug its documentation calls out, not as a r
 
 ### Specification Conformance (17 rules, opt-in)
 
-Counted apart from the 77 patterns above, because a conformance rule states that a declaration
+Counted apart from the 95 patterns above, because a conformance rule states that a declaration
 disagrees with the [Agent Skills specification](docs/references/agent-skills-specification.md), not
 that a risk category applies — which is also why these findings carry no OWASP tag. They run only
 under `--spec-checks`; see
