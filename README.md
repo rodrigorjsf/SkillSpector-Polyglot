@@ -507,7 +507,7 @@ which stream a line is printed to updates this README in the *same* pull request
 | A change to… | …updates, in the same PR |
 |---|---|
 | Framework detection or a framework analyzer | the [Framework support](#framework-support) matrix — including its **Status** column. A framework whose analyzer reuses another framework's rule ids says so in its row, so the [Vulnerability Patterns](#vulnerability-patterns) count stays one entry per question rather than one per language |
-| Any detection rule | the relevant [Vulnerability Patterns](#vulnerability-patterns) table and the pattern count in [Features](#features) — which is the number of rows those tables carry, so it is a claim a reader can check on the page. A conformance rule is counted in its own line there rather than among the 86, because it assesses conformance rather than risk |
+| Any detection rule | the relevant [Vulnerability Patterns](#vulnerability-patterns) table and the pattern count in [Features](#features) — which is the number of rows those tables carry, so it is a claim a reader can check on the page. A conformance rule is counted in its own line there rather than among the 95, because it assesses conformance rather than risk |
 | A CLI flag or subcommand | [CLI Options](#cli-options), and [Usage in an agentic project](#usage-in-an-agentic-project) if it changes the recommended invocation |
 | `--mcp-registry` behavior: an input shape, a check, a rejected flag, or the network rule | [Scanning the MCP Registry](#scanning-the-mcp-registry) and the walkthrough in [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) |
 | A domain term, or the meaning of one | [`CONTEXT.md`](CONTEXT.md) — the glossary is the vocabulary the prose, the docstrings and the test names are held to |
@@ -551,7 +551,7 @@ SkillSpector is part of the [NVIDIA Verified Skills pipeline](https://docs.nvidi
 ## Features
 
 - **Multi-format input**: Scan Git repos, URLs, zip files, directories, or single files
-- **86 vulnerability patterns** across 20 categories: prompt injection, data exfiltration, privilege escalation, supply chain, excessive agency, output handling, system prompt leakage, memory poisoning, tool misuse, rogue agent, anti-refusal, trigger abuse, dangerous code (AST), taint tracking, insecure deserialization, YARA signatures, MCP least privilege, MCP tool poisoning, LangChain4j framework, and Deep Agents framework
+- **95 vulnerability patterns** across 22 categories: prompt injection, data exfiltration, privilege escalation, supply chain, excessive agency, output handling, system prompt leakage, memory poisoning, tool misuse, rogue agent, anti-refusal, trigger abuse, agent snooping, server-side request forgery, dangerous code (AST), taint tracking, insecure deserialization, YARA signatures, MCP least privilege, MCP tool poisoning, LangChain4j framework, and Deep Agents framework
 - **17 Agent Skills conformance rules** — 15 from the specification, 2 from loader behavior (`SPEC-14`, `SPEC-17`) — counted apart from the patterns above because they assess conformance rather than risk, and off unless `--spec-checks` asks for them ([Specification conformance](#specification-conformance----spec-checks))
 - **Two-stage analysis**: Fast static analysis + optional LLM semantic evaluation
 - **Live vulnerability lookups**: SC4 queries [OSV.dev](https://osv.dev) for real-time CVE data with automatic offline fallback
@@ -1000,7 +1000,7 @@ claude mcp add skillspector -- skillspector mcp
 
 ## Vulnerability Patterns
 
-SkillSpector detects **86 vulnerability patterns** across 20 categories, plus **17 specification
+SkillSpector detects **95 vulnerability patterns** across 22 categories, plus **17 specification
 conformance rules** that are counted separately and run only under `--spec-checks` — see
 [Specification Conformance](#specification-conformance-17-rules-opt-in) at the end of this section:
 
@@ -1023,7 +1023,7 @@ conformance rules** that are counted separately and run only under `--spec-check
 | AR2 | Disclaimer Suppression | HIGH | Instructions to omit warnings, disclaimers, or ethical commentary (e.g. "no disclaimers", "do not moralize") |
 | AR3 | Safety Policy Nullification | HIGH | Jailbreak framing that nullifies guardrails (e.g. "you have no restrictions", "ignore your guidelines", "do anything now") |
 
-### Data Exfiltration (4 patterns)
+### Data Exfiltration (5 patterns)
 
 | ID | Pattern | Severity | Description |
 |----|---------|----------|-------------|
@@ -1031,6 +1031,7 @@ conformance rules** that are counted separately and run only under `--spec-check
 | E2 | Env Variable Harvesting | HIGH | Enumerating, copying, or searching environment data to collect secrets |
 | E3 | File System Enumeration | MEDIUM | Scanning directories for sensitive files |
 | E4 | Context Leakage | HIGH | Transmitting conversation context externally |
+| E5 | Cloud Storage Exfiltration | MEDIUM | Uploading data to S3 / GCS / Azure Blob storage |
 
 ### Privilege Escalation (3 patterns)
 
@@ -1040,7 +1041,7 @@ conformance rules** that are counted separately and run only under `--spec-check
 | PE2 | Sudo/Root Execution | MEDIUM | Invoking elevated system privileges |
 | PE3 | Credential Access | HIGH | Reading SSH keys, tokens, passwords |
 
-### Supply Chain (9+ patterns)
+### Supply Chain (9 patterns)
 
 | ID | Pattern | Severity | Description |
 |----|---------|----------|-------------|
@@ -1050,6 +1051,7 @@ conformance rules** that are counted separately and run only under `--spec-check
 | SC4 | Known Vulnerable Dependencies | HIGH | Dependencies with known CVEs (live OSV.dev lookup) |
 | SC5 | Abandoned Dependencies | MEDIUM | Unmaintained packages without security updates |
 | SC6 | Typosquatting | HIGH | Package names similar to popular packages |
+| SC7 | Untrusted Container Image | HIGH | Container image pulled with signature or registry verification disabled (`--disable-content-trust`, `--insecure-registry`) |
 | SC8 | Shipped Python Bytecode | HIGH | `__pycache__` / `.pyc` present (discovery skips; malicious bytecode bypass) |
 | SC9 | Concealed Executable Artifact | HIGH | Executable nested in a document container or hidden/disguised artifact |
 
@@ -1086,13 +1088,14 @@ conformance rules** that are counted separately and run only under `--spec-check
 | MP2 | Context Window Stuffing | MEDIUM | Filler content displacing safety constraints |
 | MP3 | Memory Manipulation | HIGH | Tampering with agent memory or stored state |
 
-### Tool Misuse (3 patterns)
+### Tool Misuse (4 patterns)
 
 | ID | Pattern | Severity | Description |
 |----|---------|----------|-------------|
 | TM1 | Tool Parameter Abuse | HIGH | Crafted parameters for unintended behavior (shell=True, --force) |
 | TM2 | Chaining Abuse | HIGH | Tool chains that bypass individual safety checks |
 | TM3 | Unsafe Defaults | MEDIUM | Overly permissive defaults (disabled TLS, no auth) |
+| TM4 | Privileged Kubernetes Workload | HIGH | Privileged container, hostPath mount, or host namespaces granting root on the node |
 
 ### Rogue Agent (2 patterns)
 
@@ -1108,6 +1111,22 @@ conformance rules** that are counted separately and run only under `--spec-check
 | TR1 | Overly Broad Trigger | MEDIUM | Trigger patterns matching common words |
 | TR2 | Shadow Command Trigger | HIGH | Triggers that shadow built-in commands or other skills |
 | TR3 | Keyword Baiting Trigger | MEDIUM | Generic triggers designed to maximize activation |
+
+### Agent Snooping (3 patterns)
+
+| ID | Pattern | Severity | Description |
+|----|---------|----------|-------------|
+| AS1 | Agent Config Directory Access | HIGH | Reading agent config directories (`.claude/`, `.codex/`, `.gemini/`) that hold keys and settings |
+| AS2 | MCP Config Access | HIGH | Reading `mcp.json` server config — server URLs, auth tokens, and tool definitions |
+| AS3 | Skill Enumeration | MEDIUM | Enumerating or reading other installed skills and their `SKILL.md` instructions |
+
+### Server-Side Request Forgery (3 patterns)
+
+| ID | Pattern | Severity | Description |
+|----|---------|----------|-------------|
+| SSRF1 | Cloud Metadata Access | HIGH | Requests to a cloud instance metadata endpoint (`169.254.169.254`), which returns temporary IAM credentials |
+| SSRF2 | Internal Network Request | MEDIUM | Requests to loopback, link-local, or private-range hosts that reach internal services |
+| SSRF3 | Dynamic Request Target | MEDIUM | Request host built from a dynamic or untrusted value |
 
 ### Behavioral AST (10 patterns)
 
