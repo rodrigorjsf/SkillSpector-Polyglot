@@ -344,6 +344,56 @@ class TestARepositoryScan:
             sorted(entry) for entry in reference["skills"]
         ]
 
+    def test_a_raising_child_is_still_counted_as_scanned_in_both_modes(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """``skills_scanned + skills_omitted == skill_count``, whichever mode was run.
+
+        The recursive mode counts every Skill it *attempted*, so a child whose
+        graph invocation raised is scanned-and-failed rather than never reached,
+        and its omitted count is the discovery total minus that -- the identity
+        holds there by construction. A Repository Scan omits nothing, so counting
+        only the children that came back answered ``0 + 0`` against a
+        ``skill_count`` of two: the same key meaning two different things in the
+        one object both modes are supposed to answer in.
+
+        Asserted with one child raising rather than all of them, because the
+        all-raising case makes the two counters disagree by the same amount and
+        an equality between the modes would still hold if one of them were
+        counting the wrong thing.
+        """
+        repository = self._repository(tmp_path)
+        flat = tmp_path / "flat"
+        _write_skill(flat / "one", "one")
+        _write_skill(flat / "two", "two")
+        calls = {"n": 0}
+
+        def _explode_once(*args: object, **kwargs: object) -> dict[str, object]:
+            calls["n"] += 1
+            if calls["n"] % 2 == 1:
+                raise RuntimeError("the graph came apart")
+            return {
+                "report_body": '{"skill": {"name": "two"}}',
+                "risk_score": 0,
+                "risk_severity": "LOW",
+                "execution_successful": True,
+            }
+
+        monkeypatch.setattr("skillspector.cli.graph", SimpleNamespace(invoke=_explode_once))
+
+        repo_scan = runner.invoke(
+            app, ["scan", str(repository), "--repo-scan", "--no-llm", "-f", "json"]
+        )
+        recursive = runner.invoke(app, ["scan", str(flat), "--recursive", "--no-llm", "-f", "json"])
+
+        assert repo_scan.exit_code == 2
+        assert recursive.exit_code == 2
+        merged = json.loads(repo_scan.stdout)
+        reference = json.loads(recursive.stdout)
+        for body in (merged, reference):
+            assert body["skills_scanned"] + body["skills_omitted"] == body["skill_count"]
+        assert merged["skills_scanned"] == reference["skills_scanned"] == 2
+
     def test_a_child_that_failed_without_raising_is_still_a_failure_in_the_body(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

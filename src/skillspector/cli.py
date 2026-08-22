@@ -2762,6 +2762,14 @@ def _merge_repository_json(
     Inspection Ledger exists to keep an absence of Findings distinguishable from
     an absence of inspection; an aggregate that rounds a partial child up to
     complete erases exactly that.
+
+    ``skills_scanned`` counts every Skill that was attempted, failures included,
+    which is what the recursive mode's own counter means -- it is the length of
+    the processed list, not of the successful one. That keeps
+    ``skills_scanned + skills_omitted == skill_count`` an identity in both modes,
+    and a Repository Scan omits nothing, so counting only the Skills that came
+    back would answer ``0 + 0`` against a ``skill_count`` of two and leave a
+    consumer unable to read either number the same way twice.
     """
     max_score = max((int(result.get("risk_score") or 0) for _, result in scanned), default=0)
     entries: list[dict[str, object]] = [
@@ -2794,7 +2802,7 @@ def _merge_repository_json(
         execution_failed=bool(failed_skills),
         analysis_incomplete=not bool(completeness["is_complete"]),
         completeness=completeness,
-        skills_scanned=len(scanned),
+        skills_scanned=len(scanned) + len(failures),
         skills_omitted=0,
         public_finding_records=0,
         report_characters=0,
