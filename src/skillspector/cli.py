@@ -2703,6 +2703,14 @@ def _merge_repository_sarif(scanned: list[tuple[DiscoveredSkill, dict]]) -> dict
     SARIF carries several runs in one log, which is exactly the shape here: each
     Skill was a separate Scan and keeping them separate preserves which tool
     invocation produced what.
+
+    With no Skill to run over -- discovery matched nothing -- the log carries one
+    run holding no result rather than no run at all. The SARIF 2.1.0 schema
+    permits ``"minItems": 0`` on ``runs``, but GitHub code scanning, the consumer
+    this output is shaped for, documents "an array of **one or more** runs"; a
+    zero-run log is therefore not acceptable to both, and this project's own
+    ``validate_sarif_report`` refuses one as well. One run with no result says
+    what actually happened: the tool ran, and it found nothing.
     """
     runs: list[dict] = []
     version = "2.1.0"
@@ -2714,6 +2722,14 @@ def _merge_repository_sarif(scanned: list[tuple[DiscoveredSkill, dict]]) -> dict
         version = str(report.get("version", version))
         schema = str(report.get("$schema", schema))
         runs.extend(_relocate_sarif_run(run, skill.relative_path) for run in report.get("runs", []))
+    if not runs:
+        runs.append(
+            {
+                "tool": {"driver": {"name": "skillspector", "version": __version__}},
+                "results": [],
+                "invocations": [{"executionSuccessful": True}],
+            }
+        )
     return {"$schema": schema, "version": version, "runs": runs}
 
 
@@ -2780,22 +2796,54 @@ def _merge_repository_json(
     )
 
 
+def _empty_repository_markdown(repository_root: Path, roots: tuple[str, ...]) -> str:
+    """The Markdown a Repository Scan writes when discovery matched no Skill.
+
+    The concatenation every other Markdown Repository Scan emits is empty when
+    there is nothing to concatenate, and an empty file is indistinguishable from
+    a run that crashed. This says which root patterns were searched and which
+    flag widens them -- the same two facts the stderr warning carries, for a
+    reader who has only the report.
+    """
+    return (
+        "# SkillSpector Repository Scan\n\n"
+        f"No skill was found under `{repository_root}`.\n\n"
+        "Searched these directory patterns at any depth: "
+        f"{', '.join(f'`{root}`' for root in roots)}.\n\n"
+        "Use `--repo-scan-root` for a layout that does not follow them.\n"
+    )
+
+
 def _repository_report_body(
     format: FormatChoice,
     scanned: list[tuple[DiscoveredSkill, dict]],
     failures: list[tuple[DiscoveredSkill, str]],
-) -> str:
+    repository_root: Path,
+    roots: tuple[str, ...],
+) -> str | None:
     """The one report body a Repository Scan writes, whether to ``--output`` or stdout.
 
-    ``sarif`` and ``json`` are each merged into a single document. ``terminal``
-    and ``markdown`` keep the ``--- path ---`` concatenation: for ``terminal``
-    that separator is the natural shape, and merging Markdown is a question with
-    no existing shape in this codebase to reuse.
+    ``sarif`` and ``json`` are each merged into a single document. ``markdown``
+    keeps the ``--- path ---`` concatenation -- merging Markdown is a question
+    with no existing shape in this codebase to reuse -- and ``terminal`` keeps it
+    because that separator is the natural shape between rendered reports.
+
+    Discovery matching nothing is the zero-Skill case of all four rather than a
+    path of its own: the merges answer with an empty log and an empty skill list,
+    and Markdown says so in prose. ``None`` is the answer for ``terminal`` alone,
+    and it means *there is no report shape for this*, which is distinct from an
+    empty body: a rendered report of no Skills is nothing, and writing that would
+    put a bare newline on the very stdout a caller pipes. The warning on stderr
+    is what a ``terminal`` reader gets, exactly as before.
     """
     if format == FormatChoice.sarif:
         return json.dumps(_merge_repository_sarif(scanned), indent=2)
     if format == FormatChoice.json:
         return json.dumps(_merge_repository_json(scanned, failures), indent=2)
+    if not scanned and not failures:
+        if format == FormatChoice.markdown:
+            return _empty_repository_markdown(repository_root, roots)
+        return None
     return "\n\n".join(
         f"--- {skill.relative_path} ---\n{_result_body(result)}" for skill, result in scanned
     )
@@ -2819,13 +2867,19 @@ def _scan_repository(
     repository root declares no Skill, so an ordinary Scan reports the whole
     tree as one anonymous Skill with an empty Manifest and scores it as such.
 
-    Everything printed here except ``body`` goes to stderr. Unlike
-    ``_scan_multi_skill``, this path always writes the report -- to ``--output``
-    or, failing that, to stdout -- so its per-Skill table never has to stand in
-    for one: with ``-f sarif`` and no ``--output``, stdout carries a single
-    merged SARIF log that a progress line or a table would make unparseable, and
-    with ``-f terminal`` it carries every per-Skill report in full, of which the
-    table is a digest.
+    Everything printed here except ``body`` goes to stderr. This path always
+    writes the report -- to ``--output`` or, failing that, to stdout -- so its
+    per-Skill table never has to stand in for one: with ``-f sarif`` and no
+    ``--output``, stdout carries a single merged SARIF log that a progress line
+    or a table would make unparseable, and with ``-f terminal`` it carries every
+    per-Skill report in full, of which the table is a digest.
+
+    Discovery matching no Skill is the zero-Skill case of that same path rather
+    than an early exit from it, the defect issue #115 records: the warning is
+    printed and the requested ``--format`` is then honoured with an empty report
+    body, so a gate reading stdout gets a designed answer instead of a stream it
+    cannot tell from success. ``-f terminal`` is the one format with no such body
+    and is unchanged.
     """
     discovered = discover_skills(repository_root, roots=roots)
     if not discovered:
@@ -2834,7 +2888,6 @@ def _scan_repository(
             f"Searched these directory patterns at any depth: {', '.join(roots)}. "
             "Use --repo-scan-root for a layout that does not follow them."
         )
-        return
 
     yara_dir = str(yara_rules_dir.resolve()) if yara_rules_dir else None
     scanned: list[tuple[DiscoveredSkill, dict]] = []
@@ -2871,7 +2924,11 @@ def _scan_repository(
             if result is not None:
                 cleanup_result(result)
 
-    advice.print(f"\n{'Skill':<28} {'Score':>6} {'Severity':>10} {'Findings':>9}")
+    # Only when there is a row to head. Discovery matching nothing already said
+    # so in its own warning above, and a bare column heading beneath it would be
+    # new noise on the one path issue #115 exists to leave untouched.
+    if discovered:
+        advice.print(f"\n{'Skill':<28} {'Score':>6} {'Severity':>10} {'Findings':>9}")
     for skill, result in scanned:
         findings = reported_findings(result)
         advice.print(
@@ -2888,7 +2945,12 @@ def _scan_repository(
     # sign of being advisory at all.
     _advise_on_advisory_findings(sum(_count_advisory(result) for _, result in scanned))
 
-    body = _repository_report_body(format, scanned, failures)
+    body = _repository_report_body(format, scanned, failures, repository_root, roots)
+    if body is None:
+        # `-f terminal` with nothing discovered: there is no rendered report of no
+        # Skills, so nothing is written and nothing is saved. See
+        # `_repository_report_body`.
+        return
     if output:
         Path(output).write_text(body, encoding="utf-8")
         advice.print(f"Report saved to: {output}")

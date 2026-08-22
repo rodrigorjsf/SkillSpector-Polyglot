@@ -1508,9 +1508,10 @@ skillspector scan . --repo-scan --format json | jq '.skills[].path'
 ```
 
 Redirect stderr (`2>/dev/null`) only when you want the notes gone as well; the exit code is
-unaffected either way. Both pipelines above assume the scan found a skill to report on — see
-[What moved, and what that costs](#what-moved-and-what-that-costs) for the discovery cases where
-stdout is legitimately empty.
+unaffected either way. A `--repo-scan` that finds no skill at all still answers on stdout, with an
+empty report in the requested format — see
+[What moved, and what that costs](#what-moved-and-what-that-costs) for what each format says, and
+for the one case (`--format terminal`) where stdout is legitimately empty.
 
 The rule says which *stream* the report goes to, not that every format is one parseable document.
 With `--repo-scan`, `--format sarif` and `--format json` are each merged — one SARIF log with one
@@ -1571,11 +1572,18 @@ For a script that reads **stdout alone**, this is strictly less noise on every p
 report there. Three cases are worth naming, because in them the noise that went away was carrying
 something:
 
-- **`--repo-scan` finding no skill at all** now exits `0` with completely empty stdout, where it
-  previously put an unparseable `Warning: no skill found under …` there. A gate that piped stdout
-  into `jq` used to fail loudly on a discovery miss; it now passes vacuously. Gate on the *content*
-  — `jq -e '.runs | length > 0'` — or watch stderr. Making that a designed signal rather than an
-  accident is [#115](https://github.com/rodrigorjsf/SkillSpector-Polyglot/issues/115).
+- **`--repo-scan` finding no skill at all** used to put an unparseable
+  `Warning: no skill found under …` on stdout, so a gate piping stdout into `jq` failed loudly on a
+  discovery miss — by accident, not by design. The warning is on stderr now, where a note belongs,
+  and stdout carries the *designed* signal instead: an empty report in whichever machine-readable
+  format was asked for. `--format sarif` gives a valid SARIF 2.1.0 log with one run and no result,
+  `--format json` the merged repository object with `skill_count: 0` and an empty `skills` list, and
+  `--format markdown` a document naming the miss and the root patterns that were searched. So gate
+  on the content — `jq -e '[.runs[].results[]] | length > 0'`, or `jq -e '.skill_count > 0'` — and a
+  miss is now something the gate can see. The exit code is still `0`, because "searched a
+  repository, found nothing to scan" is a legitimate success; no new exit code was added.
+  `--format terminal` is the one exception: a rendered report of no skills is nothing, so stdout
+  stays empty there and the warning on stderr is the whole answer.
 - **`--recursive` with `--format json`, `sarif` or `markdown` and no `--output`** is the same hazard
   on a more common input, and it is the one shape closest to the pipeline this change exists to fix.
   It never wrote a report to stdout ([#114](https://github.com/rodrigorjsf/SkillSpector-Polyglot/issues/114));

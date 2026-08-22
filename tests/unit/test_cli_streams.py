@@ -85,6 +85,7 @@ from skillspector import __version__
 from skillspector.cli import app
 from skillspector.models import Finding
 from skillspector.nodes.report import reported_findings
+from skillspector.sarif_models import validate_sarif_report
 from skillspector.suppression import SuppressedFinding
 
 runner = CliRunner()
@@ -474,13 +475,137 @@ class TestARepositoryScan:
         assert "--- skills/one ---" in result.stdout
         assert "SkillSpector Security Report" in result.stdout
 
-    def test_finding_no_skill_at_all_leaves_stdout_empty(self, tmp_path: Path) -> None:
+    def test_finding_no_skill_at_all_still_leaves_a_terminal_stdout_empty(
+        self, tmp_path: Path
+    ) -> None:
+        """The one format
+        [#115](https://github.com/rodrigorjsf/SkillSpector-Polyglot/issues/115) left alone.
+
+        This pinned an *empty stdout on every format* until #115 flipped it. A
+        rendered report of no Skills is nothing, so ``-f terminal`` still writes
+        nothing at all and the warning on stderr is the whole answer — which is
+        what it always was for a human reader. Every machine-readable format now
+        answers instead; the three tests below are the flipped half.
+        """
         (tmp_path / "src").mkdir()
 
         result = runner.invoke(app, ["scan", str(tmp_path), "--repo-scan", "--no-llm"])
 
+        assert result.exit_code == 0, result.output
         assert result.stdout == ""
         assert "no skill found under" in _unwrapped(result.stderr)
+
+    def test_finding_no_skill_at_all_still_answers_in_sarif(self, tmp_path: Path) -> None:
+        """#115: a discovery miss is a report of no findings, not an absent report.
+
+        The log carries **one** run holding no result rather than no run at all.
+        The SARIF 2.1.0 schema allows ``runs`` to be empty, but GitHub code
+        scanning documents "an array of one or more runs", so a zero-run log is
+        not acceptable to both — and this project's own ``validate_sarif_report``
+        refuses one too, which is what this asserts against rather than a
+        hand-written key check.
+        """
+        (tmp_path / "src").mkdir()
+
+        result = runner.invoke(
+            app, ["scan", str(tmp_path), "--repo-scan", "--no-llm", "-f", "sarif"]
+        )
+
+        assert result.exit_code == 0, result.output
+        log = json.loads(result.stdout)
+        validate_sarif_report(log)
+        assert len(log["runs"]) == 1
+        assert [finding for run in log["runs"] for finding in run["results"]] == []
+        assert "no skill found under" in _unwrapped(result.stderr)
+        assert "no skill found under" not in result.stdout
+
+    def test_finding_no_skill_at_all_still_answers_in_json(self, tmp_path: Path) -> None:
+        """#115: the empty case of the very object a discovery hit emits.
+
+        The shape is #116's merged object with the counts at zero, not a second
+        vocabulary invented for the empty case — so a gate parses one shape
+        whether or not discovery matched.
+        """
+        (tmp_path / "src").mkdir()
+
+        result = runner.invoke(
+            app, ["scan", str(tmp_path), "--repo-scan", "--no-llm", "-f", "json"]
+        )
+
+        assert result.exit_code == 0, result.output
+        merged = json.loads(result.stdout)
+        assert merged["skill_count"] == 0
+        assert merged["skills"] == []
+        assert merged["max_risk_score"] == 0
+        assert merged["execution_successful"] is True
+        assert "no skill found under" in _unwrapped(result.stderr)
+
+    def test_the_empty_json_body_is_the_shape_a_discovery_hit_emits(self, tmp_path: Path) -> None:
+        """Asserted as an equivalence, so the empty case cannot drift from the hit case."""
+        empty = tmp_path / "empty"
+        (empty / "src").mkdir(parents=True)
+        repository = self._repository(tmp_path / "found")
+
+        miss = runner.invoke(app, ["scan", str(empty), "--repo-scan", "--no-llm", "-f", "json"])
+        hit = runner.invoke(app, ["scan", str(repository), "--repo-scan", "--no-llm", "-f", "json"])
+
+        assert miss.exit_code == 0, miss.output
+        assert hit.exit_code == 0, hit.output
+        assert list(json.loads(miss.stdout)) == list(json.loads(hit.stdout))
+
+    def test_finding_no_skill_at_all_still_answers_in_markdown(self, tmp_path: Path) -> None:
+        """#115: a report naming the miss, never an empty document.
+
+        The concatenation Markdown emits is empty when there is nothing to
+        concatenate, and an empty file cannot be told from a crashed run.
+        """
+        (tmp_path / "src").mkdir()
+
+        result = runner.invoke(
+            app, ["scan", str(tmp_path), "--repo-scan", "--no-llm", "-f", "markdown"]
+        )
+
+        assert result.exit_code == 0, result.output
+        assert result.stdout.startswith("# SkillSpector Repository Scan")
+        assert "No skill was found under" in result.stdout
+        assert "`--repo-scan-root`" in result.stdout
+
+    def test_an_empty_repository_report_goes_to_the_output_file_instead(
+        self, tmp_path: Path
+    ) -> None:
+        """``--output`` takes the same body, and stdout keeps none of it."""
+        (tmp_path / "src").mkdir()
+        report = tmp_path / "empty.sarif"
+
+        result = runner.invoke(
+            app,
+            ["scan", str(tmp_path), "--repo-scan", "--no-llm", "-f", "sarif", "-o", str(report)],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert result.stdout == ""
+        assert f"Report saved to: {report}" in _unwrapped(result.stderr)
+        validate_sarif_report(json.loads(report.read_text(encoding="utf-8")))
+
+    def test_a_terminal_discovery_miss_writes_no_output_file_either(self, tmp_path: Path) -> None:
+        """The deliberate gap, pinned so a later reader does not "fix" it into an empty file.
+
+        ``-f terminal`` has no report shape for zero Skills, so #115 left it
+        writing nothing — with ``--output`` as without. An empty ``report.txt``
+        would be indistinguishable from a run that crashed before writing, which
+        is the confusion this whole issue exists to remove.
+        """
+        (tmp_path / "src").mkdir()
+        report = tmp_path / "empty.txt"
+
+        result = runner.invoke(
+            app, ["scan", str(tmp_path), "--repo-scan", "--no-llm", "-o", str(report)]
+        )
+
+        assert result.exit_code == 0, result.output
+        assert result.stdout == ""
+        assert not report.exists()
+        assert "Report saved to" not in _unwrapped(result.stderr)
 
     def test_its_own_saved_to_note_does_not_reach_stdout(self, tmp_path: Path) -> None:
         """``_scan_repository`` writes its own note, separate from ``_write_result``."""
