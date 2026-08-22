@@ -47,8 +47,15 @@ from skillspector.multi_skill import (
     MultiSkillDetectionResult,
     SkillDirectory,
 )
+from skillspector.nodes.report import report as report_node
 from skillspector.sarif_models import validate_sarif_report
-from skillspector.suppression import Baseline, SuppressedFinding, SuppressionRule
+from skillspector.suppression import (
+    Baseline,
+    SuppressedFinding,
+    SuppressionRule,
+    baseline_from_dict,
+    build_baseline_dict,
+)
 
 runner = CliRunner()
 
@@ -2168,6 +2175,162 @@ def test_scan_transitive_counts_only_active_post_baseline_findings(
     assert [issue["id"] for issue in body["issues"]] == ["D1", "T1", "T2"]
 
 
+_TRANSITIVE_TARGET = "https://github.com/org/transitive.git"
+
+
+def _transitive_initial_result(baseline: Baseline | None = None) -> dict[str, object]:
+    """A root Scan carrying one direct finding and one external reference."""
+    result: dict[str, object] = {
+        "findings": [_finding("D1", "direct finding")],
+        "filtered_findings": [_finding("D1", "direct finding")],
+        "components": ["SKILL.md"],
+        "component_metadata": [],
+        "file_cache": {"SKILL.md": _TRANSITIVE_TARGET},
+        "local_file_cache": {"SKILL.md": _TRANSITIVE_TARGET},
+        "has_executable_scripts": False,
+        "output_format": "json",
+    }
+    if baseline is not None:
+        result["baseline"] = baseline
+    return result
+
+
+def _fake_transitive_child_scan(
+    input_path: str,
+    format,
+    no_llm: bool,
+    yara_dir: str | None = None,
+    baseline=None,
+    show_suppressed: bool = False,
+    transitive_traversal=None,
+    **_fork_kwargs: object,
+) -> dict[str, object]:
+    """One dependency raising two findings, so a baseline can accept exactly one."""
+    child = [
+        _finding("T1", "first transitive finding", file="dep.py"),
+        _finding("T2", "second transitive finding", file="dep.py"),
+    ]
+    return {
+        "findings": child,
+        "filtered_findings": list(child),
+        "components": ["dep.py"],
+        "component_metadata": [],
+        "file_cache": {"dep.py": "print('dep')"},
+        "local_file_cache": {"dep.py": "print('dep')"},
+        "has_executable_scripts": False,
+        "output_format": format.value,
+    }
+
+
+def _run_transitive_merge(initial_result: dict[str, object]) -> dict[str, object]:
+    return cli._scan_transitive(
+        initial_result=initial_result,
+        format=cli.FormatChoice.json,
+        no_llm=True,
+        max_depth=1,
+        transitive_allow_prefix=(),
+        transitive_deny_prefix=(),
+        baseline=None,
+        show_suppressed=False,
+        visited=set(),
+    )
+
+
+class _ReportNodeSpy:
+    """The real report node, keeping the state it saw and optionally undoing #393.
+
+    ``union`` restores the shape :func:`skillspector.nodes.report.report` wrote
+    into ``filtered_findings`` before upstream ``73dd1f1``: the whole
+    pre-partition population, kept plus baseline-suppressed, beside the
+    ``suppressed_findings`` half. The merge path's count is asserted against
+    that shape on purpose -- it is what makes the count's contract "subtract the
+    suppressed partition" rather than "trust whatever key the report node
+    happens to write today".
+    """
+
+    def __init__(self, *, union: bool = False) -> None:
+        self.state: dict[str, object] = {}
+        self._union = union
+
+    def __call__(self, state: dict[str, object]) -> dict[str, object]:
+        self.state = dict(state)
+        result = report_node(state)
+        if self._union:
+            suppressed = result.get("suppressed_findings") or []
+            result["filtered_findings"] = [
+                *cast(list[Finding], result["filtered_findings"]),
+                *(entry.finding for entry in cast(list[SuppressedFinding], suppressed)),
+            ]
+        return result
+
+
+def _baseline_accepting_one_transitive_finding(monkeypatch) -> Baseline:
+    """Fingerprint the first dependency finding, the way ``skillspector baseline`` would.
+
+    A root glob rule can never reach a dependency finding -- ``reason_for``
+    demands an exact fingerprint bound to the source identity and digest -- so
+    the fingerprint is built from a first pass, over the source-aware file cache
+    the merge assembled for the report node.
+    """
+    spy = _ReportNodeSpy()
+    monkeypatch.setattr(cli, "report", spy)
+    monkeypatch.setattr(cli, "_run_graph_scan", _fake_transitive_child_scan)
+    first_pass = _run_transitive_merge(_transitive_initial_result())
+    accepted = next(
+        finding
+        for finding in cast(list[Finding], first_pass["filtered_findings"])
+        if finding.source_url is not None
+    )
+    merged_cache = spy.state.get("local_file_cache") or spy.state.get("file_cache") or {}
+    return baseline_from_dict(
+        build_baseline_dict(
+            [accepted],
+            reason="accepted",
+            file_cache=cast(dict[str, str], merged_cache),
+            scanner_version=__version__,
+        )
+    )
+
+
+def test_scan_transitive_count_agrees_with_the_report_it_publishes(monkeypatch) -> None:
+    """The control: a baseline accepting one dependency finding lowers both halves.
+
+    ``transitive_finding_count`` and the transitive findings the report lists
+    move together, so a consumer gating on the number sees what the array
+    carries.
+    """
+    baseline = _baseline_accepting_one_transitive_finding(monkeypatch)
+    monkeypatch.setattr(cli, "report", report_node)
+
+    merged = _run_transitive_merge(_transitive_initial_result(baseline))
+
+    assert [entry.finding.rule_id for entry in merged["suppressed_findings"]] == ["T1"]
+    body = json.loads(cast(str, merged["report_body"]))
+    assert [issue["id"] for issue in body["issues"]] == ["D1", "T2"]
+    assert merged["transitive_finding_count"] == 1
+
+
+def test_scan_transitive_count_subtracts_the_baseline_suppressed_partition(monkeypatch) -> None:
+    """The contract: the count selects through one reader, then filters on ``source_url``.
+
+    Asserted against a ``filtered_findings`` holding one kept and one
+    baseline-suppressed transitive finding, which is what the report node wrote
+    before upstream ``73dd1f1`` narrowed the key to the kept side. Counting that
+    key directly answered ``2`` where the report listed one, and would again the
+    moment the key widens back.
+    """
+    baseline = _baseline_accepting_one_transitive_finding(monkeypatch)
+    monkeypatch.setattr(cli, "report", _ReportNodeSpy(union=True))
+
+    merged = _run_transitive_merge(_transitive_initial_result(baseline))
+
+    assert sorted(
+        finding.rule_id for finding in cast(list[Finding], merged["filtered_findings"])
+    ) == ["D1", "T1", "T2"]
+    assert [entry.finding.rule_id for entry in merged["suppressed_findings"]] == ["T1"]
+    assert merged["transitive_finding_count"] == 1
+
+
 def test_scan_transitive_preserves_cached_child_llm_telemetry(monkeypatch) -> None:
     """Cached transitive child telemetry still drives degraded-report metadata."""
     initial_result = _mock_graph_result(
@@ -3574,9 +3737,11 @@ def _combined_json_counts(results: list[dict[str, Any]], tmp_path: Path) -> list
 def test_cli_recursive_json_count_excludes_suppressed_findings(tmp_path: Path) -> None:
     """Combined JSON counts the active findings, not the pre-partition set.
 
-    `report` returns `filtered_findings` as kept+suppressed and scores only the
-    kept subset, so counting `filtered_findings` made a fully suppressed
-    sub-skill report risk 0 alongside a non-zero finding count.
+    Where a state carries both partitions -- which the transitive merge hands
+    over, and which `report` itself wrote before upstream `73dd1f1` narrowed the
+    key to the kept side -- the risk score is computed over the kept subset
+    alone. Counting `filtered_findings` there made a fully suppressed sub-skill
+    report risk 0 alongside a non-zero finding count.
     """
     findings = [
         Finding(rule_id="SQP-1", message="one"),

@@ -505,26 +505,44 @@ def partition_findings(
 
 
 def effective_findings(result: Mapping[str, object]) -> list[Finding]:
-    """Return the findings from a graph *result* that actually drove its risk score.
+    """The findings a finished scan's report actually carries. The one reader of that.
 
-    The report node returns ``filtered_findings`` as the full pre-partition set
-    (kept plus baseline-suppressed) alongside ``suppressed_findings``, but scores
-    and SARIF results from the kept subset alone. Consumers that want the numbers
-    the report itself published must therefore subtract the suppressed partition.
+    Every consumer of a ``graph.invoke`` result that wants to *count* or *list*
+    findings without re-rendering them reads through this: the CLI's two
+    multi-skill summary tables, its transitive finding count, its recursive
+    public-record budget, its advisory count, ``skillspector baseline``, and the
+    MCP tool's verdict payload. It is one function because consumers reading
+    graph state their own way is how they came to disagree with the report in
+    the first place -- three of them, three ways, in fork issues #119, #122 and
+    #130. ``skillspector.nodes.report.reported_findings`` is the fork's name for
+    this one and delegates here.
 
-    Two failure modes this exists to prevent, both of which over-report:
+    **Selection is by presence, not by truth.** An empty ``filtered_findings``
+    is a real answer -- every finding was filtered out or suppressed -- and not
+    a missing one. The ``result.get("filtered_findings") or
+    result.get("findings")`` chains this replaced read it as falsy and fell back
+    to the raw pre-filter list, so a scan whose findings the meta filter had all
+    dropped was counted at its pre-filter size.
 
-    * ``result.get("filtered_findings") or result.get("findings")`` treats an
-      empty filtered list as absent and falls back to the raw pre-filter
-      findings. An empty list is a real answer -- every finding was filtered out
-      or suppressed -- not a missing one.
-    * Using ``filtered_findings`` directly counts baseline-suppressed findings
-      that the report excluded from the score, so a fully suppressed skill
-      reports risk 0 alongside a non-zero finding count.
+    **The suppressed partition is subtracted.** Upstream ``73dd1f1`` narrowed
+    what the report node writes into ``filtered_findings`` to the kept side
+    alone, so on a result that node produced the subtraction now removes
+    nothing. It is kept because the two keys are one partition wherever they are
+    written together, and because that is not the only shape a caller holds: the
+    pre-partition population is what mid-graph state carries, what a
+    hand-assembled result carries, and what ``filtered_findings`` itself carried
+    until that commit. Reading it unsubtracted counted findings the report had
+    excluded from the score, so a fully suppressed skill reported risk 0 beside
+    a non-zero finding count -- and a baseline accepting every finding is the
+    steady state of a baseline, not an edge case.
 
-    Falls back to the raw ``findings`` list only when ``filtered_findings`` is
-    absent or malformed, and does not subtract there: raw findings are not the
-    population that produced ``suppressed_findings``.
+    **The raw ``findings`` fallback does not subtract.** ``filtered_findings``
+    absent or malformed means no partition was computed into the result at all,
+    so a ``suppressed_findings`` beside it did not come out of the population
+    being returned and subtracting across the two would drop a finding no
+    baseline was measured against. That fallback serves the direct-node
+    compatibility path the report node documents; a scan that ran the report
+    node never reaches it.
     """
     filtered = result.get("filtered_findings")
     if not isinstance(filtered, list):
