@@ -61,7 +61,6 @@ import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor, TimeoutError, as_completed
 from pathlib import Path
-
 from skillspector.constants import MODEL_CONFIG
 from skillspector.logging_config import set_level
 

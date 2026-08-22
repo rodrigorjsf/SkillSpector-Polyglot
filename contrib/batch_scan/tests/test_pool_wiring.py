@@ -47,13 +47,12 @@ os.environ["SKILLSPECTOR_API_KEYS"] = (
 
 # -- Build pool ------------------------------------------------------------
 from contrib.batch_scan.api_pool import create_api_key_pool_from_env
-
 pool = create_api_key_pool_from_env()
 assert pool is not None, "2 keys should produce a pool"
 print(f"✅ Pool created: {pool.keys_configured} keys")
 
 # -- Scoped patches + pool wiring -----------------------------------------
-from contrib.batch_scan.runner import deepseek_compat, set_api_pool
+from contrib.batch_scan.runner import set_api_pool, deepseek_compat
 
 with deepseek_compat():
     set_api_pool(pool)
@@ -85,7 +84,6 @@ with deepseek_compat():
 
 # -- Verify both pool AND deepseek patches are actually restored -----------
 import skillspector.llm_analyzer_base as _base
-
 assert _base.LLMAnalyzerBase.__init__.__name__ != "_patched_base_init", \
     "DeepSeek patches should be restored after context manager exit"
 assert _base.get_chat_model.__name__ != "_pooled_get_chat_model", \

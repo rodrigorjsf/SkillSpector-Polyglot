@@ -62,22 +62,24 @@ try:
 except ImportError:
     pass
 
+from skillspector.llm_analyzer_base import LLMAnalyzerBase
+from skillspector.nodes.meta_analyzer import LLMMetaAnalyzer
+
 from contrib.batch_scan.runner import (
     _original_asyncio_run,
-    _original_base_build_prompt,
     _original_base_init,
     _original_base_parse,
+    _original_base_build_prompt,
     _original_chatopenai_init,
-    _original_meta_build_prompt,
     _original_meta_parse,
+    _original_meta_build_prompt,
     _sanitize_meta_finding,
     _strip_markdown_fences,
     deepseek_compat,
     set_api_pool,
     setup_deepseek_compat,
 )
-from skillspector.llm_analyzer_base import LLMAnalyzerBase
-from skillspector.nodes.meta_analyzer import LLMMetaAnalyzer
+
 
 # ---------------------------------------------------------------------------
 # Context Manager — Apply + Restore
@@ -128,7 +130,6 @@ class TestContextManagerApplyRestore(unittest.TestCase):
     def test_patch2_parse_response_functionally_parses_json(self):
         """P2: Functional — patched parse_response returns findings from raw JSON."""
         import json
-
         from skillspector.llm_analyzer_base import Batch
         batch = Batch(file_path="t.md", content="test")
         data = json.dumps({"findings": [
@@ -145,7 +146,6 @@ class TestContextManagerApplyRestore(unittest.TestCase):
     def test_patch3_meta_parse_returns_valid_results(self):
         """P3: Functional — patched meta parse processes valid JSON correctly."""
         import json
-
         from skillspector.llm_analyzer_base import Batch
         batch = Batch(file_path="t.md", content="test")
         # Use data that passes Pydantic validation (sanitize is defense-in-depth,
@@ -367,7 +367,7 @@ class TestVerifyPatchTargets(unittest.TestCase):
 
     def test_guard_passes_against_current_upstream_version(self):
         """Entering context manager must not raise."""
-        from contrib.batch_scan.runner import _verify_patch_targets
+        from contrib.batch_scan.runner import _verify_patch_targets, _apply_patches
         try:
             _verify_patch_targets()
         except RuntimeError as e:
@@ -441,7 +441,7 @@ class TestPatch7AsyncioQuietLoop(unittest.TestCase):
 
     def test_quiet_loop_handler_suppresses_event_loop_closed_error(self):
         """#C8: Verify _patched_asyncio_run installs quiet handler via loop_factory."""
-        from contrib.batch_scan.runner import _original_asyncio_run, _patched_asyncio_run
+        from contrib.batch_scan.runner import _patched_asyncio_run, _original_asyncio_run
         # Create a loop via _patched_asyncio_run — it calls _make_quiet_loop internally
         loop = None
         def _capture_loop():
