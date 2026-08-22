@@ -512,7 +512,7 @@ which stream a line is printed to updates this README in the *same* pull request
 | `--mcp-registry` behavior: an input shape, a check, a rejected flag, or the network rule | [Scanning the MCP Registry](#scanning-the-mcp-registry) and the walkthrough in [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) |
 | A domain term, or the meaning of one | [`CONTEXT.md`](CONTEXT.md) — the glossary is the vocabulary the prose, the docstrings and the test names are held to |
 | An environment variable | [Environment Variables](#environment-variables) and the [Configuration](#configuration) summary |
-| An exit code, an output format, or which stream a line is printed to | [Integrating SkillSpector](#integrating-skillspector) — including [Which stream carries what](#which-stream-carries-what), the one rule every `console.print` in `cli.py` is held to — and the **Logging** bullet of [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md), which is where a contributor adding a print site reads which of the two consoles to use |
+| An exit code, an output format, or which stream a line is printed to | [Integrating SkillSpector](#integrating-skillspector) — including [Which stream carries what](#which-stream-carries-what), the one rule every `console.print` in `cli.py` is held to — and the **Logging** bullet of [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md), which is where a contributor adding a print site reads which of the two consoles to use. When the change is to a *multi-skill* mode, the `--repo-scan` vs `--recursive` comparison table in [Scanning a Whole Repository](#scanning-a-whole-repository) is a second contract on the same facts — it states, per format, whether the report is one merged document and whether it reaches stdout without `--output`, and the two must not disagree |
 | Anything that ships a designed-but-unbuilt capability | the **Status** column above, and [`docs/MULTI_FRAMEWORK_SKILL_ANALYSIS.md`](docs/MULTI_FRAMEWORK_SKILL_ANALYSIS.md) |
 | A redistributed dependency in `pyproject.toml`, added **or removed** — a runtime one, or one in the `mcp` extra | **`uv.lock`**, re-locked with `uv lock` in the same PR — `.github/workflows/release.yml` runs `uv sync --locked`, which errors rather than re-resolving, so a stale lock fails the release rather than the tests; and [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md), in the section matching the declaration — `## Runtime Dependencies` or `## Optional Dependencies (mcp extra)`; license and copyright read from the installed `dist-info`, not recalled; `tests/unit/test_third_party_notices.py` fails, per section, on a missing entry and on one that outlived its dependency. The `dev` and `langgraph-dev` extras declare the project's own toolchain rather than capability a consumer installs, and stay out |
 | A **new** optional-dependency extra in `pyproject.toml` | [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) — its own `## Optional Dependencies (<extra> extra)` section when the extra delivers capability to a consumer, which is what generates its comparisons in `tests/unit/test_third_party_notices.py`; when it declares tooling for working on this project, like `dev` and `langgraph-dev`, no section and a line in that test's `_NOT_REDISTRIBUTED_EXTRAS` instead — plus the row above; exactly one of the two, and the same test fails on any extra with neither *and* on any extra with both, as well as on a duplicated section heading. An extra that composes another by naming this distribution back — `skillspector[mcp]`, the idiom `dev` uses — owes no entry for that self-reference: the composed extra's own section discloses it |
@@ -795,8 +795,9 @@ and not helpfully so: it walks build output that `--repo-scan` skips.
 | `target/`, `build/`, `.gradle/` | skipped | walked, and a skill inside one counts |
 | `--baseline` | threaded through every skill, and it suppresses — but only for a baseline taken *per skill directory*: `skillspector baseline .` has no repo-scan mode and writes repo-root-relative paths this scan never emits | rejected, exit `2` — but **only** once the flag engages. Below the two-skill threshold it falls through to an ordinary scan and the baseline applies |
 | `--format sarif --output` | one valid SARIF log, one run per skill | one valid SARIF log, one run per skill — upstream's own recursive SARIF merge arrived with the 2.9.6 sync and replaced the `--- path ---` concatenation this row used to describe, so anything splitting the file on that separator has to stop |
-| `--format json --output` | per-skill bodies concatenated | one object: `multi_skill`, `skill_count`, `max_risk_score`, `execution_successful`, `skills` |
-| **No** `--output` | the report is written to stdout, in every format — but only `sarif` is one merged document; `json` and `markdown` are the same `--- path ---` concatenation as the row above ([#116](https://github.com/rodrigorjsf/SkillSpector-Polyglot/issues/116)) | no report at all — the combined body is only ever written to a file ([#114](https://github.com/rodrigorjsf/SkillSpector-Polyglot/issues/114)). With `--format terminal` stdout carries the summary table and nothing else; with `json`, `sarif` or `markdown` stdout is **empty** and the format flag is silently ignored. As with `--baseline`, **only** once the flag engages: below the two-skill threshold it falls through to an ordinary scan, which does write a report to stdout in the requested format |
+| `--format json --output` | one object: `multi_skill`, `skill_count`, `max_risk_score`, `execution_successful`, `skills` — the *same* object `--recursive` builds, so a consumer tells the two modes apart by the flag it ran rather than by the body it parses | one object: `multi_skill`, `skill_count`, `max_risk_score`, `execution_successful`, `skills` |
+| `--format markdown --output` | per-skill bodies concatenated behind `--- <path> ---` — merging Markdown has no shape to reuse and was left alone | per-skill bodies concatenated behind `--- <path> ---` |
+| **No** `--output` | the report is written to stdout, in every format; `sarif` and `json` are each one merged document, `markdown` and `terminal` are the `--- path ---` concatenation of the rows above | no report at all — the combined body is only ever written to a file ([#114](https://github.com/rodrigorjsf/SkillSpector-Polyglot/issues/114)). With `--format terminal` stdout carries the summary table and nothing else; with `json`, `sarif` or `markdown` stdout is **empty** and the format flag is silently ignored. As with `--baseline`, **only** once the flag engages: below the two-skill threshold it falls through to an ordinary scan, which does write a report to stdout in the requested format |
 | Discovery roots | `--repo-scan-root`, repeatable | not configurable |
 
 Use `--recursive` only for the shape it was built for: a flat directory whose immediate children are
@@ -1503,6 +1504,7 @@ these are pipelines you can rely on, with nothing to redirect away:
 ```bash
 skillspector scan ./my-skill/ --format json | jq .
 skillspector scan . --repo-scan --format sarif | jq '.runs | length'
+skillspector scan . --repo-scan --format json | jq '.skills[].path'
 ```
 
 Redirect stderr (`2>/dev/null`) only when you want the notes gone as well; the exit code is
@@ -1511,14 +1513,14 @@ unaffected either way. Both pipelines above assume the scan found a skill to rep
 stdout is legitimately empty.
 
 The rule says which *stream* the report goes to, not that every format is one parseable document.
-With `--repo-scan` only `--format sarif` is merged — one SARIF log, one run per skill, which is why
-the example above uses it. `--format json` and `--format markdown` put the per-skill bodies on
-stdout concatenated behind `--- <path> ---` separators, exactly the shape the `--format json
---output` row of the `--repo-scan` vs `--recursive` table in
-[Scanning a Whole Repository](#scanning-a-whole-repository) describes, and no JSON or Markdown
-consumer reads that as a single document. Merging them is
-[#116](https://github.com/rodrigorjsf/SkillSpector-Polyglot/issues/116); until then, use `sarif` for
-a `--repo-scan` pipeline, or scan each skill separately.
+With `--repo-scan`, `--format sarif` and `--format json` are each merged — one SARIF log with one
+run per skill, or one JSON object with one entry per skill, which is why the examples above pipe
+either of them. `--format markdown` still puts the per-skill bodies on stdout concatenated behind
+`--- <path> ---` separators, exactly the shape the `--format markdown --output` row of the
+`--repo-scan` vs `--recursive` table in
+[Scanning a Whole Repository](#scanning-a-whole-repository) describes, and no Markdown consumer
+reads that as a single document — merging it is a separate question with no shape to reuse. For a
+Markdown pipeline, scan each skill separately.
 
 `--recursive` is the one path where the distinction has to be argued rather than applied, because
 once it engages it writes its combined report **only** to `--output` — there is no report on stdout

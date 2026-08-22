@@ -2135,8 +2135,15 @@ def _multi_skill_analysis_completeness(
     failed_skills: int,
     omitted_skills: int,
     limitations: list[str],
+    scope: str = "recursive_skills",
 ) -> dict[str, object]:
-    """Build one conservative machine-readable completeness summary for recursion."""
+    """Build one conservative machine-readable completeness summary for a multi-skill Scan.
+
+    *scope* names which discovery mode produced the summary. It defaults to the
+    recursive one this was written for; a Repository Scan passes its own, because
+    ``CONTEXT.md`` lists "recursive scan" among the spellings a Repository Scan is
+    never called -- and a machine-readable field is prose too.
+    """
     is_complete = (
         not limitations and not partial_skills and not failed_skills and not omitted_skills
     )
@@ -2153,7 +2160,86 @@ def _multi_skill_analysis_completeness(
         "entirely_uninspected_files": failed_skills + omitted_skills,
         "total_files": total_skills,
         "limitations": limitations,
-        "scope": "recursive_skills",
+        "scope": scope,
+    }
+
+
+def _combined_skill_entry(
+    name: str,
+    relative_path: str,
+    result: dict[str, object],
+) -> dict[str, object]:
+    """One ``skills`` entry of the combined JSON report, for either discovery mode.
+
+    The Skill's own JSON report body is folded in whole, so a reader gets the
+    same document a single Scan would have printed, and the eight keys below are
+    then re-asserted over it: they identify the Skill within the combination and
+    a child body must not be able to redefine them.
+
+    ``update`` keeps an existing key where it already sits, so writing them once
+    before the payload and once after fixes their order without a second pass --
+    remove either call and the key order of every combined report changes.
+    """
+    identity: dict[str, object] = {
+        "name": name,
+        "path": relative_path,
+        "risk_score": result.get("risk_score", 0),
+        "risk_severity": result.get("risk_severity", "LOW"),
+        "finding_count": len(reported_findings(result)),
+        "execution_successful": result.get("execution_successful", True),
+        "transitive_finding_count": result.get("transitive_finding_count", 0),
+        "transitive_sources": result.get("transitive_sources", []),
+    }
+    entry = dict(identity)
+    entry.update(_recursive_json_payload(result) or {})
+    entry.update(identity)
+    return entry
+
+
+def _combined_json_report(
+    *,
+    skill_count: int,
+    max_score: int,
+    execution_failed: bool,
+    analysis_incomplete: bool,
+    completeness: dict[str, object],
+    skills_scanned: int,
+    skills_omitted: int,
+    public_finding_records: int,
+    report_characters: int,
+    transitive_finding_count: int,
+    transitive_sources: list[str],
+    skills: list[dict[str, object]],
+) -> dict[str, object]:
+    """The one combined JSON object both discovery modes answer in.
+
+    ``--recursive`` and ``--repo-scan`` find Skills differently and say so with
+    the flag that was run, not with the body they emit -- a consumer parses one
+    shape either way. ``public_finding_records`` and ``report_characters`` count
+    a recursive Scan's consumption of its aggregate budgets; a Repository Scan
+    has no such budgets and so reports zero of them rather than a number that
+    would read as consumption of a ceiling that does not exist.
+    """
+    return {
+        "multi_skill": True,
+        "skill_count": skill_count,
+        "max_risk_score": max_score,
+        "execution_successful": not execution_failed,
+        "risk_recommendation": (
+            "DO_NOT_INSTALL"
+            if execution_failed or max_score > RISK_THRESHOLD
+            else "CAUTION"
+            if analysis_incomplete
+            else "SAFE"
+        ),
+        "analysis_completeness": completeness,
+        "skills_scanned": skills_scanned,
+        "skills_omitted": skills_omitted,
+        "public_finding_records": public_finding_records,
+        "report_characters": report_characters,
+        "transitive_finding_count": transitive_finding_count,
+        "transitive_sources": transitive_sources,
+        "skills": skills,
     }
 
 
@@ -2476,54 +2562,28 @@ def _scan_multi_skill(
         )
 
     if output and format == FormatChoice.json:
-        combined: dict[str, object] = {
-            "multi_skill": True,
-            "skill_count": len(skills),
-            "max_risk_score": max_score,
-            "execution_successful": not execution_failed,
-            "risk_recommendation": (
-                "DO_NOT_INSTALL"
-                if execution_failed or max_score > RISK_THRESHOLD
-                else "CAUTION"
-                if analysis_incomplete
-                else "SAFE"
-            ),
-            "analysis_completeness": aggregate_completeness,
-            "skills_scanned": len(processed_skills),
-            "skills_omitted": omitted_skill_count,
-            "public_finding_records": retained_public_records,
-            "report_characters": retained_report_characters,
-            "transitive_finding_count": transitive_finding_count,
-            "transitive_sources": sorted(transitive_sources),
-            "skills": [],
-        }
-        combined_skills = cast(list[dict[str, object]], combined["skills"])
+        combined_skills: list[dict[str, object]] = []
         for skill, result in zip(processed_skills, results, strict=True):
             if "error" in result:
                 combined_skills.append({"name": skill.name, "error": result["error"]})
             else:
-                payload = _recursive_json_payload(result) or {}
-                finding_count = len(reported_findings(result))
-                entry = {
-                    "name": skill.name,
-                    "path": skill.relative_path,
-                    "risk_score": result.get("risk_score", 0),
-                    "risk_severity": result.get("risk_severity", "LOW"),
-                    "finding_count": finding_count,
-                    "execution_successful": result.get("execution_successful", True),
-                    "transitive_finding_count": result.get("transitive_finding_count", 0),
-                    "transitive_sources": result.get("transitive_sources", []),
-                }
-                entry.update(payload)
-                entry["name"] = skill.name
-                entry["path"] = skill.relative_path
-                entry["risk_score"] = result.get("risk_score", 0)
-                entry["risk_severity"] = result.get("risk_severity", "LOW")
-                entry["finding_count"] = finding_count
-                entry["execution_successful"] = result.get("execution_successful", True)
-                combined_skills.append(entry)
-                entry["transitive_finding_count"] = result.get("transitive_finding_count", 0)
-                entry["transitive_sources"] = result.get("transitive_sources", [])
+                combined_skills.append(
+                    _combined_skill_entry(skill.name, skill.relative_path, result)
+                )
+        combined = _combined_json_report(
+            skill_count=len(skills),
+            max_score=max_score,
+            execution_failed=execution_failed,
+            analysis_incomplete=analysis_incomplete,
+            completeness=aggregate_completeness,
+            skills_scanned=len(processed_skills),
+            skills_omitted=omitted_skill_count,
+            public_finding_records=retained_public_records,
+            report_characters=retained_report_characters,
+            transitive_finding_count=transitive_finding_count,
+            transitive_sources=sorted(transitive_sources),
+            skills=combined_skills,
+        )
         if omitted_skill_count:
             combined_skills.append(
                 {
@@ -2657,6 +2717,90 @@ def _merge_repository_sarif(scanned: list[tuple[DiscoveredSkill, dict]]) -> dict
     return {"$schema": schema, "version": version, "runs": runs}
 
 
+def _merge_repository_json(
+    scanned: list[tuple[DiscoveredSkill, dict]],
+    failures: list[tuple[DiscoveredSkill, str]],
+) -> dict[str, object]:
+    """One JSON object for a whole Repository Scan, an entry per Skill.
+
+    The object is the one ``--recursive --format json`` already emits, built by
+    the same helpers: the two discovery modes are told apart by the flag that was
+    run, not by the shape a consumer has to parse. Before this, every format but
+    SARIF fell through to the per-Skill bodies concatenated behind
+    ``--- path ---`` separators, which no JSON reader accepts as one document.
+
+    The two aggregate claims this object makes are read off the children rather
+    than off *failures*, which holds only the Skills that raised. A Skill can come
+    back having run to completion and reported ``execution_successful`` false, or
+    having inspected only part of itself -- neither raises, so counting exceptions
+    alone would print ``execution_successful: true`` and ``SAFE`` beside an exit
+    code of 2, and would assert a complete inspection over a partial one. An
+    Inspection Ledger exists to keep an absence of Findings distinguishable from
+    an absence of inspection; an aggregate that rounds a partial child up to
+    complete erases exactly that.
+    """
+    max_score = max((int(result.get("risk_score") or 0) for _, result in scanned), default=0)
+    entries: list[dict[str, object]] = [
+        _combined_skill_entry(skill.name, skill.relative_path, result) for skill, result in scanned
+    ]
+    entries.extend({"name": skill.name, "error": message} for skill, message in failures)
+    failed_skills = len(failures)
+    partial_skills = 0
+    for _, result in scanned:
+        if result.get("execution_successful") is False:
+            failed_skills += 1
+            continue
+        completeness_value = result.get("analysis_completeness")
+        if isinstance(completeness_value, dict) and not bool(
+            completeness_value.get("is_complete", True)
+        ):
+            partial_skills += 1
+    completeness = _multi_skill_analysis_completeness(
+        total_skills=len(scanned) + len(failures),
+        complete_skills=len(scanned) + len(failures) - failed_skills - partial_skills,
+        partial_skills=partial_skills,
+        failed_skills=failed_skills,
+        omitted_skills=0,
+        limitations=[],
+        scope="repository_skills",
+    )
+    return _combined_json_report(
+        skill_count=len(scanned) + len(failures),
+        max_score=max_score,
+        execution_failed=bool(failed_skills),
+        analysis_incomplete=not bool(completeness["is_complete"]),
+        completeness=completeness,
+        skills_scanned=len(scanned),
+        skills_omitted=0,
+        public_finding_records=0,
+        report_characters=0,
+        transitive_finding_count=0,
+        transitive_sources=[],
+        skills=entries,
+    )
+
+
+def _repository_report_body(
+    format: FormatChoice,
+    scanned: list[tuple[DiscoveredSkill, dict]],
+    failures: list[tuple[DiscoveredSkill, str]],
+) -> str:
+    """The one report body a Repository Scan writes, whether to ``--output`` or stdout.
+
+    ``sarif`` and ``json`` are each merged into a single document. ``terminal``
+    and ``markdown`` keep the ``--- path ---`` concatenation: for ``terminal``
+    that separator is the natural shape, and merging Markdown is a question with
+    no existing shape in this codebase to reuse.
+    """
+    if format == FormatChoice.sarif:
+        return json.dumps(_merge_repository_sarif(scanned), indent=2)
+    if format == FormatChoice.json:
+        return json.dumps(_merge_repository_json(scanned, failures), indent=2)
+    return "\n\n".join(
+        f"--- {skill.relative_path} ---\n{_result_body(result)}" for skill, result in scanned
+    )
+
+
 def _scan_repository(
     repository_root: Path,
     roots: tuple[str, ...],
@@ -2744,12 +2888,7 @@ def _scan_repository(
     # sign of being advisory at all.
     _advise_on_advisory_findings(sum(_count_advisory(result) for _, result in scanned))
 
-    if format == FormatChoice.sarif:
-        body = json.dumps(_merge_repository_sarif(scanned), indent=2)
-    else:
-        body = "\n\n".join(
-            f"--- {skill.relative_path} ---\n{_result_body(result)}" for skill, result in scanned
-        )
+    body = _repository_report_body(format, scanned, failures)
     if output:
         Path(output).write_text(body, encoding="utf-8")
         advice.print(f"Report saved to: {output}")

@@ -129,6 +129,23 @@ def _unwrapped(output: str) -> str:
     return " ".join(output.split())
 
 
+def _without_timestamps(document: object) -> object:
+    """*document* with every ``scanned_at`` replaced, so two Scans can be compared.
+
+    The only field that legitimately differs between two Scans of the same input.
+    Dropping the key instead would let a report that stopped emitting one compare
+    equal to a report that still does.
+    """
+    if isinstance(document, dict):
+        return {
+            key: "<scanned_at>" if key == "scanned_at" else _without_timestamps(value)
+            for key, value in document.items()
+        }
+    if isinstance(document, list):
+        return [_without_timestamps(item) for item in document]
+    return document
+
+
 def _explode(*_args: object, **_kwargs: object) -> dict[str, object]:
     """A Scan that raises past the ``FileNotFoundError``/``ValueError`` handlers."""
     raise RuntimeError("the graph came apart")
@@ -235,9 +252,12 @@ class TestARepositoryScan:
     """``--repo-scan``, which always prints a report and so never needs its table.
 
     That the report reaches stdout is the rule; that it is *parseable* is a
-    separate property this path only has under ``-f sarif``, and
-    ``test_a_json_repository_report_is_concatenated_not_merged`` pins the
-    difference so neither claim is read as the other.
+    separate property, and one this path has under ``-f sarif`` and — since
+    [#116](https://github.com/rodrigorjsf/SkillSpector-Polyglot/issues/116) —
+    under ``-f json`` as well. ``-f markdown`` and ``-f terminal`` keep the
+    ``--- path ---`` concatenation, and
+    ``test_a_markdown_repository_report_is_still_concatenated`` pins that half so
+    neither claim is read as the other.
     """
 
     def _repository(self, root: Path) -> Path:
@@ -262,17 +282,17 @@ class TestARepositoryScan:
         assert len(json.loads(result.stdout)["runs"]) == 2
         assert "Scanning" not in result.stdout
 
-    def test_a_json_repository_report_is_concatenated_not_merged(self, tmp_path: Path) -> None:
-        """Characterisation: what stdout carries here is the report, and unparseable anyway.
+    def test_a_json_repository_report_is_one_merged_document(self, tmp_path: Path) -> None:
+        """This pinned the concatenation until #116 merged it; it now pins the merged shape.
 
-        The stream rule holds — this concatenation *is* the report, so stdout is
-        where it belongs, and no line was moved off it. What it is not is a
-        single document: only ``-f sarif`` is merged, and every other format
-        falls through to the per-Skill bodies glued behind ``--- path ---``
-        separators. Pinned here so the README clause saying so cannot rot, and
-        so that fixing it
-        ([#116](https://github.com/rodrigorjsf/SkillSpector-Polyglot/issues/116))
-        is a visible, intended change to this test rather than a silent one.
+        The stream rule was never the defect — the body *is* the report, so
+        stdout is where it belongs. What it was not was a single document: only
+        ``-f sarif`` was merged and every other format fell through to the
+        per-Skill bodies glued behind ``--- path ---`` separators, which no JSON
+        reader accepts.
+        [#116](https://github.com/rodrigorjsf/SkillSpector-Polyglot/issues/116)
+        gave this format the merge SARIF already had, and each Skill is
+        identified in it by its repository-relative path.
         """
         repository = self._repository(tmp_path)
 
@@ -281,10 +301,150 @@ class TestARepositoryScan:
         )
 
         assert result.exit_code == 0, result.output
+        merged = json.loads(result.stdout)
+        assert merged["skill_count"] == 2
+        assert [entry["path"] for entry in merged["skills"]] == ["skills/one", "skills/two"]
+        assert "--- skills/one ---" not in result.stdout
+
+    def test_it_answers_in_the_same_vocabulary_as_the_other_discovery_mode(
+        self, tmp_path: Path
+    ) -> None:
+        """The point of #116: one object shape, told apart by the flag that was run.
+
+        Asserted as an equivalence between the two modes rather than against a
+        literal key list copied into this file, so the shape cannot drift in one
+        mode while a hand-written expectation keeps agreeing with the other. The
+        *values* differ — the paths are relative to different roots and each mode
+        reports its own ``scope`` — so it is the keys that are compared.
+        """
+        repository = self._repository(tmp_path)
+        flat = tmp_path / "flat"
+        _write_skill(flat / "one", "one")
+        _write_skill(flat / "two", "two")
+        combined = tmp_path / "recursive.json"
+
+        repo_scan = runner.invoke(
+            app, ["scan", str(repository), "--repo-scan", "--no-llm", "-f", "json"]
+        )
+        recursive = runner.invoke(
+            app,
+            ["scan", str(flat), "--recursive", "--no-llm", "-f", "json", "-o", str(combined)],
+        )
+
+        assert repo_scan.exit_code == 0, repo_scan.output
+        assert recursive.exit_code == 0, recursive.output
+        merged = json.loads(repo_scan.stdout)
+        reference = json.loads(combined.read_text(encoding="utf-8"))
+        assert list(merged) == list(reference)
+        assert list(merged["analysis_completeness"]) == list(reference["analysis_completeness"])
+        assert [sorted(entry) for entry in merged["skills"]] == [
+            sorted(entry) for entry in reference["skills"]
+        ]
+
+    def test_a_child_that_failed_without_raising_is_still_a_failure_in_the_body(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The merged object's own claims have to agree with the exit code.
+
+        A Skill can run to completion and report ``execution_successful`` false;
+        that raises nothing, so it lands among the scanned results rather than
+        among the failures. Reading the aggregate off the failures alone printed
+        ``execution_successful: true`` and ``SAFE`` beside an exit code of ``2``
+        — a contradiction the concatenated body could not have, because it never
+        made an aggregate claim at all. Merging created the claim, so merging
+        owes it.
+        """
+        repository = self._repository(tmp_path)
+        failed = {
+            "report_body": '{"skill": {"name": "one"}}',
+            "risk_score": 0,
+            "risk_severity": "LOW",
+            "execution_successful": False,
+        }
+        monkeypatch.setattr(
+            "skillspector.cli.graph", SimpleNamespace(invoke=lambda *a, **k: dict(failed))
+        )
+
+        result = runner.invoke(
+            app, ["scan", str(repository), "--repo-scan", "--no-llm", "-f", "json"]
+        )
+
+        assert result.exit_code == 2
+        merged = json.loads(result.stdout)
+        assert merged["execution_successful"] is False
+        assert merged["risk_recommendation"] == "DO_NOT_INSTALL"
+        assert merged["analysis_completeness"]["execution_successful"] is False
+
+    def test_a_partially_inspected_child_is_not_rounded_up_to_complete(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A partial inspection must survive the merge, or the Ledger's point is lost.
+
+        An Inspection Ledger is what makes an absence of Findings distinguishable
+        from an absence of inspection. A child reporting an incomplete
+        `analysis_completeness` raises nothing and exits `0`, so an aggregate that
+        counted only exceptions called the repository fully inspected — and a
+        reader would take "no findings" for "nothing found" rather than "not all
+        of it was read".
+        """
+        repository = self._repository(tmp_path)
+        partial = {
+            "report_body": '{"skill": {"name": "one"}}',
+            "risk_score": 0,
+            "risk_severity": "LOW",
+            "execution_successful": True,
+            "analysis_completeness": {"is_complete": False, "status": "partial"},
+        }
+        monkeypatch.setattr(
+            "skillspector.cli.graph", SimpleNamespace(invoke=lambda *a, **k: dict(partial))
+        )
+
+        result = runner.invoke(
+            app, ["scan", str(repository), "--repo-scan", "--no-llm", "-f", "json"]
+        )
+
+        assert result.exit_code == 0, result.output
+        merged = json.loads(result.stdout)
+        assert merged["analysis_completeness"]["is_complete"] is False
+        assert merged["analysis_completeness"]["partially_inspected_files"] == 2
+        assert merged["risk_recommendation"] == "CAUTION"
+
+    def test_a_markdown_repository_report_is_still_concatenated(self, tmp_path: Path) -> None:
+        """The half #116 deliberately left alone, pinned so the README cannot rot.
+
+        Merging Markdown is a separate question with no shape in this codebase to
+        reuse, so ``-f markdown`` keeps the per-Skill bodies behind
+        ``--- path ---`` separators. Without this assertion the claim that #116
+        merged *json* would read as a claim that it merged everything.
+        """
+        repository = self._repository(tmp_path)
+
+        result = runner.invoke(
+            app, ["scan", str(repository), "--repo-scan", "--no-llm", "-f", "markdown"]
+        )
+
+        assert result.exit_code == 0, result.output
         assert result.stdout.startswith("--- skills/one ---")
         assert "--- skills/two ---" in result.stdout
-        with pytest.raises(json.JSONDecodeError):
-            json.loads(result.stdout)
+
+    def test_the_merged_json_written_to_a_file_is_the_one_it_prints(self, tmp_path: Path) -> None:
+        """``--output`` changed shape with stdout, rather than keeping the old one."""
+        repository = self._repository(tmp_path)
+        report = tmp_path / "merged.json"
+
+        printed = runner.invoke(
+            app, ["scan", str(repository), "--repo-scan", "--no-llm", "-f", "json"]
+        )
+        saved = runner.invoke(
+            app,
+            ["scan", str(repository), "--repo-scan", "--no-llm", "-f", "json", "-o", str(report)],
+        )
+
+        assert saved.exit_code == 0, saved.output
+        assert saved.stdout == ""
+        on_disk = json.loads(report.read_text(encoding="utf-8"))
+        assert list(on_disk) == list(json.loads(printed.stdout))
+        assert on_disk["skill_count"] == 2
 
     def test_the_progress_and_the_digest_are_on_stderr(self, tmp_path: Path) -> None:
         """Moved, not silenced — an operator watching a long Scan still sees it."""
