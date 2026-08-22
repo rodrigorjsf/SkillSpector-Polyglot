@@ -2010,10 +2010,17 @@ def _scan_transitive(
     report_result = cast(dict[str, object], report(merged_result))
     report_result["analysis_completeness"] = merged_result.get("analysis_completeness", {})
     report_result["temp_dir_for_cleanup"] = initial_result.get("temp_dir_for_cleanup")
-    active_findings = _coerce_findings_list(report_result.get("filtered_findings"))
+    # Select first, filter second. Reading `filtered_findings` here and counting
+    # it was a third expression of "which findings does a finished scan report",
+    # beside `effective_findings` and `reported_findings`, and the only one that
+    # subtracted nothing. Upstream `73dd1f1` has since made :func:`report` write
+    # the post-partition set into `filtered_findings`, so the two answers agree
+    # today -- this is the contract rather than a live correction, and it holds
+    # whatever that key is later made to carry. The `isinstance` guard stays:
+    # `effective_findings` passes a non-`Finding` member through deliberately.
     report_result["transitive_finding_count"] = sum(
         1
-        for finding in active_findings
+        for finding in effective_findings(report_result)
         if isinstance(finding, Finding) and finding.source_url is not None
     )
     report_result["transitive_sources"] = sorted(transitive_sources)
