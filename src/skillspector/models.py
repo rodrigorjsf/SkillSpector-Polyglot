@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 SkillSpector-Polyglot contributors
 # SPDX-License-Identifier: Apache-2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -220,6 +221,18 @@ class Finding:
                 "end_line": self.end_line,
             },
             "finding": self.finding,
+            # ``message`` is what *this* Finding found and differs per instance;
+            # ``explanation`` is what the Rule means and is identical across every
+            # Finding of that Rule. Projecting only the second, aliased over the
+            # first, left a JSON consumer unable to tell two Findings of one Rule
+            # apart -- exactly the field a triage pipeline keys on (issue #117).
+            #
+            # The alias survives the separation because the audit that chose this
+            # branch found Rules that legitimately reach here with no catalogue
+            # explanation: ``AE1``--``AE5`` (in neither catalogue dict) and every
+            # LLM-emitted Finding (``LLMFinding.explanation`` defaults to ``""``).
+            # Dropping it would project ``null`` for those rather than a sentence.
+            "message": self.message,
             "explanation": self.explanation or self.message,
             "remediation": self.remediation,
             "code_snippet": self.code_snippet or self.context,

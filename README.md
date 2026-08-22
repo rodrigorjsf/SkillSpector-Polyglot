@@ -1444,7 +1444,7 @@ The top-level shape is (this example shows a full LLM-backed scan; with `--no-ll
   "skill": { "name": "...", "source": "...", "scanned_at": "<ISO 8601>" },
   "risk_assessment": { "score": 0, "severity": "LOW", "recommendation": "SAFE", "max_issue_severity": "LOW" },
   "components": [ { "path": "...", "type": "...", "lines": 0, "executable": false, "size_bytes": 0 } ],
-  "issues": [ { "id": "...", "category": "...", "severity": "...", "confidence": 0.0, "location": { "file": "...", "start_line": 0 } } ],
+  "issues": [ { "id": "...", "category": "...", "severity": "...", "confidence": 0.0, "location": { "file": "...", "start_line": 0 }, "message": "...", "explanation": "..." } ],
   "metadata": {
     "has_executable_scripts": false,
     "skillspector_version": "...",
@@ -1475,6 +1475,12 @@ The top-level shape is (this example shows a full LLM-backed scan; with `--no-ll
   report carries, and is `null` when it carries none. It is there because `score` is
   normalized: a single HIGH finding in a large skill can land under the threshold and
   read as `SAFE`. A gate that must not miss one reads this field rather than the score.
+- `issues[].message` is what *this* finding found; `issues[].explanation` is what the rule
+  means. The first differs between two findings of one rule id — `L4J-UNRESOLVED` writes a
+  different sentence for each thing it could not resolve — and the second is identical across
+  every finding of that rule, so a triage pipeline that wants to know *which* instance it is
+  looking at reads `message`. For a rule that carries no catalogue entry, `explanation` falls
+  back to the same sentence rather than reading `null`, so the two agree there.
 - `metadata.llm_error` appears only when LLM analysis was requested but unavailable.
 - `metadata.inference_usage` contains one sanitized record per LLM response when the
   provider exposes token counters. It is an empty list when usage is unavailable;
