@@ -29,7 +29,7 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from hashlib import sha256
 from io import StringIO
-from typing import Literal, cast
+from typing import Literal
 
 from rich.console import Console
 from rich.markup import escape
@@ -64,7 +64,12 @@ from skillspector.sarif_models import (
     validate_sarif_report,
 )
 from skillspector.state import SkillspectorState
-from skillspector.suppression import Baseline, SuppressedFinding, partition_findings
+from skillspector.suppression import (
+    Baseline,
+    SuppressedFinding,
+    effective_findings,
+    partition_findings,
+)
 
 logger = get_logger(__name__)
 
@@ -1499,44 +1504,23 @@ def _format_markdown(
 
 
 def reported_findings(result: Mapping[str, object]) -> list[Finding]:
-    """The findings a finished scan's report actually contains. One reader, two corrections.
+    """The fork's name for :func:`skillspector.suppression.effective_findings`.
 
-    For every consumer of a `graph.invoke` result that wants to *count* or *list*
-    findings without re-rendering them — the CLI's summary tables, `skillspector
-    baseline`, the MCP tool's verdict payload. It lives here rather than beside
-    any one of them because the selection semantics it mirrors are this module's,
-    and three consumers reading graph state three ways is how they came to
-    disagree with the report in the first place.
+    Both were written for one defect -- consumers of a ``graph.invoke`` result
+    counting findings the report does not carry -- on the two sides of a fork
+    that had not synced, and the 2.9.6 sync kept both. Issue #130 measured them
+    diverging on the raw-``findings`` fallback, where this one subtracted
+    ``suppressed_findings`` and upstream's deliberately did not. Upstream's
+    semantics won, so this is a delegation and the reasoning it used to carry --
+    issues #119 and #122, and what upstream ``73dd1f1`` since changed about the
+    keys it reads -- now lives with the function that answers.
 
-    **Selection is by presence, not by truth.** :func:`report` selects with
-    ``state.get("filtered_findings", raw_findings)``, so an empty filtered list is
-    honoured as "everything was filtered away". The ``or`` chains this replaces
-    read that same list as falsy and fell back to the pre-filter one, so a scan
-    whose findings the meta filter all dropped was counted at its pre-filter size.
-
-    **Baseline suppression is subtracted, because no findings key in state has had
-    it applied.** :func:`report` writes ``filtered_findings`` *before* partitioning
-    it against the baseline and reports only the active side, so a baseline that
-    accepted everything still left ``--repo-scan`` announcing ``Findings 2`` beside
-    a report holding none. A baseline accepting every finding is the steady state
-    of a baseline, not an edge case. ``suppressed_findings`` is the other half of
-    that partition, so the difference is exactly what was reported.
+    The name stays because five CLI call sites and the MCP server read findings
+    through it, and because the report node is where a reader looks for what a
+    report contains. Nothing else remains here: exactly one function in the
+    package decides which findings a finished scan reports.
     """
-    findings = result.get("filtered_findings")
-    if not isinstance(findings, list):
-        findings = result.get("findings")
-    if not isinstance(findings, list):
-        return []
-    selected = cast("list[Finding]", findings)
-    suppressed = result.get("suppressed_findings")
-    if not isinstance(suppressed, list):
-        return selected
-    suppressed_ids = {
-        getattr(entry.finding, "finding_id", None)
-        for entry in suppressed
-        if getattr(entry, "finding", None) is not None
-    }
-    return [finding for finding in selected if finding.finding_id not in suppressed_ids]
+    return effective_findings(result)
 
 
 def report(state: SkillspectorState) -> dict[str, object]:

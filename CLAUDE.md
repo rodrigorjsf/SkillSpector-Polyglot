@@ -234,7 +234,8 @@ When something fails repeatedly, when User has to re-explain, or when a workarou
 - A confidence read from user YARA meta is data; `confidence=` literals miss it.
 - Fingerprints hash every Finding field; run configuration goes in state, never on a Finding.
 - The meta stage rewrites five hashed fields; a baseline binds to its `--no-llm` side.
-- `filtered_findings` is pre-suppression; `report` subtracts the Baseline downstream.
+- Since upstream `73dd1f1` `report` writes only the kept side into `filtered_findings`.
+- One reader selects a finished Scan's Findings: `effective_findings`; never re-express it.
 - A `SKILL.md` under `references/`, `scripts/` or `assets/` is a template, not a Skill.
 - An early `return` in a Rule walk can suppress a *scored* Rule further down.
 - Dropping a Batch loses its Findings from the report; decline it via `should_submit`.

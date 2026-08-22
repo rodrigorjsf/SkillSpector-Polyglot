@@ -1065,6 +1065,37 @@ def test_report_baseline_suppresses_finding_and_lowers_score() -> None:
     assert len(result["suppressed_findings"]) == 1
 
 
+def test_report_writes_only_the_kept_side_into_filtered_findings() -> None:
+    """``filtered_findings`` is the partition's kept half; ``suppressed_findings`` is the other.
+
+    Upstream ``73dd1f1`` narrowed this key from the whole pre-partition
+    population to the kept side and nothing asserted it. The Behavior Snapshot
+    corpus cannot: ``tests/behavior/COVERAGE_LIMITS.md`` records that
+    ``filtered_findings`` is byte-identical to ``findings`` in every fixture
+    because no fixture exercises a Baseline at all. Both readers of the pair --
+    ``suppression.effective_findings`` and the delegating
+    ``report.reported_findings`` -- state this split in their docstrings and are
+    written around it, so widening the key again has to fail here rather than
+    make that prose quietly wrong.
+    """
+    kept = _finding("P5", "HIGH")
+    accepted = _finding("SQP-1", "HIGH", file="scripts/run.py")
+    state: SkillspectorState = {
+        "findings": [kept, accepted],
+        "component_metadata": [],
+        "has_executable_scripts": False,
+        "manifest": {},
+        "skill_path": None,
+        "output_format": "json",
+        "baseline": Baseline(rules=[SuppressionRule(rule_id="SQP-1", reason="accepted")]),
+    }
+
+    result = report(state)
+
+    assert [finding.rule_id for finding in result["filtered_findings"]] == ["P5"]
+    assert [entry.finding.rule_id for entry in result["suppressed_findings"]] == ["SQP-1"]
+
+
 def test_report_baseline_keeps_unmatched_finding() -> None:
     """Findings not matched by the baseline are kept and scored normally."""
     baseline = Baseline(rules=[SuppressionRule(rule_id="SQP-1", reason="nit")])

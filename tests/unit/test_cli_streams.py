@@ -84,11 +84,11 @@ import yaml
 from typer.testing import CliRunner
 
 from skillspector import __version__
-from skillspector.cli import app
+from skillspector.cli import _multi_skill_public_record_count, app
 from skillspector.models import Finding
 from skillspector.nodes.report import reported_findings
 from skillspector.sarif_models import validate_sarif_report
-from skillspector.suppression import SuppressedFinding
+from skillspector.suppression import SuppressedFinding, effective_findings
 
 runner = CliRunner()
 
@@ -1668,11 +1668,12 @@ class TestASummaryTableAgreesWithItsReport:
     payload -- and all three used to read a findings key straight out of graph
     state through an ``or`` chain, as did ``skillspector baseline`` and the MCP
     tool's verdict payload. Two things are wrong with that reading, and
-    ``report.reported_findings`` -- one reader for all five -- is where both are
-    answered:
+    ``report.reported_findings`` -- one reader for all five, delegating since
+    #130 to ``suppression.effective_findings`` -- is where both are answered:
 
-    - **No findings key in state has had baseline suppression applied.** `report`
-      writes ``filtered_findings`` before partitioning it, so a baseline that
+    - **The suppressed partition is subtracted.** `report` wrote
+      ``filtered_findings`` before partitioning it against the baseline until
+      upstream ``73dd1f1`` narrowed the key to the kept side, so a baseline that
       accepted every finding still counted them: ``Findings 2`` beside a report
       holding none.
     - **An ``or`` chain treats an empty list as an absent key** and falls back to
@@ -1803,6 +1804,93 @@ class TestASummaryTableAgreesWithItsReport:
         )
 
         assert [f.rule_id for f in result] == ["TM1"]
+
+
+def _reader_finding(rule_id: str) -> Finding:
+    """One Finding, distinguishable by its rule id alone."""
+    return Finding(
+        rule_id=rule_id, message="m", severity="LOW", confidence=1.0, file=f"{rule_id}.py"
+    )
+
+
+_KEPT = _reader_finding("TM1")
+_ACCEPTED = _reader_finding("TM2")
+_ACCEPTED_ENTRY = SuppressedFinding(finding=_ACCEPTED, reason="accepted")
+
+# Every shape a `graph.invoke` result can hand a consumer, including the ones a
+# real Scan cannot produce -- a hand-assembled result and a direct call of the
+# report node both reach the last four.
+_SELECTION_SHAPES: dict[str, dict[str, object]] = {
+    "a partitioned report": {
+        "findings": [_KEPT, _ACCEPTED],
+        "filtered_findings": [_KEPT],
+        "suppressed_findings": [_ACCEPTED_ENTRY],
+    },
+    "everything filtered away": {"findings": [_KEPT], "filtered_findings": []},
+    "everything suppressed": {
+        "filtered_findings": [_KEPT, _ACCEPTED],
+        "suppressed_findings": [
+            SuppressedFinding(finding=_KEPT, reason="accepted"),
+            _ACCEPTED_ENTRY,
+        ],
+    },
+    "no filtered key, nothing suppressed": {"findings": [_KEPT]},
+    "no filtered key, a suppressed partition": {
+        "findings": [_KEPT, _ACCEPTED],
+        "suppressed_findings": [_ACCEPTED_ENTRY],
+    },
+    "a malformed filtered key": {
+        "findings": [_KEPT, _ACCEPTED],
+        "filtered_findings": "not a list",
+        "suppressed_findings": [_ACCEPTED_ENTRY],
+    },
+    "a non-Finding member": {
+        "filtered_findings": [_KEPT, object()],
+        "suppressed_findings": [_ACCEPTED_ENTRY],
+    },
+    "nothing at all": {},
+}
+
+
+class TestOneRecursiveScanCountsItsFindingsOnce:
+    """Two readers ran over one child result of one ``--recursive`` Scan.
+
+    ``_combined_skill_entry``'s ``finding_count`` -- the number the combined JSON
+    report publishes per Skill, and the one the Multi-Skill Summary table prints
+    beside it -- counts through ``report.reported_findings``.
+    ``_multi_skill_public_record_count``, the budget deciding whether that
+    Skill's records fit in the recursive report at all, selects through
+    ``suppression.effective_findings``. One intent, two functions, and issue #130
+    measured them disagreeing on exactly one shape: ``filtered_findings`` absent
+    while ``suppressed_findings`` is present, where the fork's reader subtracted
+    a partition the raw ``findings`` list never came from. The fork's reader now
+    delegates to upstream's, so the disagreement is unrepresentable rather than
+    merely unreached.
+    """
+
+    @pytest.mark.parametrize("shape", list(_SELECTION_SHAPES), ids=list(_SELECTION_SHAPES))
+    def test_the_two_named_readers_select_the_same_findings(self, shape: str) -> None:
+        """Every shape either reader can be handed, not only the ones a Scan produces."""
+        result = _SELECTION_SHAPES[shape]
+
+        assert reported_findings(result) == effective_findings(result)
+
+    def test_the_budget_and_the_summary_count_one_result_identically(self) -> None:
+        """The two call sites, on the shape they disagreed about.
+
+        The two numbers are not equal by construction: the budget counts
+        occurrence records and adds the suppressed side to the active one, while
+        the summary counts active findings. What has to agree is the *selection*
+        -- subtract the one suppressed record and the budget is counting exactly
+        what the summary counts. Reading the fork's function before it delegated
+        left the budget one ahead.
+        """
+        result = _SELECTION_SHAPES["no filtered key, a suppressed partition"]
+        suppressed_records = 1
+
+        assert _multi_skill_public_record_count(result) - suppressed_records == len(
+            reported_findings(result)
+        )
 
 
 class TestAFreshBaselineHoldsWhatTheScanReports:
