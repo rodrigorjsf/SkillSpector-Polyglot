@@ -136,8 +136,8 @@ _PHASE = "static"
 # Security Initiative category they belong to, and these belong to none: a
 # conformance Rule states that a declaration disagrees with the specification,
 # not that a risk category applies. Claiming one would put this catalogue into a
-# risk taxonomy it was not measured against, which is the same reason
-# `docs/OWASP-AST10-COVERAGE.md` gives a rule no row rather than a nearby one.
+# risk taxonomy it was not measured against, so a Rule with no honest row gets
+# none rather than the nearest one.
 _TAGS: list[str] = []
 
 
