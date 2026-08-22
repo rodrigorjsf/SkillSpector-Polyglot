@@ -264,3 +264,4 @@ When something fails repeatedly, when User has to re-explain, or when a workarou
 - An issue's premise can predate a sync; measure the shape before repeating it in prose.
 - README rule tables and the pattern counts sit below the Inherited-documentation marker.
 - An empty-runs guard also fires on a hit whose Skills all failed; gate on discovery.
+- Sweep stale prose by its claim; a backticked-identifier grep misses the same assertion.

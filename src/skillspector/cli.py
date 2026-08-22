@@ -125,13 +125,17 @@ _MULTI_SKILL_MAX_REPORT_CHARACTERS = 4 * 1024 * 1024
 
 # `advice` carries everything that is a note *about* the scan rather than the
 # scan's product: advisories, progress lines, "Report saved to", per-skill
-# summaries that duplicate a report written elsewhere, errors and tracebacks. A
-# pipe leaves stderr alone and a terminal still shows it, so nothing is lost.
+# summaries that duplicate a report written elsewhere -- `--repo-scan`'s digest
+# and `_scan_multi_skill`'s `═══ Multi-Skill Summary ═══` table alike -- errors and
+# tracebacks. A pipe leaves stderr alone and a terminal still shows it, so
+# nothing is lost.
 #
-# The one line that has to be argued rather than classified is the Multi-Skill
-# Summary table; see `_scan_multi_skill`, which explains why that table *is* the
-# report of a `-f terminal --recursive` scan that was given no `--output`, and
-# only of that one.
+# No line here is an exception to argue: a new print site is classified by the
+# rule above, never by its neighbour. The Multi-Skill Summary table was the one
+# case that used to be argued -- `--recursive` wrote its combined report only to
+# `--output`, so once the flag engaged the table was the whole product of a
+# `-f terminal` scan given none -- and issue #114 gave that path the fall-back
+# every other one already had, so the table is a digest like the rest.
 advice = Console(stderr=True)
 
 _FALLTHROUGH_PREFIX = (
@@ -356,8 +360,8 @@ def _advise_on_advisory_findings(advisory: int) -> None:
     expression of the same fact. It is a note about the scan rather than part of
     it, so it goes to stderr like its siblings -- the report on stdout stays
     parseable, which is the rule `test_cli_streams.py` holds every line here to.
-    `advice` and never the `summary` console a Multi-Skill Scan picks: that
-    console is stdout in one case, and this line is never part of a report.
+    `advice` on every path, a Multi-Skill Scan's included: this line is never
+    part of a report, whichever discovery mode reached it.
 
     *advisory* is a total rather than one scan's count, because `--recursive` and
     `--repo-scan` invoke the graph once per discovered Skill and the note is

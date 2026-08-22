@@ -1496,8 +1496,8 @@ For CI/IDE tooling, `--format sarif` emits SARIF 2.1.0.
 ### Which stream carries what
 
 One rule covers every line the CLI prints: **the report goes to stdout, everything else goes to
-stderr** — advisories, progress lines, `Report saved to:`, per-skill summary tables (with one
-argued exception, below), the `--spec-checks` advisory-count note described under
+stderr** — advisories, progress lines, `Report saved to:`, per-skill summary tables, the
+`--spec-checks` advisory-count note described under
 [Specification conformance](#specification-conformance----spec-checks), errors and tracebacks. So both of
 these are pipelines you can rely on, with nothing to redirect away:
 

@@ -1422,9 +1422,8 @@ class TestTheSpecConformanceAdvisory:
     def test_a_recursive_scan_reports_its_advisory_total(self, tmp_path: Path) -> None:
         """``--recursive`` needs two Skills to engage, and the note is one total for both.
 
-        ``advice`` and never the ``summary`` console this path picks: that console
-        is stdout with ``-f terminal`` and no ``--output``, which is exactly the
-        shape asked for here.
+        ``advice`` on this path as on every other: since #114 the combined report
+        reaches stdout here, so a note printed there would land inside it.
         """
         self._nonconforming(tmp_path / "weather--report")
         self._nonconforming(tmp_path / "tide--report").joinpath("SKILL.md").write_text(
