@@ -265,3 +265,4 @@ When something fails repeatedly, when User has to re-explain, or when a workarou
 - README rule tables and the pattern counts sit below the Inherited-documentation marker.
 - An empty-runs guard also fires on a hit whose Skills all failed; gate on discovery.
 - Sweep stale prose by its claim; a backticked-identifier grep misses the same assertion.
+- SARIF cannot show a discovery miss; gate on JSON `skill_count`, not result count.

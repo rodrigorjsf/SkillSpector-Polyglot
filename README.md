@@ -797,7 +797,7 @@ and not helpfully so: it walks build output that `--repo-scan` skips.
 | `--format sarif --output` | one valid SARIF log, one run per skill | one valid SARIF log, one run per skill — upstream's own recursive SARIF merge arrived with the 2.9.6 sync and replaced the `--- path ---` concatenation this row used to describe, so anything splitting the file on that separator has to stop |
 | `--format json --output` | one object: `multi_skill`, `skill_count`, `max_risk_score`, `execution_successful`, `skills` — the *same* object `--recursive` builds, so a consumer tells the two modes apart by the flag it ran rather than by the body it parses | one object: `multi_skill`, `skill_count`, `max_risk_score`, `execution_successful`, `skills` |
 | `--format markdown --output` | per-skill bodies concatenated behind `--- <path> ---` — merging Markdown has no shape to reuse and was left alone | per-skill bodies concatenated behind `--- <path> ---` |
-| **No** `--output` | the report is written to stdout, in every format; `sarif` and `json` are each one merged document, `markdown` and `terminal` are the `--- path ---` concatenation of the rows above | `json` and `terminal` write to stdout the same body `--output` would have received; `sarif` and `markdown` write **nothing** there and still need `--output`. Markdown has no merged document to print; SARIF has one, and is pending only because [#114](https://github.com/rodrigorjsf/SkillSpector-Polyglot/issues/114) scoped itself to `json` ([#136](https://github.com/rodrigorjsf/SkillSpector-Polyglot/issues/136)). As with `--baseline`, all of this describes the flag **once it engages**: below the two-skill threshold it falls through to an ordinary scan, which writes a report to stdout in the requested format |
+| **No** `--output` | the report is written to stdout, in every format; `sarif` and `json` are each one merged document, `markdown` and `terminal` are the `--- path ---` concatenation of the rows above. A **discovery miss** is the exception in two of the four: `terminal` writes nothing at all, and `markdown` writes one document naming the miss rather than a concatenation — [Which stream carries what](#which-stream-carries-what) states it in full | `json` and `terminal` write to stdout the same body `--output` would have received; `sarif` and `markdown` write **nothing** there and still need `--output`. Markdown has no merged document to print; SARIF has one, and is pending only because [#114](https://github.com/rodrigorjsf/SkillSpector-Polyglot/issues/114) scoped itself to `json` ([#136](https://github.com/rodrigorjsf/SkillSpector-Polyglot/issues/136)). As with `--baseline`, all of this describes the flag **once it engages**: below the two-skill threshold it falls through to an ordinary scan, which writes a report to stdout in the requested format |
 | Discovery roots | `--repo-scan-root`, repeatable | not configurable |
 
 Use `--recursive` only for the shape it was built for: a flat directory whose immediate children are
@@ -1583,9 +1583,13 @@ something:
   and stdout carries the *designed* signal instead: an empty report in whichever machine-readable
   format was asked for. `--format sarif` gives a valid SARIF 2.1.0 log with one run and no result,
   `--format json` the merged repository object with `skill_count: 0` and an empty `skills` list, and
-  `--format markdown` a document naming the miss and the root patterns that were searched. So gate
-  on the content — `jq -e '[.runs[].results[]] | length > 0'`, or `jq -e '.skill_count > 0'` — and a
-  miss is now something the gate can see. The exit code is still `0`, because "searched a
+  `--format markdown` a document naming the miss and the root patterns that were searched. Gate on
+  the content with `--format json`: `jq -e '.skill_count > 0'` fails on a miss and passes on a clean
+  repository that simply found nothing wrong. **Do not gate on the SARIF result count.** One run
+  holding no result is also what a clean single-skill scan emits, so
+  `jq -e '[.runs[].results[]] | length > 0'` cannot tell a miss from a healthy repository — it fails
+  on both, and a gate built on it rejects every clean scan. `skill_count` is the machine-readable
+  miss signal; SARIF does not carry one. The exit code is still `0`, because "searched a
   repository, found nothing to scan" is a legitimate success; no new exit code was added.
   `--format terminal` is the one exception: a rendered report of no skills is nothing, so stdout
   stays empty there and the warning on stderr is the whole answer.
