@@ -70,9 +70,13 @@ The file carries one section per redistributed declaration, because the distribu
 one audience. `## Runtime Dependencies` is what every install pulls in — `project.dependencies`.
 `## Optional Dependencies (<extra> extra)` is what `pip install skillspector[<extra>]` adds beyond
 that runtime set, redistributed on the same footing once a consumer asks for it; today the only such
-section is `mcp`. The `dev` extra is deliberately in **none** of them: it declares tooling for
+section is `mcp`. The `dev` and `langgraph-dev` extras are deliberately in **none** of them: they declare tooling for
 working *on* this project rather than capability a consumer installs to *use* the distribution, so
-listing it would overstate what the distribution contains. That is a disclosure policy, not a claim
+listing them would overstate what the distribution contains. `langgraph-dev` supplies
+`langgraph-cli[inmem]`, the LangGraph dev server behind `make langgraph-dev`; the criterion was
+applied by measurement rather than by name — nothing under `src/` imports it, and the Makefile that
+invokes it is not part of the distribution. It was a runtime dependency, and disclosed as one, until
+upstream's `550b9f0` made it optional. That is a disclosure policy, not a claim
 that the extra is uninstallable — the built distribution publishes `Provides-Extra: dev` like any
 other extra, and `skillspector[dev]` in fact pulls `mcp` in through `skillspector[mcp]`.
 

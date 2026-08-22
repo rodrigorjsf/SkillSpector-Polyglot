@@ -55,12 +55,6 @@ and project URL.
 - **Copyright:** Copyright (c) 2024 LangChain, Inc.
 - **URL:** https://github.com/langchain-ai/langgraph
 
-### langgraph-cli
-
-- **License:** MIT
-- **Copyright:** Copyright (c) 2024 LangChain, Inc.
-- **URL:** https://github.com/langchain-ai/langgraph
-
 ### langchain-anthropic
 
 - **License:** MIT
@@ -126,9 +120,14 @@ and project URL.
 Installed when a consumer asks for the `mcp` extra — `pip install
 skillspector[mcp]`, and the `dev` extra pulls it in as well — and redistributed
 on the same footing as the runtime dependencies above once they do. The `dev`
-extra itself is deliberately absent from these notices: it declares tooling for
-working *on* this project rather than capability a consumer installs to *use*
-the distribution, so listing it would overstate what the distribution contains.
+and `langgraph-dev` extras are deliberately absent from these notices: they
+declare tooling for working *on* this project rather than capability a consumer
+installs to *use* the distribution, so listing them would overstate what the
+distribution contains. `langgraph-dev` supplies `langgraph-cli[inmem]`, the
+LangGraph dev server behind `make langgraph-dev`; nothing under `src/` imports
+it, and the Makefile that invokes it is not part of the distribution. It was a
+runtime dependency, and disclosed here as one, until upstream's `550b9f0` made
+it optional precisely so an ordinary install stops carrying it.
 
 Like the section above, this lists the **directly declared** dependencies only —
 the names this distribution itself declares. What each of them in turn pulls in

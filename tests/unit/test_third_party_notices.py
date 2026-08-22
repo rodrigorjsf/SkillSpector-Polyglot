@@ -90,14 +90,20 @@ _EXTRA_HEADING = re.compile(r"^## Optional Dependencies \((?P<extra>[^)]+) extra
 #: Extras the notices deliberately leave out, and the criterion for leaving one
 #: out: the extra declares tooling for working *on* this project rather than
 #: capability a consumer installs to *use* the distribution, so listing it would
-#: overstate what the distribution contains. ``dev`` is the only such extra.
+#: overstate what the distribution contains.
+#:
+#: ``dev`` is the project's own toolchain. ``langgraph-dev`` is the same kind of
+#: thing one dependency wide: ``langgraph-cli[inmem]``, the LangGraph dev server
+#: used to run this project's graph locally. It was a runtime dependency until
+#: upstream's ``550b9f0`` made it optional precisely so an ordinary install stops
+#: carrying it, and ``dev`` composes it by self-reference.
 #:
 #: This is a **disclosure policy, not a claim about installability**. The built
 #: distribution publishes ``Provides-Extra: dev`` like any other extra, so
 #: ``pip install skillspector[dev]`` resolves for anyone; what it resolves to is
 #: the project's own toolchain, which is not part of what the distribution
 #: delivers to a user of it.
-_NOT_REDISTRIBUTED_EXTRAS = {"dev"}
+_NOT_REDISTRIBUTED_EXTRAS = {"dev", "langgraph-dev"}
 
 
 def _normalise(name: str) -> str:

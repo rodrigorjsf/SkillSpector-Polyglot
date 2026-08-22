@@ -2,9 +2,20 @@
   "analysis_completeness": {
     "analyzer_statuses": [
       {
+        "analyzer_id": "artifact_integrity",
+        "completed": 2,
+        "failed": 0,
+        "partial": 0,
+        "planned_work": 2,
+        "skipped": 0,
+        "status": "completed",
+        "unaccounted": 0
+      },
+      {
         "analyzer_id": "behavioral_ast",
         "completed": 1,
         "failed": 0,
+        "partial": 0,
         "planned_work": 1,
         "skipped": 0,
         "status": "completed",
@@ -14,6 +25,7 @@
         "analyzer_id": "behavioral_taint_tracking",
         "completed": 1,
         "failed": 0,
+        "partial": 0,
         "planned_work": 1,
         "skipped": 0,
         "status": "completed",
@@ -21,18 +33,20 @@
       },
       {
         "analyzer_id": "mcp_least_privilege",
-        "completed": 1,
+        "completed": 2,
         "failed": 0,
-        "planned_work": 1,
+        "partial": 0,
+        "planned_work": 2,
         "skipped": 0,
         "status": "completed",
         "unaccounted": 0
       },
       {
         "analyzer_id": "mcp_rug_pull",
-        "completed": 1,
+        "completed": 2,
         "failed": 0,
-        "planned_work": 1,
+        "partial": 0,
+        "planned_work": 2,
         "skipped": 0,
         "status": "completed",
         "unaccounted": 0
@@ -41,6 +55,7 @@
         "analyzer_id": "mcp_tool_poisoning",
         "completed": 1,
         "failed": 0,
+        "partial": 0,
         "planned_work": 1,
         "skipped": 0,
         "status": "completed",
@@ -51,6 +66,7 @@
         "completed": 0,
         "failed": 0,
         "message": "Analyzer was disabled by the requested configuration.",
+        "partial": 0,
         "planned_work": 0,
         "reason_code": "disabled_by_configuration",
         "skipped": 0,
@@ -62,6 +78,7 @@
         "completed": 0,
         "failed": 0,
         "message": "Analyzer was disabled by the requested configuration.",
+        "partial": 0,
         "planned_work": 0,
         "reason_code": "disabled_by_configuration",
         "skipped": 0,
@@ -73,6 +90,7 @@
         "completed": 0,
         "failed": 0,
         "message": "Analyzer was disabled by the requested configuration.",
+        "partial": 0,
         "planned_work": 0,
         "reason_code": "disabled_by_configuration",
         "skipped": 0,
@@ -84,6 +102,7 @@
         "completed": 0,
         "failed": 0,
         "message": "Analyzer was disabled by the requested configuration.",
+        "partial": 0,
         "planned_work": 0,
         "reason_code": "disabled_by_configuration",
         "skipped": 0,
@@ -94,6 +113,7 @@
         "analyzer_id": "static_patterns_agent_snooping",
         "completed": 2,
         "failed": 0,
+        "partial": 0,
         "planned_work": 2,
         "skipped": 0,
         "status": "completed",
@@ -103,6 +123,7 @@
         "analyzer_id": "static_patterns_anti_refusal",
         "completed": 2,
         "failed": 0,
+        "partial": 0,
         "planned_work": 2,
         "skipped": 0,
         "status": "completed",
@@ -112,6 +133,17 @@
         "analyzer_id": "static_patterns_data_exfiltration",
         "completed": 2,
         "failed": 0,
+        "partial": 0,
+        "planned_work": 2,
+        "skipped": 0,
+        "status": "completed",
+        "unaccounted": 0
+      },
+      {
+        "analyzer_id": "static_patterns_deserialization",
+        "completed": 2,
+        "failed": 0,
+        "partial": 0,
         "planned_work": 2,
         "skipped": 0,
         "status": "completed",
@@ -121,6 +153,7 @@
         "analyzer_id": "static_patterns_excessive_agency",
         "completed": 2,
         "failed": 0,
+        "partial": 0,
         "planned_work": 2,
         "skipped": 0,
         "status": "completed",
@@ -130,6 +163,7 @@
         "analyzer_id": "static_patterns_harmful_content",
         "completed": 2,
         "failed": 0,
+        "partial": 0,
         "planned_work": 2,
         "skipped": 0,
         "status": "completed",
@@ -139,6 +173,7 @@
         "analyzer_id": "static_patterns_memory_poisoning",
         "completed": 2,
         "failed": 0,
+        "partial": 0,
         "planned_work": 2,
         "skipped": 0,
         "status": "completed",
@@ -148,6 +183,7 @@
         "analyzer_id": "static_patterns_output_handling",
         "completed": 2,
         "failed": 0,
+        "partial": 0,
         "planned_work": 2,
         "skipped": 0,
         "status": "completed",
@@ -157,6 +193,7 @@
         "analyzer_id": "static_patterns_privilege_escalation",
         "completed": 2,
         "failed": 0,
+        "partial": 0,
         "planned_work": 2,
         "skipped": 0,
         "status": "completed",
@@ -166,6 +203,7 @@
         "analyzer_id": "static_patterns_prompt_injection",
         "completed": 2,
         "failed": 0,
+        "partial": 0,
         "planned_work": 2,
         "skipped": 0,
         "status": "completed",
@@ -175,6 +213,7 @@
         "analyzer_id": "static_patterns_rogue_agent",
         "completed": 2,
         "failed": 0,
+        "partial": 0,
         "planned_work": 2,
         "skipped": 0,
         "status": "completed",
@@ -184,6 +223,7 @@
         "analyzer_id": "static_patterns_ssrf",
         "completed": 2,
         "failed": 0,
+        "partial": 0,
         "planned_work": 2,
         "skipped": 0,
         "status": "completed",
@@ -193,6 +233,7 @@
         "analyzer_id": "static_patterns_supply_chain",
         "completed": 2,
         "failed": 0,
+        "partial": 0,
         "planned_work": 2,
         "skipped": 0,
         "status": "completed",
@@ -202,6 +243,7 @@
         "analyzer_id": "static_patterns_system_prompt_leakage",
         "completed": 2,
         "failed": 0,
+        "partial": 0,
         "planned_work": 2,
         "skipped": 0,
         "status": "completed",
@@ -211,6 +253,7 @@
         "analyzer_id": "static_patterns_tool_misuse",
         "completed": 2,
         "failed": 0,
+        "partial": 0,
         "planned_work": 2,
         "skipped": 0,
         "status": "completed",
@@ -220,6 +263,7 @@
         "analyzer_id": "static_yara",
         "completed": 2,
         "failed": 0,
+        "partial": 0,
         "planned_work": 2,
         "skipped": 0,
         "status": "completed",
@@ -232,17 +276,14 @@
     "findings_after_filtering": 4,
     "findings_before_filtering": 4,
     "fully_inspected_files": 2,
-    "is_complete": false,
+    "is_complete": true,
     "ledger_exceptions": [],
-    "limitations": [
-      "Analyzer was disabled by the requested configuration.",
-      "Analyzer was disabled by the requested configuration.",
-      "Analyzer was disabled by the requested configuration.",
-      "Analyzer was disabled by the requested configuration."
-    ],
+    "limitations": [],
     "partially_inspected_files": 0,
+    "references": [],
     "scanned_components": 2,
     "scope_exclusions": [],
+    "status": "complete",
     "total_components": 2
   },
   "component_metadata": [
@@ -268,20 +309,27 @@
       "confidence": 0.7,
       "context": null,
       "end_line": null,
+      "evidence": {},
       "explanation": "Without declared permissions the skill's intent is opaque and cannot be validated.",
       "file": "SKILL.md",
       "finding": null,
       "intent": null,
+      "match_fingerprint": null,
       "matched_text": null,
-      "message": "Skill has no declared permissions but code capabilities were detected: shell.",
+      "message": "Skill declares no tool scope ('permissions' or 'allowed-tools') but code capabilities were detected: shell.",
+      "occurrences": [],
       "pattern": null,
-      "remediation": "Add a 'permissions' field to SKILL.md listing the capabilities this skill requires.",
+      "remediation": "Declare the skill's tool scope: for Claude Code / Agent Skills SKILL.md, list the tools the skill may invoke in the 'allowed-tools' frontmatter field; for MCP server manifests, add a 'permissions' list naming the required capabilities.",
       "rule_id": "LP3",
       "severity": "MEDIUM",
+      "source_digest": null,
+      "source_identity": null,
+      "source_url": null,
       "start_line": 1,
       "tags": [
         "ASI02"
-      ]
+      ],
+      "transitive_depth": 0
     },
     {
       "category": "Dangerous Code Execution",
@@ -289,20 +337,27 @@
       "confidence": 0.7,
       "context": "\ndef format_file(path: str) -> None:\n    \"\"\"Format a markdown file using an external tool.\"\"\"\n    subprocess.run([\"pandoc\", \"--wrap=auto\", \"-o\", path, path], check=True)\n    subprocess.run([\"bash\", \"-c\", f\"chmod 644 {path}\"], check=True)",
       "end_line": 8,
+      "evidence": {},
       "explanation": "subprocess module calls execute external commands. Without careful input validation, this enables command injection.",
       "file": "formatter.py",
       "finding": "    subprocess.run([\"pandoc\", \"--wrap=auto\", \"-o\", path, path], check=True)",
       "intent": null,
+      "match_fingerprint": null,
       "matched_text": "    subprocess.run([\"pandoc\", \"--wrap=auto\", \"-o\", path, path], check=True)",
       "message": "subprocess module call",
+      "occurrences": [],
       "pattern": "subprocess module call",
       "remediation": "Use subprocess.run() with shell=False and an explicit argument list. Validate all inputs and avoid passing user-controlled data to commands.",
       "rule_id": "AST4",
       "severity": "MEDIUM",
+      "source_digest": null,
+      "source_identity": null,
+      "source_url": null,
       "start_line": 8,
       "tags": [
         "Dangerous Code Execution"
-      ]
+      ],
+      "transitive_depth": 0
     },
     {
       "category": "Privilege Escalation",
@@ -310,20 +365,27 @@
       "confidence": 0.8,
       "context": "def format_file(path: str) -> None:\n    \"\"\"Format a markdown file using an external tool.\"\"\"\n    subprocess.run([\"pandoc\", \"--wrap=auto\", \"-o\", path, path], check=True)\n    subprocess.run([\"bash\", \"-c\", f\"chmod 644 {path}\"], check=True)",
       "end_line": null,
+      "evidence": {},
       "explanation": "Commands invoke sudo or root privileges. Verify this elevated access is necessary and justified.",
       "file": "formatter.py",
       "finding": "chmod 644",
       "intent": null,
+      "match_fingerprint": null,
       "matched_text": "chmod 644",
       "message": "Sudo/Root Execution",
+      "occurrences": [],
       "pattern": "Sudo/Root Execution",
       "remediation": "Avoid sudo/root unless strictly required. Prefer least-privilege patterns. If elevation is needed, document the justification and scope.",
       "rule_id": "PE2",
       "severity": "MEDIUM",
+      "source_digest": null,
+      "source_identity": null,
+      "source_url": null,
       "start_line": 9,
       "tags": [
         "Privilege Escalation"
-      ]
+      ],
+      "transitive_depth": 0
     },
     {
       "category": "Dangerous Code Execution",
@@ -331,20 +393,27 @@
       "confidence": 0.7,
       "context": "def format_file(path: str) -> None:\n    \"\"\"Format a markdown file using an external tool.\"\"\"\n    subprocess.run([\"pandoc\", \"--wrap=auto\", \"-o\", path, path], check=True)\n    subprocess.run([\"bash\", \"-c\", f\"chmod 644 {path}\"], check=True)",
       "end_line": 9,
+      "evidence": {},
       "explanation": "subprocess module calls execute external commands. Without careful input validation, this enables command injection.",
       "file": "formatter.py",
       "finding": "    subprocess.run([\"bash\", \"-c\", f\"chmod 644 {path}\"], check=True)",
       "intent": null,
+      "match_fingerprint": null,
       "matched_text": "    subprocess.run([\"bash\", \"-c\", f\"chmod 644 {path}\"], check=True)",
       "message": "subprocess module call",
+      "occurrences": [],
       "pattern": "subprocess module call",
       "remediation": "Use subprocess.run() with shell=False and an explicit argument list. Validate all inputs and avoid passing user-controlled data to commands.",
       "rule_id": "AST4",
       "severity": "MEDIUM",
+      "source_digest": null,
+      "source_identity": null,
+      "source_url": null,
       "start_line": 9,
       "tags": [
         "Dangerous Code Execution"
-      ]
+      ],
+      "transitive_depth": 0
     }
   ],
   "has_executable_scripts": true,
@@ -366,44 +435,22 @@
         "invocations": [
           {
             "executionSuccessful": true,
-            "toolExecutionNotifications": [
-              {
-                "level": "warning",
-                "message": {
-                  "text": "Analyzer was disabled by the requested configuration."
-                },
-                "properties": {
-                  "kind": "inspection_limitation"
-                }
-              },
-              {
-                "level": "warning",
-                "message": {
-                  "text": "Analyzer was disabled by the requested configuration."
-                },
-                "properties": {
-                  "kind": "inspection_limitation"
-                }
-              },
-              {
-                "level": "warning",
-                "message": {
-                  "text": "Analyzer was disabled by the requested configuration."
-                },
-                "properties": {
-                  "kind": "inspection_limitation"
-                }
-              },
-              {
-                "level": "warning",
-                "message": {
-                  "text": "Analyzer was disabled by the requested configuration."
-                },
-                "properties": {
-                  "kind": "inspection_limitation"
-                }
+            "properties": {
+              "analysisCompleteness": {
+                "coveragePercent": 100.0,
+                "entirelyUninspectedFiles": 0,
+                "fullyInspectedFiles": 2,
+                "isComplete": true,
+                "ledgerExceptionCount": 0,
+                "limitationCount": 0,
+                "notificationRecordLimit": 10000,
+                "notificationsTruncated": false,
+                "partiallyInspectedFiles": 0,
+                "scopeExclusionCount": 0,
+                "status": "complete",
+                "totalComponents": 2
               }
-            ]
+            }
           }
         ],
         "results": [
@@ -422,13 +469,14 @@
               }
             ],
             "message": {
-              "text": "Skill has no declared permissions but code capabilities were detected: shell."
+              "text": "Skill declares no tool scope ('permissions' or 'allowed-tools') but code capabilities were detected: shell."
             },
             "properties": {
               "category": "MCP Least Privilege",
               "confidence": 0.7,
+              "evidence": {},
               "explanation": "Without declared permissions the skill's intent is opaque and cannot be validated.",
-              "remediation": "Add a 'permissions' field to SKILL.md listing the capabilities this skill requires.",
+              "remediation": "Declare the skill's tool scope: for Claude Code / Agent Skills SKILL.md, list the tools the skill may invoke in the 'allowed-tools' frontmatter field; for MCP server manifests, add a 'permissions' list naming the required capabilities.",
               "severity": "MEDIUM",
               "tags": [
                 "ASI02"
@@ -458,6 +506,7 @@
               "category": "Dangerous Code Execution",
               "code_snippet": "\ndef format_file(path: str) -> None:\n    \"\"\"Format a markdown file using an external tool.\"\"\"\n    subprocess.run([\"pandoc\", \"--wrap=auto\", \"-o\", path, path], check=True)\n    subprocess.run([\"bash\", \"-c\", f\"chmod 644 {path}\"], check=True)",
               "confidence": 0.7,
+              "evidence": {},
               "explanation": "subprocess module calls execute external commands. Without careful input validation, this enables command injection.",
               "finding": "    subprocess.run([\"pandoc\", \"--wrap=auto\", \"-o\", path, path], check=True)",
               "pattern": "subprocess module call",
@@ -490,6 +539,7 @@
               "category": "Privilege Escalation",
               "code_snippet": "def format_file(path: str) -> None:\n    \"\"\"Format a markdown file using an external tool.\"\"\"\n    subprocess.run([\"pandoc\", \"--wrap=auto\", \"-o\", path, path], check=True)\n    subprocess.run([\"bash\", \"-c\", f\"chmod 644 {path}\"], check=True)",
               "confidence": 0.8,
+              "evidence": {},
               "explanation": "Commands invoke sudo or root privileges. Verify this elevated access is necessary and justified.",
               "finding": "chmod 644",
               "pattern": "Sudo/Root Execution",
@@ -523,6 +573,7 @@
               "category": "Dangerous Code Execution",
               "code_snippet": "def format_file(path: str) -> None:\n    \"\"\"Format a markdown file using an external tool.\"\"\"\n    subprocess.run([\"pandoc\", \"--wrap=auto\", \"-o\", path, path], check=True)\n    subprocess.run([\"bash\", \"-c\", f\"chmod 644 {path}\"], check=True)",
               "confidence": 0.7,
+              "evidence": {},
               "explanation": "subprocess module calls execute external commands. Without careful input validation, this enables command injection.",
               "finding": "    subprocess.run([\"bash\", \"-c\", f\"chmod 644 {path}\"], check=True)",
               "pattern": "subprocess module call",
@@ -548,7 +599,7 @@
               {
                 "id": "LP3",
                 "shortDescription": {
-                  "text": "Skill has no declared permissions but code capabilities were detected: shell."
+                  "text": "Skill declares no tool scope ('permissions' or 'allowed-tools') but code capabilities were detected: shell."
                 }
               },
               {

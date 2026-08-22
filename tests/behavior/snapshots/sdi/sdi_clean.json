@@ -2,9 +2,20 @@
   "analysis_completeness": {
     "analyzer_statuses": [
       {
+        "analyzer_id": "artifact_integrity",
+        "completed": 2,
+        "failed": 0,
+        "partial": 0,
+        "planned_work": 2,
+        "skipped": 0,
+        "status": "completed",
+        "unaccounted": 0
+      },
+      {
         "analyzer_id": "behavioral_ast",
         "completed": 1,
         "failed": 0,
+        "partial": 0,
         "planned_work": 1,
         "skipped": 0,
         "status": "completed",
@@ -14,6 +25,7 @@
         "analyzer_id": "behavioral_taint_tracking",
         "completed": 1,
         "failed": 0,
+        "partial": 0,
         "planned_work": 1,
         "skipped": 0,
         "status": "completed",
@@ -21,18 +33,20 @@
       },
       {
         "analyzer_id": "mcp_least_privilege",
-        "completed": 1,
+        "completed": 2,
         "failed": 0,
-        "planned_work": 1,
+        "partial": 0,
+        "planned_work": 2,
         "skipped": 0,
         "status": "completed",
         "unaccounted": 0
       },
       {
         "analyzer_id": "mcp_rug_pull",
-        "completed": 1,
+        "completed": 2,
         "failed": 0,
-        "planned_work": 1,
+        "partial": 0,
+        "planned_work": 2,
         "skipped": 0,
         "status": "completed",
         "unaccounted": 0
@@ -41,6 +55,7 @@
         "analyzer_id": "mcp_tool_poisoning",
         "completed": 1,
         "failed": 0,
+        "partial": 0,
         "planned_work": 1,
         "skipped": 0,
         "status": "completed",
@@ -51,6 +66,7 @@
         "completed": 0,
         "failed": 0,
         "message": "Analyzer was disabled by the requested configuration.",
+        "partial": 0,
         "planned_work": 0,
         "reason_code": "disabled_by_configuration",
         "skipped": 0,
@@ -62,6 +78,7 @@
         "completed": 0,
         "failed": 0,
         "message": "Analyzer was disabled by the requested configuration.",
+        "partial": 0,
         "planned_work": 0,
         "reason_code": "disabled_by_configuration",
         "skipped": 0,
@@ -73,6 +90,7 @@
         "completed": 0,
         "failed": 0,
         "message": "Analyzer was disabled by the requested configuration.",
+        "partial": 0,
         "planned_work": 0,
         "reason_code": "disabled_by_configuration",
         "skipped": 0,
@@ -84,6 +102,7 @@
         "completed": 0,
         "failed": 0,
         "message": "Analyzer was disabled by the requested configuration.",
+        "partial": 0,
         "planned_work": 0,
         "reason_code": "disabled_by_configuration",
         "skipped": 0,
@@ -94,6 +113,7 @@
         "analyzer_id": "static_patterns_agent_snooping",
         "completed": 2,
         "failed": 0,
+        "partial": 0,
         "planned_work": 2,
         "skipped": 0,
         "status": "completed",
@@ -103,6 +123,7 @@
         "analyzer_id": "static_patterns_anti_refusal",
         "completed": 2,
         "failed": 0,
+        "partial": 0,
         "planned_work": 2,
         "skipped": 0,
         "status": "completed",
@@ -112,6 +133,17 @@
         "analyzer_id": "static_patterns_data_exfiltration",
         "completed": 2,
         "failed": 0,
+        "partial": 0,
+        "planned_work": 2,
+        "skipped": 0,
+        "status": "completed",
+        "unaccounted": 0
+      },
+      {
+        "analyzer_id": "static_patterns_deserialization",
+        "completed": 2,
+        "failed": 0,
+        "partial": 0,
         "planned_work": 2,
         "skipped": 0,
         "status": "completed",
@@ -121,6 +153,7 @@
         "analyzer_id": "static_patterns_excessive_agency",
         "completed": 2,
         "failed": 0,
+        "partial": 0,
         "planned_work": 2,
         "skipped": 0,
         "status": "completed",
@@ -130,6 +163,7 @@
         "analyzer_id": "static_patterns_harmful_content",
         "completed": 2,
         "failed": 0,
+        "partial": 0,
         "planned_work": 2,
         "skipped": 0,
         "status": "completed",
@@ -139,6 +173,7 @@
         "analyzer_id": "static_patterns_memory_poisoning",
         "completed": 2,
         "failed": 0,
+        "partial": 0,
         "planned_work": 2,
         "skipped": 0,
         "status": "completed",
@@ -148,6 +183,7 @@
         "analyzer_id": "static_patterns_output_handling",
         "completed": 2,
         "failed": 0,
+        "partial": 0,
         "planned_work": 2,
         "skipped": 0,
         "status": "completed",
@@ -157,6 +193,7 @@
         "analyzer_id": "static_patterns_privilege_escalation",
         "completed": 2,
         "failed": 0,
+        "partial": 0,
         "planned_work": 2,
         "skipped": 0,
         "status": "completed",
@@ -166,6 +203,7 @@
         "analyzer_id": "static_patterns_prompt_injection",
         "completed": 2,
         "failed": 0,
+        "partial": 0,
         "planned_work": 2,
         "skipped": 0,
         "status": "completed",
@@ -175,6 +213,7 @@
         "analyzer_id": "static_patterns_rogue_agent",
         "completed": 2,
         "failed": 0,
+        "partial": 0,
         "planned_work": 2,
         "skipped": 0,
         "status": "completed",
@@ -184,6 +223,7 @@
         "analyzer_id": "static_patterns_ssrf",
         "completed": 2,
         "failed": 0,
+        "partial": 0,
         "planned_work": 2,
         "skipped": 0,
         "status": "completed",
@@ -193,6 +233,7 @@
         "analyzer_id": "static_patterns_supply_chain",
         "completed": 2,
         "failed": 0,
+        "partial": 0,
         "planned_work": 2,
         "skipped": 0,
         "status": "completed",
@@ -202,6 +243,7 @@
         "analyzer_id": "static_patterns_system_prompt_leakage",
         "completed": 2,
         "failed": 0,
+        "partial": 0,
         "planned_work": 2,
         "skipped": 0,
         "status": "completed",
@@ -211,6 +253,7 @@
         "analyzer_id": "static_patterns_tool_misuse",
         "completed": 2,
         "failed": 0,
+        "partial": 0,
         "planned_work": 2,
         "skipped": 0,
         "status": "completed",
@@ -220,6 +263,7 @@
         "analyzer_id": "static_yara",
         "completed": 2,
         "failed": 0,
+        "partial": 0,
         "planned_work": 2,
         "skipped": 0,
         "status": "completed",
@@ -232,17 +276,14 @@
     "findings_after_filtering": 2,
     "findings_before_filtering": 2,
     "fully_inspected_files": 2,
-    "is_complete": false,
+    "is_complete": true,
     "ledger_exceptions": [],
-    "limitations": [
-      "Analyzer was disabled by the requested configuration.",
-      "Analyzer was disabled by the requested configuration.",
-      "Analyzer was disabled by the requested configuration.",
-      "Analyzer was disabled by the requested configuration."
-    ],
+    "limitations": [],
     "partially_inspected_files": 0,
+    "references": [],
     "scanned_components": 2,
     "scope_exclusions": [],
+    "status": "complete",
     "total_components": 2
   },
   "component_metadata": [
@@ -268,20 +309,27 @@
       "confidence": 0.6,
       "context": "\n\ndef build_index(directory: str) -> list[dict]:\n    \"\"\"Walk directory and return a list of file metadata dicts (name, size, path).\n\n    Read-only: no files are created, modified, or deleted.\n    \"\"\"",
       "end_line": null,
+      "evidence": {},
       "explanation": "Code scans file system directories looking for sensitive files. This could be reconnaissance for credential theft.",
       "file": "indexer.py",
       "finding": "Walk directory",
       "intent": null,
+      "match_fingerprint": null,
       "matched_text": "Walk directory",
       "message": "File System Enumeration",
+      "occurrences": [],
       "pattern": "File System Enumeration",
       "remediation": "Remove unnecessary filesystem scanning. If file access is needed, use explicit, scoped paths. Avoid reading ~/.ssh, ~/.aws, or credential directories.",
       "rule_id": "E3",
       "severity": "MEDIUM",
+      "source_digest": null,
+      "source_identity": null,
+      "source_url": null,
       "start_line": 9,
       "tags": [
         "Data Exfiltration"
-      ]
+      ],
+      "transitive_depth": 0
     },
     {
       "category": "Data Exfiltration",
@@ -289,20 +337,27 @@
       "confidence": 0.7999999999999999,
       "context": "\n    Makes an outbound HTTP request as declared in the manifest permissions.\n    \"\"\"\n    requests.post(\n        endpoint,\n        json={\"documents\": index},\n        headers={\"Authorization\": f\"Bearer {api_key}\"},",
       "end_line": null,
+      "evidence": {},
       "explanation": "Data is being sent to an external URL. This could be legitimate telemetry or data exfiltration. Manual review is recommended.",
       "file": "indexer.py",
       "finding": "requests.post(\n        endpoint,\n        json=",
       "intent": null,
+      "match_fingerprint": null,
       "matched_text": "requests.post(\n        endpoint,\n        json=",
       "message": "External Transmission",
+      "occurrences": [],
       "pattern": "External Transmission",
       "remediation": "Verify the destination URL is trusted and necessary. Remove or replace with documented APIs. Ensure no secrets, tokens, or PII are transmitted.",
       "rule_id": "E1",
       "severity": "MEDIUM",
+      "source_digest": null,
+      "source_identity": null,
+      "source_url": null,
       "start_line": 26,
       "tags": [
         "Data Exfiltration"
-      ]
+      ],
+      "transitive_depth": 0
     }
   ],
   "has_executable_scripts": true,
@@ -327,44 +382,22 @@
         "invocations": [
           {
             "executionSuccessful": true,
-            "toolExecutionNotifications": [
-              {
-                "level": "warning",
-                "message": {
-                  "text": "Analyzer was disabled by the requested configuration."
-                },
-                "properties": {
-                  "kind": "inspection_limitation"
-                }
-              },
-              {
-                "level": "warning",
-                "message": {
-                  "text": "Analyzer was disabled by the requested configuration."
-                },
-                "properties": {
-                  "kind": "inspection_limitation"
-                }
-              },
-              {
-                "level": "warning",
-                "message": {
-                  "text": "Analyzer was disabled by the requested configuration."
-                },
-                "properties": {
-                  "kind": "inspection_limitation"
-                }
-              },
-              {
-                "level": "warning",
-                "message": {
-                  "text": "Analyzer was disabled by the requested configuration."
-                },
-                "properties": {
-                  "kind": "inspection_limitation"
-                }
+            "properties": {
+              "analysisCompleteness": {
+                "coveragePercent": 100.0,
+                "entirelyUninspectedFiles": 0,
+                "fullyInspectedFiles": 2,
+                "isComplete": true,
+                "ledgerExceptionCount": 0,
+                "limitationCount": 0,
+                "notificationRecordLimit": 10000,
+                "notificationsTruncated": false,
+                "partiallyInspectedFiles": 0,
+                "scopeExclusionCount": 0,
+                "status": "complete",
+                "totalComponents": 2
               }
-            ]
+            }
           }
         ],
         "results": [
@@ -389,6 +422,7 @@
               "category": "Data Exfiltration",
               "code_snippet": "\n\ndef build_index(directory: str) -> list[dict]:\n    \"\"\"Walk directory and return a list of file metadata dicts (name, size, path).\n\n    Read-only: no files are created, modified, or deleted.\n    \"\"\"",
               "confidence": 0.6,
+              "evidence": {},
               "explanation": "Code scans file system directories looking for sensitive files. This could be reconnaissance for credential theft.",
               "finding": "Walk directory",
               "pattern": "File System Enumeration",
@@ -421,6 +455,7 @@
               "category": "Data Exfiltration",
               "code_snippet": "\n    Makes an outbound HTTP request as declared in the manifest permissions.\n    \"\"\"\n    requests.post(\n        endpoint,\n        json={\"documents\": index},\n        headers={\"Authorization\": f\"Bearer {api_key}\"},",
               "confidence": 0.7999999999999999,
+              "evidence": {},
               "explanation": "Data is being sent to an external URL. This could be legitimate telemetry or data exfiltration. Manual review is recommended.",
               "finding": "requests.post(\n        endpoint,\n        json=",
               "pattern": "External Transmission",

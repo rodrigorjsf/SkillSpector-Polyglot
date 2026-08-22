@@ -270,12 +270,16 @@ def test_langchain4j_detection_reports_its_analyzer_and_costs_only_that_row() ->
     assert statuses["framework_langchain4j"]["status"] == "completed"
     assert statuses["framework_langchain4j"]["planned_work"] == 1
     assert statuses["framework_langchain4j"]["completed"] == 1
-    assert completeness["is_complete"] is False
+    # These recorded 3 limitations, one per semantic Analyzer `--no-llm` turns
+    # off, and that was why `is_complete` was False. Upstream's `698e2bf` stopped
+    # counting an explicitly disabled Analyzer as a limitation, so a `--no-llm`
+    # scan of a fixture with nothing else wrong is now complete. What this test
+    # is about is unchanged: the Framework Analyzer costs one status row and
+    # contributes no limitation of its own.
+    assert completeness["is_complete"] is True
     assert completeness["execution_successful"] is True
     assert completeness["coverage_percent"] == 100.0
-    assert (
-        completeness["limitations"] == ["Analyzer was disabled by the requested configuration."] * 3
-    )
+    assert completeness["limitations"] == []
 
 
 def test_langchain4j_tool_mode_proves_the_non_shell_rules() -> None:
@@ -344,12 +348,16 @@ def test_langchain4j_tool_mode_costs_only_the_rows_it_opens() -> None:
     assert statuses["framework_langchain4j"]["planned_work"] == 6
     assert statuses["framework_langchain4j"]["completed"] == 6
     assert statuses["framework_langchain4j"]["unaccounted"] == 0
-    assert completeness["is_complete"] is False
+    # These recorded 4 limitations, one per semantic Analyzer `--no-llm` turns
+    # off, and that was why `is_complete` was False. Upstream's `698e2bf` stopped
+    # counting an explicitly disabled Analyzer as a limitation, so a `--no-llm`
+    # scan of a fixture with nothing else wrong is now complete. What this test
+    # is about is unchanged: the Framework Analyzer costs one status row and
+    # contributes no limitation of its own.
+    assert completeness["is_complete"] is True
     assert completeness["execution_successful"] is True
     assert completeness["coverage_percent"] == 100.0
-    assert (
-        completeness["limitations"] == ["Analyzer was disabled by the requested configuration."] * 4
-    )
+    assert completeness["limitations"] == []
     assert statuses["meta_analyzer"]["status"] == "disabled"
 
 
@@ -472,18 +480,32 @@ def test_the_sort_orders_a_tied_pair_regardless_of_input_order() -> None:
     assert proj._sort(pair, "$.findings") == proj._sort(list(reversed(pair)), "$.findings")
 
 
-def test_the_unexercised_sort_keys_are_still_unexercised() -> None:
-    """``ledger_exceptions`` and ``scope_exclusions`` are empty in every fixture.
+#: The one fixture whose scan records a ledger exception, and the reason it
+#: records. Upstream's `c94b50a` brought reference resolution to this contract,
+#: and this fixture's ``SKILL.md`` carries a path-like string that resolves to
+#: nothing -- so ``ledger_exceptions`` stopped being empty everywhere. Named
+#: rather than counted, so a *different* exception appearing anywhere still
+#: fails here.
+_LEDGER_EXCEPTION_FIXTURES = {"sqp/sqp1_clean": ["reference_unresolved"]}
 
-    Their named key has therefore still never ordered anything, which is a
-    stated coverage limit rather than a defect. Asserted so that the day a
-    fixture populates one, this fails and the limit is revisited instead of
-    quietly becoming false.
+
+def test_only_the_named_fixture_records_a_ledger_exception() -> None:
+    """``scope_exclusions`` is still unexercised; ``ledger_exceptions`` no longer is.
+
+    ``scope_exclusions``' named sort key has therefore still never ordered
+    anything, which is a stated coverage limit rather than a defect. Asserted so
+    that the day a fixture populates it, this fails and the limit is revisited
+    instead of quietly becoming false -- which is exactly what happened to
+    ``ledger_exceptions``, now pinned above to the one fixture that populates it.
     """
+    observed = {}
     for name in proj.CORPUS_NAMES:
         completeness = proj.load_snapshot(name)["analysis_completeness"]
-        assert not completeness.get("ledger_exceptions")
         assert not completeness.get("scope_exclusions")
+        exceptions = completeness.get("ledger_exceptions")
+        if exceptions:
+            observed[name] = [exception["reason_code"] for exception in exceptions]
+    assert observed == _LEDGER_EXCEPTION_FIXTURES
 
 
 # --------------------------------------------------------------------------- #

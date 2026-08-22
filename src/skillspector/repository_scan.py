@@ -48,6 +48,7 @@ still never reaches this module.
 from __future__ import annotations
 
 import os
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
@@ -57,7 +58,13 @@ from skillspector.logging_config import get_logger
 # Imported rather than restated. A directory the ordinary walk refuses to read
 # must not be searched for Skills either, and two copies of that list would
 # drift apart the first time either was extended.
-from skillspector.multi_skill import _extract_skill_name, _has_skill_md
+from skillspector.multi_skill import (
+    MAX_MULTI_SKILL_RUNTIME_SECONDS,
+    _DetectionBudget,
+    _DetectionIncompleteError,
+    _extract_skill_name,
+    _has_skill_md,
+)
 from skillspector.nodes.build_context import _SKIP_DIRS
 
 logger = get_logger(__name__)
@@ -137,6 +144,17 @@ def discover_skills(
     enterable_hidden = _hidden_directories_to_enter(roots)
     skipped = _SKIP_DIRS | JVM_BUILD_DIRECTORIES
     discovered: list[DiscoveredSkill] = []
+    # The same shared runtime ceiling multi-skill detection charges its manifest
+    # reads against, because this walk calls the same two helpers. Discovery
+    # stops at the deadline and reports what it found: a Repository Scan that
+    # runs out of budget has fewer Skills to scan, not a traceback.
+    clock = time.monotonic
+    started_at = clock()
+    budget = _DetectionBudget(
+        started_at=started_at,
+        deadline=started_at + MAX_MULTI_SKILL_RUNTIME_SECONDS,
+        clock=clock,
+    )
 
     for current, directory_names, _files in os.walk(repository_root):
         current_path = Path(current)
@@ -157,13 +175,21 @@ def discover_skills(
         relative_path = relative.as_posix()
         if not _is_under_discovery_root(relative_path, roots):
             continue
-        if not _has_skill_md(current_path):
-            continue
+        try:
+            if not _has_skill_md(current_path, budget=budget):
+                continue
+            name = _extract_skill_name(current_path, budget=budget)
+        except _DetectionIncompleteError:
+            logger.warning(
+                "Repository Scan discovery stopped at its runtime bound under %s",
+                repository_root,
+            )
+            break
         discovered.append(
             DiscoveredSkill(
                 path=current_path,
                 relative_path=relative_path,
-                name=_extract_skill_name(current_path),
+                name=name,
             )
         )
 

@@ -1332,12 +1332,16 @@ class TestTheDetectionFixtureThroughTheRealGraph:
         """The behavioral cost of this Ticket is one status row and nothing else."""
         completeness = self._scan()["analysis_completeness"]
 
-        # The three limitations are the disabled semantic Analyzers, and they
-        # are why `is_complete` is False on this fixture -- unchanged by a
-        # Framework Analyzer that reports `completed`.
-        assert len(completeness["limitations"]) == 3
+        # The disabled semantic Analyzers used to be three limitations here, and
+        # were why `is_complete` was False on this fixture. Upstream's `698e2bf`
+        # stopped counting an Analyzer the run explicitly turned off as a
+        # limitation, so a `--no-llm` scan of a complete fixture now reports no
+        # limitation at all. What this test is about is unchanged: a Framework
+        # Analyzer that reports `completed` adds nothing to the list, whatever
+        # else is or is not on it.
+        assert completeness["limitations"] == []
         assert analyzer.ANALYZER_ID not in " ".join(completeness["limitations"])
-        assert completeness["is_complete"] is False
+        assert completeness["is_complete"] is True
         assert completeness["execution_successful"] is True
         assert completeness["coverage_percent"] == 100.0
         assert completeness["fully_inspected_files"] == 1

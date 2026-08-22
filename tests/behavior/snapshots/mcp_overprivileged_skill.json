@@ -2,9 +2,20 @@
   "analysis_completeness": {
     "analyzer_statuses": [
       {
+        "analyzer_id": "artifact_integrity",
+        "completed": 2,
+        "failed": 0,
+        "partial": 0,
+        "planned_work": 2,
+        "skipped": 0,
+        "status": "completed",
+        "unaccounted": 0
+      },
+      {
         "analyzer_id": "behavioral_ast",
         "completed": 1,
         "failed": 0,
+        "partial": 0,
         "planned_work": 1,
         "skipped": 0,
         "status": "completed",
@@ -14,6 +25,7 @@
         "analyzer_id": "behavioral_taint_tracking",
         "completed": 1,
         "failed": 0,
+        "partial": 0,
         "planned_work": 1,
         "skipped": 0,
         "status": "completed",
@@ -21,18 +33,20 @@
       },
       {
         "analyzer_id": "mcp_least_privilege",
-        "completed": 1,
+        "completed": 2,
         "failed": 0,
-        "planned_work": 1,
+        "partial": 0,
+        "planned_work": 2,
         "skipped": 0,
         "status": "completed",
         "unaccounted": 0
       },
       {
         "analyzer_id": "mcp_rug_pull",
-        "completed": 1,
+        "completed": 2,
         "failed": 0,
-        "planned_work": 1,
+        "partial": 0,
+        "planned_work": 2,
         "skipped": 0,
         "status": "completed",
         "unaccounted": 0
@@ -41,6 +55,7 @@
         "analyzer_id": "mcp_tool_poisoning",
         "completed": 1,
         "failed": 0,
+        "partial": 0,
         "planned_work": 1,
         "skipped": 0,
         "status": "completed",
@@ -51,6 +66,7 @@
         "completed": 0,
         "failed": 0,
         "message": "Analyzer was disabled by the requested configuration.",
+        "partial": 0,
         "planned_work": 0,
         "reason_code": "disabled_by_configuration",
         "skipped": 0,
@@ -62,6 +78,7 @@
         "completed": 0,
         "failed": 0,
         "message": "Analyzer was disabled by the requested configuration.",
+        "partial": 0,
         "planned_work": 0,
         "reason_code": "disabled_by_configuration",
         "skipped": 0,
@@ -73,6 +90,7 @@
         "completed": 0,
         "failed": 0,
         "message": "Analyzer was disabled by the requested configuration.",
+        "partial": 0,
         "planned_work": 0,
         "reason_code": "disabled_by_configuration",
         "skipped": 0,
@@ -84,6 +102,7 @@
         "completed": 0,
         "failed": 0,
         "message": "Analyzer was disabled by the requested configuration.",
+        "partial": 0,
         "planned_work": 0,
         "reason_code": "disabled_by_configuration",
         "skipped": 0,
@@ -94,6 +113,7 @@
         "analyzer_id": "static_patterns_agent_snooping",
         "completed": 2,
         "failed": 0,
+        "partial": 0,
         "planned_work": 2,
         "skipped": 0,
         "status": "completed",
@@ -103,6 +123,7 @@
         "analyzer_id": "static_patterns_anti_refusal",
         "completed": 2,
         "failed": 0,
+        "partial": 0,
         "planned_work": 2,
         "skipped": 0,
         "status": "completed",
@@ -112,6 +133,17 @@
         "analyzer_id": "static_patterns_data_exfiltration",
         "completed": 2,
         "failed": 0,
+        "partial": 0,
+        "planned_work": 2,
+        "skipped": 0,
+        "status": "completed",
+        "unaccounted": 0
+      },
+      {
+        "analyzer_id": "static_patterns_deserialization",
+        "completed": 2,
+        "failed": 0,
+        "partial": 0,
         "planned_work": 2,
         "skipped": 0,
         "status": "completed",
@@ -121,6 +153,7 @@
         "analyzer_id": "static_patterns_excessive_agency",
         "completed": 2,
         "failed": 0,
+        "partial": 0,
         "planned_work": 2,
         "skipped": 0,
         "status": "completed",
@@ -130,6 +163,7 @@
         "analyzer_id": "static_patterns_harmful_content",
         "completed": 2,
         "failed": 0,
+        "partial": 0,
         "planned_work": 2,
         "skipped": 0,
         "status": "completed",
@@ -139,6 +173,7 @@
         "analyzer_id": "static_patterns_memory_poisoning",
         "completed": 2,
         "failed": 0,
+        "partial": 0,
         "planned_work": 2,
         "skipped": 0,
         "status": "completed",
@@ -148,6 +183,7 @@
         "analyzer_id": "static_patterns_output_handling",
         "completed": 2,
         "failed": 0,
+        "partial": 0,
         "planned_work": 2,
         "skipped": 0,
         "status": "completed",
@@ -157,6 +193,7 @@
         "analyzer_id": "static_patterns_privilege_escalation",
         "completed": 2,
         "failed": 0,
+        "partial": 0,
         "planned_work": 2,
         "skipped": 0,
         "status": "completed",
@@ -166,6 +203,7 @@
         "analyzer_id": "static_patterns_prompt_injection",
         "completed": 2,
         "failed": 0,
+        "partial": 0,
         "planned_work": 2,
         "skipped": 0,
         "status": "completed",
@@ -175,6 +213,7 @@
         "analyzer_id": "static_patterns_rogue_agent",
         "completed": 2,
         "failed": 0,
+        "partial": 0,
         "planned_work": 2,
         "skipped": 0,
         "status": "completed",
@@ -184,6 +223,7 @@
         "analyzer_id": "static_patterns_ssrf",
         "completed": 2,
         "failed": 0,
+        "partial": 0,
         "planned_work": 2,
         "skipped": 0,
         "status": "completed",
@@ -193,6 +233,7 @@
         "analyzer_id": "static_patterns_supply_chain",
         "completed": 2,
         "failed": 0,
+        "partial": 0,
         "planned_work": 2,
         "skipped": 0,
         "status": "completed",
@@ -202,6 +243,7 @@
         "analyzer_id": "static_patterns_system_prompt_leakage",
         "completed": 2,
         "failed": 0,
+        "partial": 0,
         "planned_work": 2,
         "skipped": 0,
         "status": "completed",
@@ -211,6 +253,7 @@
         "analyzer_id": "static_patterns_tool_misuse",
         "completed": 2,
         "failed": 0,
+        "partial": 0,
         "planned_work": 2,
         "skipped": 0,
         "status": "completed",
@@ -220,6 +263,7 @@
         "analyzer_id": "static_yara",
         "completed": 2,
         "failed": 0,
+        "partial": 0,
         "planned_work": 2,
         "skipped": 0,
         "status": "completed",
@@ -232,17 +276,14 @@
     "findings_after_filtering": 5,
     "findings_before_filtering": 5,
     "fully_inspected_files": 2,
-    "is_complete": false,
+    "is_complete": true,
     "ledger_exceptions": [],
-    "limitations": [
-      "Analyzer was disabled by the requested configuration.",
-      "Analyzer was disabled by the requested configuration.",
-      "Analyzer was disabled by the requested configuration.",
-      "Analyzer was disabled by the requested configuration."
-    ],
+    "limitations": [],
     "partially_inspected_files": 0,
+    "references": [],
     "scanned_components": 2,
     "scope_exclusions": [],
+    "status": "complete",
     "total_components": 2
   },
   "component_metadata": [
@@ -268,20 +309,27 @@
       "confidence": 0.9,
       "context": null,
       "end_line": null,
+      "evidence": {},
       "explanation": "Wildcard permissions disable permission-based security controls entirely. Specify only the permissions the skill actually requires.",
       "file": "SKILL.md",
       "finding": null,
       "intent": null,
+      "match_fingerprint": null,
       "matched_text": null,
       "message": "Permission list contains a wildcard entry ('*', 'all', 'full', or 'any'), granting blanket access with no least-privilege boundary.",
+      "occurrences": [],
       "pattern": null,
       "remediation": "Replace '*'/'all'/'full'/'any' with an explicit list of required permissions. Request only the minimum access needed.",
       "rule_id": "LP2",
       "severity": "MEDIUM",
+      "source_digest": null,
+      "source_identity": null,
+      "source_url": null,
       "start_line": 1,
       "tags": [
         "ASI02"
-      ]
+      ],
+      "transitive_depth": 0
     },
     {
       "category": "MCP Least Privilege",
@@ -289,20 +337,27 @@
       "confidence": 0.65,
       "context": null,
       "end_line": null,
+      "evidence": {},
       "explanation": "Declared permissions with no matching code capability may indicate removed functionality or pre-staging for future abuse.",
       "file": "SKILL.md",
       "finding": null,
       "intent": null,
+      "match_fingerprint": null,
       "matched_text": null,
       "message": "Permission 'bash' is declared but no corresponding code capability (shell) was detected.",
+      "occurrences": [],
       "pattern": null,
       "remediation": "Remove the 'bash' permission if the corresponding capability is no longer used.",
       "rule_id": "LP4",
       "severity": "LOW",
+      "source_digest": null,
+      "source_identity": null,
+      "source_url": null,
       "start_line": 1,
       "tags": [
         "ASI02"
-      ]
+      ],
+      "transitive_depth": 0
     },
     {
       "category": "MCP Least Privilege",
@@ -310,20 +365,27 @@
       "confidence": 0.65,
       "context": null,
       "end_line": null,
+      "evidence": {},
       "explanation": "Declared permissions with no matching code capability may indicate removed functionality or pre-staging for future abuse.",
       "file": "SKILL.md",
       "finding": null,
       "intent": null,
+      "match_fingerprint": null,
       "matched_text": null,
       "message": "Permission 'network' is declared but no corresponding code capability (network) was detected.",
+      "occurrences": [],
       "pattern": null,
       "remediation": "Remove the 'network' permission if the corresponding capability is no longer used.",
       "rule_id": "LP4",
       "severity": "LOW",
+      "source_digest": null,
+      "source_identity": null,
+      "source_url": null,
       "start_line": 1,
       "tags": [
         "ASI02"
-      ]
+      ],
+      "transitive_depth": 0
     },
     {
       "category": "MCP Least Privilege",
@@ -331,20 +393,27 @@
       "confidence": 0.65,
       "context": null,
       "end_line": null,
+      "evidence": {},
       "explanation": "Declared permissions with no matching code capability may indicate removed functionality or pre-staging for future abuse.",
       "file": "SKILL.md",
       "finding": null,
       "intent": null,
+      "match_fingerprint": null,
       "matched_text": null,
       "message": "Permission 'read' is declared but no corresponding code capability (file_read) was detected.",
+      "occurrences": [],
       "pattern": null,
       "remediation": "Remove the 'read' permission if the corresponding capability is no longer used.",
       "rule_id": "LP4",
       "severity": "LOW",
+      "source_digest": null,
+      "source_identity": null,
+      "source_url": null,
       "start_line": 1,
       "tags": [
         "ASI02"
-      ]
+      ],
+      "transitive_depth": 0
     },
     {
       "category": "MCP Least Privilege",
@@ -352,20 +421,27 @@
       "confidence": 0.65,
       "context": null,
       "end_line": null,
+      "evidence": {},
       "explanation": "Declared permissions with no matching code capability may indicate removed functionality or pre-staging for future abuse.",
       "file": "SKILL.md",
       "finding": null,
       "intent": null,
+      "match_fingerprint": null,
       "matched_text": null,
       "message": "Permission 'write' is declared but no corresponding code capability (file_write) was detected.",
+      "occurrences": [],
       "pattern": null,
       "remediation": "Remove the 'write' permission if the corresponding capability is no longer used.",
       "rule_id": "LP4",
       "severity": "LOW",
+      "source_digest": null,
+      "source_identity": null,
+      "source_url": null,
       "start_line": 1,
       "tags": [
         "ASI02"
-      ]
+      ],
+      "transitive_depth": 0
     }
   ],
   "has_executable_scripts": true,
@@ -386,7 +462,7 @@
     ]
   },
   "risk_recommendation": "SAFE",
-  "risk_score": 12,
+  "risk_score": 14,
   "risk_severity": "LOW",
   "sarif_report": {
     "$schema": "https://schemastore.azurewebsites.net/schemas/json/sarif-2.1.0-rtm.4.json",
@@ -395,44 +471,22 @@
         "invocations": [
           {
             "executionSuccessful": true,
-            "toolExecutionNotifications": [
-              {
-                "level": "warning",
-                "message": {
-                  "text": "Analyzer was disabled by the requested configuration."
-                },
-                "properties": {
-                  "kind": "inspection_limitation"
-                }
-              },
-              {
-                "level": "warning",
-                "message": {
-                  "text": "Analyzer was disabled by the requested configuration."
-                },
-                "properties": {
-                  "kind": "inspection_limitation"
-                }
-              },
-              {
-                "level": "warning",
-                "message": {
-                  "text": "Analyzer was disabled by the requested configuration."
-                },
-                "properties": {
-                  "kind": "inspection_limitation"
-                }
-              },
-              {
-                "level": "warning",
-                "message": {
-                  "text": "Analyzer was disabled by the requested configuration."
-                },
-                "properties": {
-                  "kind": "inspection_limitation"
-                }
+            "properties": {
+              "analysisCompleteness": {
+                "coveragePercent": 100.0,
+                "entirelyUninspectedFiles": 0,
+                "fullyInspectedFiles": 2,
+                "isComplete": true,
+                "ledgerExceptionCount": 0,
+                "limitationCount": 0,
+                "notificationRecordLimit": 10000,
+                "notificationsTruncated": false,
+                "partiallyInspectedFiles": 0,
+                "scopeExclusionCount": 0,
+                "status": "complete",
+                "totalComponents": 2
               }
-            ]
+            }
           }
         ],
         "results": [
@@ -456,6 +510,7 @@
             "properties": {
               "category": "MCP Least Privilege",
               "confidence": 0.9,
+              "evidence": {},
               "explanation": "Wildcard permissions disable permission-based security controls entirely. Specify only the permissions the skill actually requires.",
               "remediation": "Replace '*'/'all'/'full'/'any' with an explicit list of required permissions. Request only the minimum access needed.",
               "severity": "MEDIUM",
@@ -485,6 +540,7 @@
             "properties": {
               "category": "MCP Least Privilege",
               "confidence": 0.65,
+              "evidence": {},
               "explanation": "Declared permissions with no matching code capability may indicate removed functionality or pre-staging for future abuse.",
               "remediation": "Remove the 'bash' permission if the corresponding capability is no longer used.",
               "severity": "LOW",
@@ -514,6 +570,7 @@
             "properties": {
               "category": "MCP Least Privilege",
               "confidence": 0.65,
+              "evidence": {},
               "explanation": "Declared permissions with no matching code capability may indicate removed functionality or pre-staging for future abuse.",
               "remediation": "Remove the 'network' permission if the corresponding capability is no longer used.",
               "severity": "LOW",
@@ -543,6 +600,7 @@
             "properties": {
               "category": "MCP Least Privilege",
               "confidence": 0.65,
+              "evidence": {},
               "explanation": "Declared permissions with no matching code capability may indicate removed functionality or pre-staging for future abuse.",
               "remediation": "Remove the 'read' permission if the corresponding capability is no longer used.",
               "severity": "LOW",
@@ -572,6 +630,7 @@
             "properties": {
               "category": "MCP Least Privilege",
               "confidence": 0.65,
+              "evidence": {},
               "explanation": "Declared permissions with no matching code capability may indicate removed functionality or pre-staging for future abuse.",
               "remediation": "Remove the 'write' permission if the corresponding capability is no longer used.",
               "severity": "LOW",

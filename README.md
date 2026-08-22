@@ -44,7 +44,7 @@ What SkillSpector-Polyglot does with a scanned tree depends on the framework it 
 
 | Framework | Language | Detection | Framework-specific rules | Status |
 |---|---|---|---|---|
-| **Agent Skills** (Claude Code, Codex CLI, Gemini CLI, …) | any | default | — (the full 68-pattern base catalog applies) | **Shipped** — upstream behavior, unchanged |
+| **Agent Skills** (Claude Code, Codex CLI, Gemini CLI, …) | any | default | — (the full 77-pattern base catalog applies) | **Shipped** — upstream behavior, unchanged |
 | **LangChain4j** | Java / Kotlin | `langchain4j` Maven coordinate, `dev.langchain4j` import, or `src/main/resources/skills/` layout | 5 rules — `L4J-SHELL`, `L4J-UNRESOLVED`, `L4J-TOOL-DESC`, `L4J-MCP-FILTER`, `L4J-WORKDIR` | **Shipped** |
 | **Deep Agents** (Python) | Python | `deepagents` distribution, `import deepagents`, or `create_deep_agent(` | 4 rules — `DA-SKILL-WRITABLE`, `DA-SHADOW`, `DA-SUBAGENT-SKILLS`, `DA-UNRESOLVED` | **Shipped** — `framework_deepagents` reads the host-side `create_deep_agent(...)` configuration, says per skill source path whether the agent can rewrite it, reports a skill in a later source that silently replaces a same-named one in an earlier source, reports a custom subagent defined without skills of its own, and reports where resolution stopped ([design](docs/MULTI_FRAMEWORK_SKILL_ANALYSIS.md), [shape](docs/adr/0008-deepagents-analyzer-resolves-one-module-deep.md)) |
 | **Deep Agents** (JavaScript) | TypeScript / JavaScript | `"deepagents"` in a `package.json` `dependencies`, `devDependencies`, `peerDependencies` or `optionalDependencies` block — read out of the parsed manifest, so a key of that name elsewhere in the file is not a signal — plus `import`/`require` of `deepagents`, or `createDeepAgent(` where a statement could start, so a help string, a `//` line or a JSDoc line quoting the SDK is not a signal, while a template literal quoting it still is, because its contents are whole lines ([#127](https://github.com/rodrigorjsf/SkillSpector-Polyglot/issues/127)) — every signal gated on a `.ts`/`.tsx`/`.mts`/`.cts`/`.js`/`.mjs`/`.cjs` file or a `package.json`, because the npm and PyPI distribution names are identical | the **same 4 rules** — `DA-SKILL-WRITABLE`, `DA-SHADOW`, `DA-SUBAGENT-SKILLS`, `DA-UNRESOLVED` | **Shipped** — `framework_deepagents_js` asks the same four questions of the host-side `createDeepAgent({...})` options object, parsed with `tree-sitter-typescript`. The rule ids are reused rather than duplicated: it is the same upstream framework in a second language, so a glob suppression rule keyed on `rule_id` covers both tracks and the catalogue stays one entry per question. What differs is the shapes read — an options object rather than keyword arguments, a plain object literal rather than `FilesystemPermission(...)`, a positional route map rather than `routes=`, and `interruptOn` rather than `interrupt_on`. The four rules mean the same thing in both tracks and are asked over the same two write tools, so a configuration reported one way in Python is reported the same way in TypeScript ([design](docs/MULTI_FRAMEWORK_SKILL_ANALYSIS.md), [shape](docs/adr/0009-tree-sitter-for-typescript-parsing.md), [capture](docs/references/deepagents-js-skills.md)) |
@@ -507,7 +507,7 @@ which stream a line is printed to updates this README in the *same* pull request
 | A change to… | …updates, in the same PR |
 |---|---|
 | Framework detection or a framework analyzer | the [Framework support](#framework-support) matrix — including its **Status** column. A framework whose analyzer reuses another framework's rule ids says so in its row, so the [Vulnerability Patterns](#vulnerability-patterns) count stays one entry per question rather than one per language |
-| Any detection rule | the relevant [Vulnerability Patterns](#vulnerability-patterns) table and the pattern count in [Features](#features) — a conformance rule is counted in its own line there rather than in the 77, because it assesses conformance rather than risk |
+| Any detection rule | the relevant [Vulnerability Patterns](#vulnerability-patterns) table and the pattern count in [Features](#features) — which is the number of rows those tables carry, so it is a claim a reader can check on the page. A conformance rule is counted in its own line there rather than among the 86, because it assesses conformance rather than risk |
 | A CLI flag or subcommand | [CLI Options](#cli-options), and [Usage in an agentic project](#usage-in-an-agentic-project) if it changes the recommended invocation |
 | `--mcp-registry` behavior: an input shape, a check, a rejected flag, or the network rule | [Scanning the MCP Registry](#scanning-the-mcp-registry) and the walkthrough in [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) |
 | A domain term, or the meaning of one | [`CONTEXT.md`](CONTEXT.md) — the glossary is the vocabulary the prose, the docstrings and the test names are held to |
@@ -515,8 +515,8 @@ which stream a line is printed to updates this README in the *same* pull request
 | An exit code, an output format, or which stream a line is printed to | [Integrating SkillSpector](#integrating-skillspector) — including [Which stream carries what](#which-stream-carries-what), the one rule every `console.print` in `cli.py` is held to — and the **Logging** bullet of [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md), which is where a contributor adding a print site reads which of the two consoles to use |
 | Anything that ships a designed-but-unbuilt capability | the **Status** column above, and [`docs/MULTI_FRAMEWORK_SKILL_ANALYSIS.md`](docs/MULTI_FRAMEWORK_SKILL_ANALYSIS.md) |
 | Any detection rule, again | [`docs/OWASP-AST10-COVERAGE.md`](docs/OWASP-AST10-COVERAGE.md) — the row the rule belongs to, or the gaps list where it belongs to none |
-| A redistributed dependency in `pyproject.toml`, added **or removed** — a runtime one, or one in the `mcp` extra | **`uv.lock`**, re-locked with `uv lock` in the same PR — `.github/workflows/release.yml` runs `uv sync --locked`, which errors rather than re-resolving, so a stale lock fails the release rather than the tests; and [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md), in the section matching the declaration — `## Runtime Dependencies` or `## Optional Dependencies (mcp extra)`; license and copyright read from the installed `dist-info`, not recalled; `tests/unit/test_third_party_notices.py` fails, per section, on a missing entry and on one that outlived its dependency. The `dev` extra declares the project's own toolchain rather than capability a consumer installs, and stays out |
-| A **new** optional-dependency extra in `pyproject.toml` | [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) — its own `## Optional Dependencies (<extra> extra)` section when the extra delivers capability to a consumer, which is what generates its comparisons in `tests/unit/test_third_party_notices.py`; when it declares tooling for working on this project, like `dev`, no section and a line in that test's `_NOT_REDISTRIBUTED_EXTRAS` instead — plus the row above; exactly one of the two, and the same test fails on any extra with neither *and* on any extra with both, as well as on a duplicated section heading. An extra that composes another by naming this distribution back — `skillspector[mcp]`, the idiom `dev` uses — owes no entry for that self-reference: the composed extra's own section discloses it |
+| A redistributed dependency in `pyproject.toml`, added **or removed** — a runtime one, or one in the `mcp` extra | **`uv.lock`**, re-locked with `uv lock` in the same PR — `.github/workflows/release.yml` runs `uv sync --locked`, which errors rather than re-resolving, so a stale lock fails the release rather than the tests; and [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md), in the section matching the declaration — `## Runtime Dependencies` or `## Optional Dependencies (mcp extra)`; license and copyright read from the installed `dist-info`, not recalled; `tests/unit/test_third_party_notices.py` fails, per section, on a missing entry and on one that outlived its dependency. The `dev` and `langgraph-dev` extras declare the project's own toolchain rather than capability a consumer installs, and stay out |
+| A **new** optional-dependency extra in `pyproject.toml` | [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) — its own `## Optional Dependencies (<extra> extra)` section when the extra delivers capability to a consumer, which is what generates its comparisons in `tests/unit/test_third_party_notices.py`; when it declares tooling for working on this project, like `dev` and `langgraph-dev`, no section and a line in that test's `_NOT_REDISTRIBUTED_EXTRAS` instead — plus the row above; exactly one of the two, and the same test fails on any extra with neither *and* on any extra with both, as well as on a duplicated section heading. An extra that composes another by naming this distribution back — `skillspector[mcp]`, the idiom `dev` uses — owes no entry for that self-reference: the composed extra's own section discloses it |
 | An upstream spelling a framework rule matches | the framework's `vocabulary.py` — never a literal elsewhere — and, if the spelling is new, a re-measured range per [`docs/VOCABULARY_REMEASUREMENT.md`](docs/VOCABULARY_REMEASUREMENT.md). Two frameworks that wrap the same upstream project in two languages keep **two** inventories and two guards: they ship on different release clocks, and one rename must not move both |
 | A new captured upstream reference | [`docs/references/README.md`](docs/references/README.md) — its table row, and the "Why these …" section that states the admission rule |
 
@@ -531,6 +531,8 @@ stays legible. It describes the scanner both projects share; where it says "Skil
 the tool this fork is built on. Install URLs in this section point at upstream by design — see
 [Install](#install) above for this fork.
 
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/NVIDIA/SkillSpector/badge)](https://scorecard.dev/viewer/?uri=github.com/NVIDIA/SkillSpector)
+
 ## Overview
 
 AI agent skills (used by Claude Code, Codex CLI, Gemini CLI, etc.) execute with implicit trust and minimal vetting. Research shows that **26.1% of skills contain vulnerabilities** and **5.2% show likely malicious intent**.
@@ -543,12 +545,13 @@ SkillSpector is part of the [NVIDIA Verified Skills pipeline](https://docs.nvidi
 
 - **[Scan agent skills before installation](https://docs.nvidia.com/skills/scanning-agent-skills)** — Hosted guide: when to scan, how to read a report, and how to gate installs.
 - **[Development guide](docs/DEVELOPMENT.md)** — Architecture, package layout, and how to extend the analyzer pipeline.
+- **[Analysis resource bounds](docs/ANALYSIS_RESOURCE_BOUNDS.md)** — Fail-closed bundle, parser, nested-artifact, ledger, and finding ceilings.
 - **[Pi extension](docs/PI_EXTENSION.md)** — Install SkillSpector as a Pi tool for scanning skills from inside agent sessions.
 
 ## Features
 
 - **Multi-format input**: Scan Git repos, URLs, zip files, directories, or single files
-- **77 vulnerability patterns** across 19 categories: prompt injection, data exfiltration, privilege escalation, supply chain, excessive agency, output handling, system prompt leakage, memory poisoning, tool misuse, rogue agent, anti-refusal, trigger abuse, dangerous code (AST), taint tracking, YARA signatures, MCP least privilege, MCP tool poisoning, LangChain4j framework, and Deep Agents framework
+- **86 vulnerability patterns** across 20 categories: prompt injection, data exfiltration, privilege escalation, supply chain, excessive agency, output handling, system prompt leakage, memory poisoning, tool misuse, rogue agent, anti-refusal, trigger abuse, dangerous code (AST), taint tracking, insecure deserialization, YARA signatures, MCP least privilege, MCP tool poisoning, LangChain4j framework, and Deep Agents framework
 - **17 Agent Skills conformance rules** — 15 from the specification, 2 from loader behavior (`SPEC-14`, `SPEC-17`) — counted apart from the patterns above because they assess conformance rather than risk, and off unless `--spec-checks` asks for them ([Specification conformance](#specification-conformance----spec-checks))
 - **Two-stage analysis**: Fast static analysis + optional LLM semantic evaluation
 - **Live vulnerability lookups**: SC4 queries [OSV.dev](https://osv.dev) for real-time CVE data with automatic offline fallback
@@ -785,7 +788,7 @@ and not helpfully so: it walks build output that `--repo-scan` skips.
 | A `SKILL.md` at the path itself | irrelevant | short-circuits: the tree is scanned as that one skill |
 | `target/`, `build/`, `.gradle/` | skipped | walked, and a skill inside one counts |
 | `--baseline` | threaded through every skill, and it suppresses — but only for a baseline taken *per skill directory*: `skillspector baseline .` has no repo-scan mode and writes repo-root-relative paths this scan never emits | rejected, exit `2` — but **only** once the flag engages. Below the two-skill threshold it falls through to an ordinary scan and the baseline applies |
-| `--format sarif --output` | one valid SARIF log, one run per skill | several SARIF documents glued together with `--- path ---` separators — **not parseable as SARIF** |
+| `--format sarif --output` | one valid SARIF log, one run per skill | one valid SARIF log, one run per skill — upstream's own recursive SARIF merge arrived with the 2.9.6 sync and replaced the `--- path ---` concatenation this row used to describe, so anything splitting the file on that separator has to stop |
 | `--format json --output` | per-skill bodies concatenated | one object: `multi_skill`, `skill_count`, `max_risk_score`, `execution_successful`, `skills` |
 | **No** `--output` | the report is written to stdout, in every format — but only `sarif` is one merged document; `json` and `markdown` are the same `--- path ---` concatenation as the row above ([#116](https://github.com/rodrigorjsf/SkillSpector-Polyglot/issues/116)) | no report at all — the combined body is only ever written to a file ([#114](https://github.com/rodrigorjsf/SkillSpector-Polyglot/issues/114)). With `--format terminal` stdout carries the summary table and nothing else; with `json`, `sarif` or `markdown` stdout is **empty** and the format flag is silently ignored. As with `--baseline`, **only** once the flag engages: below the two-skill threshold it falls through to an ordinary scan, which does write a report to stdout in the requested format |
 | Discovery roots | `--repo-scan-root`, repeatable | not configurable |
@@ -997,11 +1000,11 @@ claude mcp add skillspector -- skillspector mcp
 
 ## Vulnerability Patterns
 
-SkillSpector detects **77 vulnerability patterns** across 19 categories, plus **17 specification
+SkillSpector detects **86 vulnerability patterns** across 20 categories, plus **17 specification
 conformance rules** that are counted separately and run only under `--spec-checks` — see
 [Specification Conformance](#specification-conformance-17-rules-opt-in) at the end of this section:
 
-### Prompt Injection (5 patterns)
+### Prompt Injection (6 patterns)
 
 | ID | Pattern | Severity | Description |
 |----|---------|----------|-------------|
@@ -1010,6 +1013,7 @@ conformance rules** that are counted separately and run only under `--spec-check
 | P3 | Exfiltration Commands | HIGH | Instructions to transmit context externally |
 | P4 | Behavior Manipulation | MEDIUM | Subtle instructions altering agent decisions |
 | P5 | Harmful Content | CRITICAL | Instructions that could cause physical harm |
+| P9 | Whitespace Padding | MEDIUM | Large whitespace padding hiding instructions below/beside the visible area |
 
 ### Anti-Refusal (3 patterns)
 
@@ -1036,7 +1040,7 @@ conformance rules** that are counted separately and run only under `--spec-check
 | PE2 | Sudo/Root Execution | MEDIUM | Invoking elevated system privileges |
 | PE3 | Credential Access | HIGH | Reading SSH keys, tokens, passwords |
 
-### Supply Chain (6 patterns)
+### Supply Chain (9+ patterns)
 
 | ID | Pattern | Severity | Description |
 |----|---------|----------|-------------|
@@ -1046,6 +1050,8 @@ conformance rules** that are counted separately and run only under `--spec-check
 | SC4 | Known Vulnerable Dependencies | HIGH | Dependencies with known CVEs (live OSV.dev lookup) |
 | SC5 | Abandoned Dependencies | MEDIUM | Unmaintained packages without security updates |
 | SC6 | Typosquatting | HIGH | Package names similar to popular packages |
+| SC8 | Shipped Python Bytecode | HIGH | `__pycache__` / `.pyc` present (discovery skips; malicious bytecode bypass) |
+| SC9 | Concealed Executable Artifact | HIGH | Executable nested in a document container or hidden/disguised artifact |
 
 ### Excessive Agency (4 patterns)
 
@@ -1103,7 +1109,7 @@ conformance rules** that are counted separately and run only under `--spec-check
 | TR2 | Shadow Command Trigger | HIGH | Triggers that shadow built-in commands or other skills |
 | TR3 | Keyword Baiting Trigger | MEDIUM | Generic triggers designed to maximize activation |
 
-### Behavioral AST (9 patterns)
+### Behavioral AST (10 patterns)
 
 | ID | Pattern | Severity | Description |
 |----|---------|----------|-------------|
@@ -1116,8 +1122,9 @@ conformance rules** that are counted separately and run only under `--spec-check
 | AST7 | Dynamic getattr() | MEDIUM | Arbitrary attribute access with non-literal names |
 | AST8 | Dangerous Execution Chain | CRITICAL | exec/eval combined with dynamic source (network, encoded data) |
 | AST9 | Reflective getattr() Sink | HIGH | Reflective exec via `getattr(os,'system')` / `getattr(builtins,'exec')` that evades AST1/AST5 |
+| AST10 | Insecure Deserialization | MEDIUM | `pickle.loads`, `yaml.load`, `torch.load`, `numpy.load` and friends reconstructing objects from untrusted bytes |
 
-### Taint Tracking (5 patterns)
+### Taint Tracking (6 patterns)
 
 | ID | Pattern | Severity | Description |
 |----|---------|----------|-------------|
@@ -1126,6 +1133,19 @@ conformance rules** that are counted separately and run only under `--spec-check
 | TT3 | Credential Exfiltration Chain | CRITICAL | Credentials (env vars, secrets) flow to network output sinks |
 | TT4 | File Read to Network Exfiltration | HIGH | File contents flow to network output sinks |
 | TT5 | External Input to Code Execution | CRITICAL | Network or user input flows to exec/eval/subprocess sinks |
+| TT6 | Untrusted Data to Deserializer Flow | HIGH | Network, file or user input flows into a deserializer that reconstructs arbitrary objects |
+
+### Insecure Deserialization (4 patterns)
+
+Language-specific deserialization sinks outside Python, which `AST10` covers. Each is a static
+pattern rather than an AST walk, because the scanner parses no PHP, Ruby or JavaScript.
+
+| ID | Pattern | Severity | Description |
+|----|---------|----------|-------------|
+| DS1 | PHP Object Injection | HIGH | `unserialize()` on untrusted input instantiates arbitrary classes and triggers magic methods |
+| DS2 | Ruby Marshal Deserialization | HIGH | `Marshal.load` / `Marshal.restore` reconstructs arbitrary objects from a binary blob |
+| DS3 | Unsafe Ruby YAML Deserialization | MEDIUM | `YAML.load` / `Psych.load` / `Oj.load` in object mode instantiates arbitrary Ruby objects |
+| DS4 | Unsafe JavaScript Deserialization | HIGH | `node-serialize` / `funcster` / `serialize-to-js` evaluate embedded functions on unserialize |
 
 ### YARA Signatures (4 patterns)
 
@@ -1299,7 +1319,7 @@ Issues (2)
 
 | Variable | Description | Required |
 |----------|-------------|----------|
-| `SKILLSPECTOR_PROVIDER` | Active LLM provider: `openai`, `anthropic`, `anthropic_proxy`, `bedrock`, `nv_build`, `claude_cli`, `codex_cli`, or `gemini_cli`. Hosted providers use bundled `model_registry.yaml` defaults; `claude_cli` and `codex_cli` fall back to the local CLI runtime's default model unless `SKILLSPECTOR_MODEL` is set. Defaults to `nv_build`. | Optional |
+| `SKILLSPECTOR_PROVIDER` | Active LLM provider: `openai`, `anthropic`, `anthropic_proxy`, `bedrock`, `nv_build`, `ollama`, `azure_openai`, `openai_compatible`, `claude_cli`, `codex_cli`, or `gemini_cli`. Hosted providers use bundled `model_registry.yaml` defaults; `claude_cli` and `codex_cli` fall back to the local CLI runtime's default model unless `SKILLSPECTOR_MODEL` is set. Defaults to `nv_build`. | Optional |
 | `NVIDIA_INFERENCE_KEY` | Credential for the `nv_build` provider (build.nvidia.com). | Required for LLM analysis when `SKILLSPECTOR_PROVIDER=nv_build` |
 | `OPENAI_API_KEY` | Credential for the OpenAI provider (`SKILLSPECTOR_PROVIDER=openai`). Also serves as the tier-2 fallback in the credential waterfall when the active provider returns no credentials. | Required for LLM analysis when `SKILLSPECTOR_PROVIDER=openai` |
 | `OPENAI_BASE_URL` | Override the OpenAI endpoint (e.g. point at Ollama). | Optional |
@@ -1311,6 +1331,13 @@ Issues (2)
 | `ANTHROPIC_PROXY_API_VERSION` | `anthropic_version` value sent in the request body (default: `vertex-2023-10-16`). | Optional |
 | `AWS_PROFILE` | Named AWS profile for the Bedrock provider — authenticates via SigV4 through boto3. When unset, the standard boto3 credential chain (env vars, instance metadata, SSO, etc.) resolves. | Optional (used when `SKILLSPECTOR_PROVIDER=bedrock`) |
 | `AWS_REGION` | AWS region for the Bedrock Runtime endpoint. Defaults to `us-west-2`. | Optional (used when `SKILLSPECTOR_PROVIDER=bedrock`) |
+| `OLLAMA_BASE_URL` | Endpoint for the `ollama` provider (default: `http://localhost:11434`). No credential is involved — the server is local. | Optional (used when `SKILLSPECTOR_PROVIDER=ollama`) |
+| `AZURE_OPENAI_ENDPOINT` | Resource endpoint for the `azure_openai` provider. | Required when `SKILLSPECTOR_PROVIDER=azure_openai` |
+| `AZURE_OPENAI_API_KEY` | Credential for the `azure_openai` provider. | Required when `SKILLSPECTOR_PROVIDER=azure_openai` |
+| `AZURE_OPENAI_DEPLOYMENT` | Deployment name to call on that resource. | Required when `SKILLSPECTOR_PROVIDER=azure_openai` |
+| `AZURE_OPENAI_API_VERSION` | API version sent with the request. | Optional (used when `SKILLSPECTOR_PROVIDER=azure_openai`) |
+| `SKILLSPECTOR_COMPAT_BASE_URL` | Endpoint for the `openai_compatible` provider — any server speaking the OpenAI chat-completions API. | Required when `SKILLSPECTOR_PROVIDER=openai_compatible` |
+| `SKILLSPECTOR_COMPAT_API_KEY` | Credential for that endpoint. | Optional (used when `SKILLSPECTOR_PROVIDER=openai_compatible`) |
 | `SKILLSPECTOR_MODEL` | Override the active provider model. For hosted providers, this replaces the bundled default from the LLM Analysis table. For `claude_cli` and `codex_cli`, this is forwarded as `--model` instead of using the local CLI runtime fallback. | Optional |
 | `SKILLSPECTOR_MODEL_REGISTRY` | Override the bundled per-provider YAML registry (`src/skillspector/providers/<provider>/model_registry.yaml`) with a custom path. | Optional |
 | `SKILLSPECTOR_LOG_LEVEL` | Log level: `DEBUG`, `INFO`, `WARNING`, `ERROR` (default: `WARNING`). | Optional |
@@ -1327,8 +1354,24 @@ Options:
   -o, --output PATH                            Output file path
   --no-llm                                     Skip LLM analysis (static only)
   --yara-rules-dir PATH                        Extra YARA rules directory
+  -r, --recursive                              Scan each immediate subdirectory holding a
+                                               SKILL.md as its own skill
   -b, --baseline PATH                          Suppress findings listed in a baseline
   --show-suppressed                            List baseline-suppressed findings
+  --use-shipped-baseline                       Apply a baseline the scanned skill ships
+                                               (.skillspector-baseline.yaml). Off by
+                                               default: a skill author's baseline can
+                                               suppress findings in your scan, so a
+                                               discovered one is only reported until you
+                                               opt in. Ignored with --baseline
+  --transitive                                 Follow transitive external references
+                                               after the initial scan
+  --transitive-depth INTEGER                   Maximum transitive depth [default: 1]
+  --transitive-allow-prefix TEXT               Only follow targets matching a canonical
+                                               prefix (repeatable)
+  --transitive-deny-prefix TEXT                Skip targets matching a canonical prefix
+                                               (repeatable)
+  --fail-on-incomplete                         Exit 1 when the analysis is partial
   --repo-scan                                  Find every skill in a repository, scan each
   --repo-scan-root TEXT                        Replace the discovery roots (repeatable)
   --spec-checks [off|advisory|strict]          Agent Skills specification conformance
@@ -1373,7 +1416,7 @@ The top-level shape is (this example shows a full LLM-backed scan; with `--no-ll
 ```json
 {
   "skill": { "name": "...", "source": "...", "scanned_at": "<ISO 8601>" },
-  "risk_assessment": { "score": 0, "severity": "LOW", "recommendation": "SAFE" },
+  "risk_assessment": { "score": 0, "severity": "LOW", "recommendation": "SAFE", "max_issue_severity": "LOW" },
   "components": [ { "path": "...", "type": "...", "lines": 0, "executable": false, "size_bytes": 0 } ],
   "issues": [ { "id": "...", "category": "...", "severity": "...", "confidence": 0.0, "location": { "file": "...", "start_line": 0 } } ],
   "metadata": {
@@ -1402,6 +1445,10 @@ The top-level shape is (this example shows a full LLM-backed scan; with `--no-ll
 
 - `risk_assessment.severity` ∈ `LOW | MEDIUM | HIGH | CRITICAL`.
 - `risk_assessment.recommendation` ∈ `SAFE | CAUTION | DO_NOT_INSTALL`, mapped from severity: `LOW → SAFE`, `MEDIUM → CAUTION`, `HIGH`/`CRITICAL → DO_NOT_INSTALL`.
+- `risk_assessment.max_issue_severity` is the highest severity among the findings the
+  report carries, and is `null` when it carries none. It is there because `score` is
+  normalized: a single HIGH finding in a large skill can land under the threshold and
+  read as `SAFE`. A gate that must not miss one reads this field rather than the score.
 - `metadata.llm_error` appears only when LLM analysis was requested but unavailable.
 - `metadata.inference_usage` contains one sanitized record per LLM response when the
   provider exposes token counters. It is an empty list when usage is unavailable;
