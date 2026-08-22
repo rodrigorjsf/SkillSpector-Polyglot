@@ -642,6 +642,12 @@ class TestARepositoryScan:
         assert result.stdout == ""
         assert "no skill found under" in _unwrapped(result.stderr)
 
+        # The warning is the whole of stderr, not merely present in it. Discovery
+        # matching nothing skips the per-skill column heading, and a containment
+        # check on the warning cannot see a bare heading printed beneath it.
+        assert "Severity" not in _unwrapped(result.stderr)
+        assert "Findings" not in _unwrapped(result.stderr)
+
     def test_finding_no_skill_at_all_still_answers_in_sarif(self, tmp_path: Path) -> None:
         """#115: a discovery miss is a report of no findings, not an absent report.
 
