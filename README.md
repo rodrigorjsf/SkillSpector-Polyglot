@@ -531,6 +531,13 @@ stays legible. It describes the scanner both projects share; where it says "Skil
 the tool this fork is built on. Install URLs in this section point at upstream by design — see
 [Install](#install) above for this fork.
 
+Two kinds of line below carry the fork's reconciliation rather than upstream's text, and a syncer
+resolving a conflict on one should keep the fork's side: the **pattern counts** (the totals in
+[Features](#features) and above the [Vulnerability Patterns](#vulnerability-patterns) tables) and
+the **per-category counts in the `###` headings**. Upstream's numbers were already stale for this
+fork before they were ever conflicted — the fork ships rules upstream does not, and the counts are
+defined as the number of rows the tables carry. Everything else below is upstream's to own.
+
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/NVIDIA/SkillSpector/badge)](https://scorecard.dev/viewer/?uri=github.com/NVIDIA/SkillSpector)
 
 ## Overview
@@ -1116,7 +1123,7 @@ conformance rules** that are counted separately and run only under `--spec-check
 
 | ID | Pattern | Severity | Description |
 |----|---------|----------|-------------|
-| AS1 | Agent Config Directory Access | HIGH | Reading agent config directories (`.claude/`, `.codex/`, `.gemini/`) that hold keys and settings |
+| AS1 | Agent Config Directory Access | HIGH | Reading agent config directories (`.claude/`, `.codex/`, `.gemini/`, `.continue/`) that hold keys and settings |
 | AS2 | MCP Config Access | HIGH | Reading `mcp.json` server config — server URLs, auth tokens, and tool definitions |
 | AS3 | Skill Enumeration | MEDIUM | Enumerating or reading other installed skills and their `SKILL.md` instructions |
 
@@ -1125,7 +1132,7 @@ conformance rules** that are counted separately and run only under `--spec-check
 | ID | Pattern | Severity | Description |
 |----|---------|----------|-------------|
 | SSRF1 | Cloud Metadata Access | HIGH | Requests to a cloud instance metadata endpoint (`169.254.169.254`), which returns temporary IAM credentials |
-| SSRF2 | Internal Network Request | MEDIUM | Requests to loopback, link-local, or private-range hosts that reach internal services |
+| SSRF2 | Internal Network Request | MEDIUM | Requests to loopback or private-range hosts that reach internal services |
 | SSRF3 | Dynamic Request Target | MEDIUM | Request host built from a dynamic or untrusted value |
 
 ### Behavioral AST (10 patterns)

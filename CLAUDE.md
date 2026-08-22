@@ -258,3 +258,4 @@ When something fails repeatedly, when User has to re-explain, or when a workarou
 - A conflict can align two functions' identical tails; diff each spliced function whole.
 - Upstream test fakes need `**kwargs` when the fork threads a new parameter through.
 - Hardcoded line numbers into `THIRD_PARTY_NOTICES.md` break on any dependency change.
+- README rule tables and the pattern counts sit below the Inherited-documentation marker.
