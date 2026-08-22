@@ -73,18 +73,20 @@ Each conflict is upstream's change meeting the fork's. The fork's rules decide t
   top, because the fork's promise is to extend upstream rather than to replace it.
 - **`CLAUDE.md`, `docs/adr/`, `.claude/rules/`, `src/skillspector/langchain4j/`,
   `src/skillspector/deepagents/`** — fork-owned. Upstream has no opinion; keep the fork's.
-- **`docs/OWASP-AST10-COVERAGE.md` — fork-held, and upstream is coming back for it.** Upstream
-  deleted the whole file in `c54967a` while the fork's crosswalk of its own Rules lived in it, so the
-  2.5.3 sync kept the file rather than lose that content. Do **not** read that as the fork owning the
-  page. Upstream's own revert says why it went, in `NVIDIA/SkillSpector#288` and `#338`: *"We will
-  bring updated wording next week with product team approval."* The deletion is a pending rewrite, not
-  an abandonment.
+- **A doc upstream withdrew is not the fork's to hold.** Upstream owns the truth about the core;
+  this fork adapts its *rules* so they run against the frameworks it implements. Those are different
+  things, and a document describing upstream's own scanner is the first kind. When upstream deletes
+  such a page, the fork follows rather than adopting it — `docs/OWASP-AST10-COVERAGE.md` was kept
+  through the 2.5.3 and 2.9.6 syncs on the reasoning that the fork's crosswalk of its own Rules lived
+  in it, and retired in `#111` once that reasoning was put to the maintainer. Holding it made the
+  fork the maintainer of upstream text upstream had withdrawn, and made every later sync re-litigate
+  a page neither side owned.
 
-  So the next sync that carries an upstream version of this file meets an add/add conflict, and the
-  resolution is the **inherited-doc** rule above, not this bullet: upstream's reworded text wins for
-  everything it and the fork both describe, and the fork's `L4J-*`, `DA-*` and `MCP-*` rows are
-  re-applied on top. The fork holds the file in the meantime because losing the crosswalk was the
-  worse of the two errors, not because the fork has a claim on the page.
+  So if upstream republishes the page, it arrives as an ordinary **inherited doc**: take upstream's
+  text, and add the fork's `L4J-*`, `DA-*` and `MCP-*` rows on top *at that point*, as the fork's
+  clearly-marked adaptation. Do not resurrect the retired file to merge against — recover its
+  content from history if it is wanted (`git show <commit>:docs/OWASP-AST10-COVERAGE.md`), never by
+  reverting the retirement.
 
 Where upstream deleted something the fork built on, that is a real design question, not a merge
 decision — stop and put it to the user with the upstream commit that did it.
