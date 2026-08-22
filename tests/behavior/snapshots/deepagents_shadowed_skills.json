@@ -437,9 +437,12 @@
             "name": "skillspector",
             "rules": [
               {
+                "fullDescription": {
+                  "text": "Two Skill sources one Deep Agents application passes to skills=[...] both declare a Skill of the same name. Later sources override earlier ones -- last one wins -- so the Skill the agent loads is the one in the later source and the earlier one never runs. Where the later source is writable, or is where a per-user directory lives, that is a supply-chain substitution expressed entirely in configuration: nothing in either Skill directory read on its own shows it, and a reviewer who vetted the shared library vetted a Skill the agent does not use."
+                },
                 "id": "DA-SHADOW",
                 "shortDescription": {
-                  "text": "The Skill ticket-triage is declared in both the Skill source /skills/shared/ and the later source /skills/personal/. Later sources override earlier ones for Skills of the same name, so the agent loads library/skills/personal/ticket-triage/SKILL.md and the earlier one never runs."
+                  "text": "Shadowed Skill Source"
                 }
               }
             ]

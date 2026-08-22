@@ -473,12 +473,18 @@
             "name": "skillspector",
             "rules": [
               {
+                "fullDescription": {
+                  "text": "Data is being sent to an external URL. This could be legitimate telemetry or data exfiltration. Manual review is recommended."
+                },
                 "id": "E1",
                 "shortDescription": {
                   "text": "External Transmission"
                 }
               },
               {
+                "fullDescription": {
+                  "text": "Code scans file system directories looking for sensitive files. This could be reconnaissance for credential theft."
+                },
                 "id": "E3",
                 "shortDescription": {
                   "text": "File System Enumeration"

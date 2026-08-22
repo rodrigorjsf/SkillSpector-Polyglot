@@ -524,15 +524,21 @@
             "name": "skillspector",
             "rules": [
               {
+                "fullDescription": {
+                  "text": "Code uses capabilities (network, shell, file write, etc.) not covered by declared permissions. The skill does more than it claims, which may indicate deceptive intent."
+                },
                 "id": "LP1",
                 "shortDescription": {
-                  "text": "Code capability 'file_write' detected in config_reader.py but not covered by declared permissions."
+                  "text": "Underdeclared Capability"
                 }
               },
               {
+                "fullDescription": {
+                  "text": "Permission is declared but no corresponding code capability was detected. This may indicate removed functionality or pre-staging for future abuse."
+                },
                 "id": "LP4",
                 "shortDescription": {
-                  "text": "Permission 'read:files' is declared but no corresponding code capability (file_read) was detected."
+                  "text": "Overdeclared Permission"
                 }
               }
             ]

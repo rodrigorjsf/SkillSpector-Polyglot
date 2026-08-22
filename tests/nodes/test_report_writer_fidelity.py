@@ -37,6 +37,10 @@ import pytest
 from typer.testing import CliRunner
 
 from skillspector.cli import app
+from skillspector.models import Finding
+from skillspector.nodes.report import _build_sarif
+from skillspector.sarif_models import validate_sarif_report
+from skillspector.suppression import SuppressedFinding
 
 runner = CliRunner()
 
@@ -65,6 +69,12 @@ UNRESOLVED_INSTANCE_SENTENCES = (
 UNRESOLVED_RULE_EXPLANATION_OPENING = (
     "A Java-defined Skill carries text that is not statically resolvable"
 )
+# The catalogue's rule-level title and the opening of its paragraph, for the one
+# rule id whose per-instance message the SARIF descriptor used to borrow.
+TOOL_DESC_RULE_TITLE = "Instruction-Carrying Tool Description"
+TOOL_DESC_RULE_EXPLANATION_OPENING = (
+    "A @Tool annotation's description carries instructions rather than describing the tool."
+)
 
 
 @pytest.fixture(autouse=True)
@@ -83,6 +93,27 @@ def _scan_json(*extra: str, target: Path = LANGCHAIN4J_SHELL_SKILL) -> dict[str,
     result = runner.invoke(app, ["scan", str(target), "--no-llm", "-f", "json", *extra])
     assert result.exit_code in (0, 1), result.stderr
     return json.loads(result.stdout)
+
+
+def _scan_sarif(*extra: str, target: Path = LANGCHAIN4J_SHELL_SKILL) -> dict[str, object]:
+    """The SARIF log a consumer receives on stdout for one scan of *target*."""
+    result = runner.invoke(app, ["scan", str(target), "--no-llm", "-f", "sarif", *extra])
+    assert result.exit_code in (0, 1), result.stderr
+    return json.loads(result.stdout)
+
+
+def _descriptor(sarif: dict[str, object], rule_id: str) -> dict[str, object]:
+    """The rule descriptor SARIF's rule catalogue carries for *rule_id*."""
+    run = sarif["runs"][0]
+    rules = run["tool"]["driver"]["rules"]
+    matching = [rule for rule in rules if rule["id"] == rule_id]
+    assert len(matching) == 1, f"{rule_id} has {len(matching)} descriptors"
+    return matching[0]
+
+
+def _finding(rule_id: str, message: str, **kwargs: object) -> Finding:
+    """A Finding carrying only what a SARIF result needs."""
+    return Finding(rule_id=rule_id, message=message, severity="HIGH", **kwargs)  # type: ignore[arg-type]
 
 
 def _issues(report: dict[str, object], rule_id: str) -> list[dict[str, object]]:
@@ -121,3 +152,84 @@ class TestAJsonIssueCarriesItsOwnSentence:
         assert UNRESOLVED_RULE_EXPLANATION_OPENING in explanations.pop()
         # The separation is only real if the two fields disagree somewhere.
         assert all(issue["explanation"] != issue["message"] for issue in unresolved)
+
+
+class TestASarifRuleDescriptorDescribesItsRule:
+    """Issue #118: the descriptor was whichever Finding of that rule came first.
+
+    SARIF 2.1.0 puts a concise description of the *rule* in
+    ``reportingDescriptor.shortDescription`` and the per-result sentence in
+    ``result.message``. The builder recorded the first message it saw for a rule
+    id and used that, so a consumer rendering a rule catalogue -- GitHub code
+    scanning does -- was shown a sentence about one file to describe a rule that
+    fired on several.
+    """
+
+    def test_a_catalogued_rule_is_titled_by_the_catalogue_not_by_a_finding(self) -> None:
+        descriptor = _descriptor(_scan_sarif(), "L4J-TOOL-DESC")
+        assert descriptor["shortDescription"]["text"] == TOOL_DESC_RULE_TITLE
+        # The sentence it used to carry is still in the report -- on the result,
+        # where SARIF says per-instance text belongs.
+        assert TOOL_DESC_INSTANCE_SENTENCE not in descriptor["shortDescription"]["text"]
+
+    def test_a_catalogued_rule_carries_the_catalogue_paragraph(self) -> None:
+        descriptor = _descriptor(_scan_sarif(), "L4J-TOOL-DESC")
+        assert descriptor["fullDescription"]["text"].startswith(TOOL_DESC_RULE_EXPLANATION_OPENING)
+
+    def test_the_per_result_message_is_untouched(self) -> None:
+        results = _scan_sarif()["runs"][0]["results"]
+        tool_desc = [r for r in results if r["ruleId"] == "L4J-TOOL-DESC"]
+        assert len(tool_desc) == 1
+        assert TOOL_DESC_INSTANCE_SENTENCE in tool_desc[0]["message"]["text"]
+
+    def test_the_descriptor_does_not_move_with_emission_order(self) -> None:
+        first = _finding("L4J-TOOL-DESC", "First sentence, about one file.")
+        second = _finding("L4J-TOOL-DESC", "Second sentence, about another.")
+
+        forward = _descriptor(_build_sarif([first, second]), "L4J-TOOL-DESC")
+        backward = _descriptor(_build_sarif([second, first]), "L4J-TOOL-DESC")
+
+        assert forward == backward
+        # Stability alone is satisfied by "always the first message"; what makes
+        # it a fix is that the descriptor is neither Finding's sentence.
+        assert forward["shortDescription"]["text"] == TOOL_DESC_RULE_TITLE
+        assert forward["shortDescription"]["text"] not in (first.message, second.message)
+
+    def test_a_rule_whose_only_finding_is_suppressed_still_gets_the_catalogue_title(
+        self,
+    ) -> None:
+        """The suppressed pass runs first, so it used to set the descriptor."""
+        suppressed = SuppressedFinding(
+            finding=_finding("L4J-TOOL-DESC", "A sentence about one attachment site."),
+            reason="reviewed",
+        )
+        sarif = _build_sarif([], [suppressed])
+
+        descriptor = _descriptor(sarif, "L4J-TOOL-DESC")
+        assert descriptor["shortDescription"]["text"] == TOOL_DESC_RULE_TITLE
+        assert descriptor["fullDescription"]["text"].startswith(TOOL_DESC_RULE_EXPLANATION_OPENING)
+
+    def test_an_uncatalogued_rule_falls_back_to_the_finding_s_message(self) -> None:
+        """An LLM-emitted rule id has no catalogue entry, and must not be nulled."""
+        sarif = _build_sarif([_finding("LLM-INVENTED-1", "Whatever the model called it.")])
+        validate_sarif_report(sarif)
+
+        descriptor = _descriptor(sarif, "LLM-INVENTED-1")
+        assert descriptor["shortDescription"]["text"] == "Whatever the model called it."
+        assert "fullDescription" not in descriptor
+
+    def test_an_explanation_without_a_name_keeps_its_paragraph(self) -> None:
+        """``AST1``--``AST9`` are catalogued in one dict and not the other.
+
+        A single "is this rule catalogued" gate would either lose the paragraph
+        or title the rule ``"Unknown"``; the two lookups are independent so it
+        does neither.
+        """
+        sarif = _build_sarif([_finding("AST1", "exec() on line 4.")])
+
+        descriptor = _descriptor(sarif, "AST1")
+        assert descriptor["shortDescription"]["text"] == "exec() on line 4."
+        assert descriptor["fullDescription"]["text"].startswith("Direct exec() call")
+
+    def test_the_emitted_document_still_validates_as_sarif(self) -> None:
+        validate_sarif_report(_scan_sarif())

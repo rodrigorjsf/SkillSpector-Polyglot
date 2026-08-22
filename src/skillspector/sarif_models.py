@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 SkillSpector-Polyglot contributors
 # SPDX-License-Identifier: Apache-2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -95,6 +96,10 @@ class SarifReportingDescriptor(BaseModel):
 
     id: str
     short_description: SarifMessage | None = Field(default=None, alias="shortDescription")
+    # SARIF 2.1.0 pairs the concise rule title with a longer rule-level
+    # description. The Rule catalogue already maintains both halves, so the model
+    # carries the second rather than making the report choose between them.
+    full_description: SarifMessage | None = Field(default=None, alias="fullDescription")
     default_configuration: dict[str, object] | None = Field(
         default=None, alias="defaultConfiguration"
     )

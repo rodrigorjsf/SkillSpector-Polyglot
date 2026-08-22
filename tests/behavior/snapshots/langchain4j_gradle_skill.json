@@ -427,9 +427,12 @@
             "name": "skillspector",
             "rules": [
               {
+                "fullDescription": {
+                  "text": "The application reaches LangChain4j shell mode, which hands the model a single run_shell_command tool executing in the host process. Upstream documents it as running without sandboxing, containerization, or privilege restriction, so a prompt-injected model runs arbitrary commands on the host."
+                },
                 "id": "L4J-SHELL",
                 "shortDescription": {
-                  "text": "The build file declares langchain4j-experimental-skills-shell, putting LangChain4j's unsandboxed shell mode on the classpath where any wiring can reach it."
+                  "text": "Unsandboxed Shell Mode"
                 }
               }
             ]

@@ -415,6 +415,9 @@
             "name": "skillspector",
             "rules": [
               {
+                "fullDescription": {
+                  "text": "Dependencies lack version pinning, allowing potential malicious package updates. Consider pinning versions."
+                },
                 "id": "SC1",
                 "shortDescription": {
                   "text": "Unpinned Dependencies"

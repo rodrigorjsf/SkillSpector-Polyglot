@@ -963,45 +963,66 @@
                 }
               },
               {
+                "fullDescription": {
+                  "text": "Permission is declared but no corresponding code capability was detected. This may indicate removed functionality or pre-staging for future abuse."
+                },
                 "id": "LP4",
                 "shortDescription": {
-                  "text": "Permission 'read' is declared but no corresponding code capability (file_read) was detected."
+                  "text": "Overdeclared Permission"
                 }
               },
               {
+                "fullDescription": {
+                  "text": "This pattern attempts to override system instructions or ignore safety constraints. Without LLM analysis, manual review is recommended."
+                },
                 "id": "P1",
                 "shortDescription": {
-                  "text": "Instruction Override"
+                  "text": "Override Instructions"
                 }
               },
               {
+                "fullDescription": {
+                  "text": "Skill requests more permissions than appear necessary for its stated functionality. Review if elevated access is justified."
+                },
                 "id": "PE1",
                 "shortDescription": {
                   "text": "Excessive Permissions"
                 }
               },
               {
+                "fullDescription": {
+                  "text": "Hidden instructions detected in skill metadata (description, triggers, or parameters). These concealed directives can steer LLM behavior without the user's knowledge."
+                },
                 "id": "TP1",
                 "shortDescription": {
-                  "text": "HTML comment found in 'description': potential hidden instruction."
+                  "text": "Hidden Instructions"
                 }
               },
               {
+                "fullDescription": {
+                  "text": "Unicode deception detected in skill identifiers or descriptions. Homoglyphs, RTL overrides, or invisible characters can make malicious content appear benign."
+                },
                 "id": "TP2",
                 "shortDescription": {
-                  "text": "Homoglyph characters detected in identifier 'name': U+0430 (looks like 'a'). Visual spoofing of identifier name."
+                  "text": "Unicode Deception"
                 }
               },
               {
+                "fullDescription": {
+                  "text": "Instruction injection patterns found in parameter descriptions or default values. Parameter metadata is read by LLMs and can override intended behavior."
+                },
                 "id": "TP3",
                 "shortDescription": {
-                  "text": "Instruction override phrase in parameter 'path' description: 'ignore previous'."
+                  "text": "Parameter Description Injection"
                 }
               },
               {
+                "fullDescription": {
+                  "text": "YARA rule matched a hack tool or exploit indicator (offensive tools, reconnaissance, privilege escalation, or exploit frameworks)."
+                },
                 "id": "YR4",
                 "shortDescription": {
-                  "text": "YARA rule 'agent_skill_mcp_tool_poisoning_metadata': MCP/tool metadata poisoning indicators in tool schemas or skill manifests [agent_skills]"
+                  "text": "Hack Tool / Exploit Detected"
                 }
               }
             ]

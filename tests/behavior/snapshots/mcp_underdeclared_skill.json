@@ -654,27 +654,39 @@
             "name": "skillspector",
             "rules": [
               {
+                "fullDescription": {
+                  "text": "subprocess module calls execute external commands. Without careful input validation, this enables command injection."
+                },
                 "id": "AST4",
                 "shortDescription": {
                   "text": "subprocess module call"
                 }
               },
               {
+                "fullDescription": {
+                  "text": "Data is being sent to an external URL. This could be legitimate telemetry or data exfiltration. Manual review is recommended."
+                },
                 "id": "E1",
                 "shortDescription": {
                   "text": "External Transmission"
                 }
               },
               {
+                "fullDescription": {
+                  "text": "Skill declares no tool scope ('permissions' or 'allowed-tools') in its manifest but code uses detectable capabilities. Without a declaration, the skill's intent is opaque and cannot be validated."
+                },
                 "id": "LP3",
                 "shortDescription": {
-                  "text": "Skill declares no tool scope ('permissions' or 'allowed-tools') but code capabilities were detected: env, network, shell."
+                  "text": "Missing Permission Declaration"
                 }
               },
               {
+                "fullDescription": {
+                  "text": "Credentials or environment variables flow to a network sink. This is a high-confidence indicator of credential exfiltration."
+                },
                 "id": "TT3",
                 "shortDescription": {
-                  "text": "Tainted flow: 'api_key' from os.environ.get (line 10, credential/environment) → httpx.post (network output)"
+                  "text": "Credential Exfiltration Flow"
                 }
               }
             ]

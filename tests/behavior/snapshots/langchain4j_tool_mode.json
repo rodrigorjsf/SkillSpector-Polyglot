@@ -693,27 +693,39 @@
             "name": "skillspector",
             "rules": [
               {
+                "fullDescription": {
+                  "text": "Skill instructs the agent to never refuse or to always comply. Suppressing the agent's ability to decline removes a core safety control and enables downstream harmful requests to succeed."
+                },
                 "id": "AR1",
                 "shortDescription": {
-                  "text": "Anti-Refusal Statement"
+                  "text": "Refusal Suppression"
                 }
               },
               {
+                "fullDescription": {
+                  "text": "An MCP tool provider is built without a tool filter, so every tool the MCP server exposes reaches the agent instead of a scoped subset. The agent's capability is then whatever the server offers, which can widen without any change to this application."
+                },
                 "id": "L4J-MCP-FILTER",
                 "shortDescription": {
-                  "text": "McpToolProvider is built without a filter or filterToolNames, so every tool the MCP server exposes reaches the agent rather than a scoped subset."
+                  "text": "Unfiltered MCP Tool Provider"
                 }
               },
               {
+                "fullDescription": {
+                  "text": "A @Tool annotation's description carries instructions rather than describing the tool. The model reads that text as guidance, so an annotation nobody reviews as prose becomes a prompt-injection surface -- tool poisoning expressed in Java rather than in an MCP manifest."
+                },
                 "id": "L4J-TOOL-DESC",
                 "shortDescription": {
-                  "text": "A @Tool description carries instructions rather than describing the tool. The model reads this text as guidance, so it is a prompt-injection surface sitting in an annotation."
+                  "text": "Instruction-Carrying Tool Description"
                 }
               },
               {
+                "fullDescription": {
+                  "text": "A Java-defined Skill carries text that is not statically resolvable -- content, a name, a description, or a loader path built at runtime. The instruction surface the model reads exists in no scanned file, so no content rule examined it. This is reported rather than skipped: silence here would let the report read as clean on the one surface never inspected."
+                },
                 "id": "L4J-UNRESOLVED",
                 "shortDescription": {
-                  "text": "Skill content is not statically resolvable, so the instruction surface the model reads was not scanned. It exists in no file this Scan could open."
+                  "text": "Unresolvable Skill Content"
                 }
               }
             ]

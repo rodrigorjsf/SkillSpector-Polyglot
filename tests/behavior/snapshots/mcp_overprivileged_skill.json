@@ -646,15 +646,21 @@
             "name": "skillspector",
             "rules": [
               {
+                "fullDescription": {
+                  "text": "Permission list contains a wildcard ('*' or 'all'), granting blanket access with no least-privilege boundary. This disables permission-based security controls entirely."
+                },
                 "id": "LP2",
                 "shortDescription": {
-                  "text": "Permission list contains a wildcard entry ('*', 'all', 'full', or 'any'), granting blanket access with no least-privilege boundary."
+                  "text": "Wildcard Permission"
                 }
               },
               {
+                "fullDescription": {
+                  "text": "Permission is declared but no corresponding code capability was detected. This may indicate removed functionality or pre-staging for future abuse."
+                },
                 "id": "LP4",
                 "shortDescription": {
-                  "text": "Permission 'bash' is declared but no corresponding code capability (shell) was detected."
+                  "text": "Overdeclared Permission"
                 }
               }
             ]

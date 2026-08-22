@@ -649,27 +649,39 @@
             "name": "skillspector",
             "rules": [
               {
+                "fullDescription": {
+                  "text": "Data is being sent to an external URL. This could be legitimate telemetry or data exfiltration. Manual review is recommended."
+                },
                 "id": "E1",
                 "shortDescription": {
                   "text": "External Transmission"
                 }
               },
               {
+                "fullDescription": {
+                  "text": "Code enumerates, copies, or searches environment variables for secrets. Bulk environment access can collect credentials unrelated to the skill's stated purpose."
+                },
                 "id": "E2",
                 "shortDescription": {
                   "text": "Env Variable Harvesting"
                 }
               },
               {
+                "fullDescription": {
+                  "text": "Code uses capabilities (network, shell, file write, etc.) not covered by declared permissions. The skill does more than it claims, which may indicate deceptive intent."
+                },
                 "id": "LP1",
                 "shortDescription": {
-                  "text": "Code capability 'env' detected in scripts/greet.py but not covered by declared permissions."
+                  "text": "Underdeclared Capability"
                 }
               },
               {
+                "fullDescription": {
+                  "text": "Permission is declared but no corresponding code capability was detected. This may indicate removed functionality or pre-staging for future abuse."
+                },
                 "id": "LP4",
                 "shortDescription": {
-                  "text": "Permission 'read' is declared but no corresponding code capability (file_read) was detected."
+                  "text": "Overdeclared Permission"
                 }
               }
             ]

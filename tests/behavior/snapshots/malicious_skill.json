@@ -712,27 +712,39 @@
             "name": "skillspector",
             "rules": [
               {
+                "fullDescription": {
+                  "text": "Data is being sent to an external URL. This could be legitimate telemetry or data exfiltration. Manual review is recommended."
+                },
                 "id": "E1",
                 "shortDescription": {
                   "text": "External Transmission"
                 }
               },
               {
+                "fullDescription": {
+                  "text": "Code enumerates, copies, or searches environment variables for secrets. Bulk environment access can collect credentials unrelated to the skill's stated purpose."
+                },
                 "id": "E2",
                 "shortDescription": {
                   "text": "Env Variable Harvesting"
                 }
               },
               {
+                "fullDescription": {
+                  "text": "Skill declares no tool scope ('permissions' or 'allowed-tools') in its manifest but code uses detectable capabilities. Without a declaration, the skill's intent is opaque and cannot be validated."
+                },
                 "id": "LP3",
                 "shortDescription": {
-                  "text": "Skill declares no tool scope ('permissions' or 'allowed-tools') but code capabilities were detected: env, network."
+                  "text": "Missing Permission Declaration"
                 }
               },
               {
+                "fullDescription": {
+                  "text": "This content may contain harmful instructions that could cause physical harm if followed. CRITICAL: Review carefully before use."
+                },
                 "id": "P5",
                 "shortDescription": {
-                  "text": "Harmful Content Injection"
+                  "text": "Harmful Content"
                 }
               }
             ]

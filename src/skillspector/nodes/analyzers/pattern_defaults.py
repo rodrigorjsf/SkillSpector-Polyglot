@@ -505,3 +505,28 @@ def get_category(rule_id: str) -> str:
 def get_pattern_name(rule_id: str) -> str:
     """Get human-readable pattern name for a rule ID (for report output)."""
     return PATTERN_NAMES.get(rule_id, "Unknown")
+
+
+def lookup_pattern_name(rule_id: str) -> str | None:
+    """The catalogue's rule-level title for *rule_id*, or ``None`` when it has none.
+
+    :func:`get_pattern_name` answers ``"Unknown"`` for an uncatalogued rule id,
+    which reads as a label in a report cell and as a false description in a SARIF
+    rule descriptor. Whether an entry exists is the catalogue's own question, so
+    it is answered here rather than by a caller comparing against that sentinel.
+    """
+    return PATTERN_NAMES.get(rule_id)
+
+
+def lookup_explanation(pattern_id: str) -> str | None:
+    """The catalogue's rule-level paragraph for *pattern_id*, or ``None``.
+
+    The ``None``-returning half of the pair, for the same reason
+    :func:`get_explanation` cannot serve it: that one answers a generic sentence
+    rather than admitting the gap.
+
+    The two are asked **independently**. ``AST1``--``AST9`` carry an explanation
+    and no name, so a single "is this rule catalogued" gate feeding both slots
+    would either lose those paragraphs or title them ``"Unknown"``.
+    """
+    return DEFAULT_EXPLANATIONS.get(pattern_id)

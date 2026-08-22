@@ -430,9 +430,12 @@
             "name": "skillspector",
             "rules": [
               {
+                "fullDescription": {
+                  "text": "A Deep Agents application defines a custom subagent without Skills of its own. Upstream states that only the general-purpose subagent inherits the main agent's Skills and that every custom subagent needs its own skills parameter, so this subagent runs without the Skills the application around it was given. Nothing at runtime reports it: the subagent answers, and it answers without the procedure it was supposed to follow."
+                },
                 "id": "DA-SUBAGENT-SKILLS",
                 "shortDescription": {
-                  "text": "This custom subagent is defined without Skills of its own. A custom subagent does not inherit the main agent's Skills, so it runs without the Skills the application around it was given."
+                  "text": "Subagent Without Skills"
                 }
               }
             ]

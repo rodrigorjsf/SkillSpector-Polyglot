@@ -409,9 +409,12 @@
             "name": "skillspector",
             "rules": [
               {
+                "fullDescription": {
+                  "text": "Skill trigger shadows a common built-in command or another skill's trigger, potentially intercepting requests meant for trusted functionality."
+                },
                 "id": "TR2",
                 "shortDescription": {
-                  "text": "Shadow Command Trigger: 'start onboarding' conflicts with built-in command 'start'"
+                  "text": "Shadow Command Trigger"
                 }
               }
             ]

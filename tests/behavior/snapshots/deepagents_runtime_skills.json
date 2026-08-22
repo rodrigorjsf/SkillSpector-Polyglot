@@ -430,9 +430,12 @@
             "name": "skillspector",
             "rules": [
               {
+                "fullDescription": {
+                  "text": "A Deep Agents host configuration carries something that is not statically resolvable -- the Skill source list, the backend, the permission rules, or the store a resolved Skill path is routed to. Resolution stops at the module boundary by design, so what the agent was given, or what it may do to it, exists in no scanned file. This is reported rather than skipped: silence here would let the report read as clean on the one surface never inspected."
+                },
                 "id": "DA-UNRESOLVED",
                 "shortDescription": {
-                  "text": "The Skill source list is assembled at runtime, so the Scan cannot say which Skill directories this agent was given and examined none of them."
+                  "text": "Unresolvable Host Configuration"
                 }
               }
             ]

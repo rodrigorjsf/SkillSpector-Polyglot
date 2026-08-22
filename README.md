@@ -1499,6 +1499,15 @@ The top-level shape is (this example shows a full LLM-backed scan; with `--no-ll
 
 For CI/IDE tooling, `--format sarif` emits SARIF 2.1.0.
 
+`runs[].tool.driver.rules[]` is a catalogue of the *rules* that fired, not of the findings. Each
+descriptor's `shortDescription` is the rule's short title and its `fullDescription` the rule's
+paragraph — both identical however many findings of that rule the run carried, and in whatever
+order they were emitted, so a consumer that renders a rule catalogue (GitHub code scanning does)
+shows a description of the rule rather than a sentence about one file. The per-finding sentence
+stays where SARIF puts it, on `runs[].results[].message`. A rule id with no catalogue entry — an
+LLM-emitted one, or a `SPEC-*` conformance rule — falls back to the message of the first finding
+of that rule and carries no `fullDescription`.
+
 ### Which stream carries what
 
 One rule covers every line the CLI prints: **the report goes to stdout, everything else goes to

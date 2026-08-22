@@ -589,15 +589,21 @@
             "name": "skillspector",
             "rules": [
               {
+                "fullDescription": {
+                  "text": "Data is being sent to an external URL. This could be legitimate telemetry or data exfiltration. Manual review is recommended."
+                },
                 "id": "E1",
                 "shortDescription": {
                   "text": "External Transmission"
                 }
               },
               {
+                "fullDescription": {
+                  "text": "Skill declares no tool scope ('permissions' or 'allowed-tools') in its manifest but code uses detectable capabilities. Without a declaration, the skill's intent is opaque and cannot be validated."
+                },
                 "id": "LP3",
                 "shortDescription": {
-                  "text": "Skill declares no tool scope ('permissions' or 'allowed-tools') but code capabilities were detected: network."
+                  "text": "Missing Permission Declaration"
                 }
               }
             ]

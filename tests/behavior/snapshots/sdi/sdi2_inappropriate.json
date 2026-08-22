@@ -591,21 +591,30 @@
             "name": "skillspector",
             "rules": [
               {
+                "fullDescription": {
+                  "text": "subprocess module calls execute external commands. Without careful input validation, this enables command injection."
+                },
                 "id": "AST4",
                 "shortDescription": {
                   "text": "subprocess module call"
                 }
               },
               {
+                "fullDescription": {
+                  "text": "Skill declares no tool scope ('permissions' or 'allowed-tools') in its manifest but code uses detectable capabilities. Without a declaration, the skill's intent is opaque and cannot be validated."
+                },
                 "id": "LP3",
                 "shortDescription": {
-                  "text": "Skill declares no tool scope ('permissions' or 'allowed-tools') but code capabilities were detected: shell."
+                  "text": "Missing Permission Declaration"
                 }
               },
               {
+                "fullDescription": {
+                  "text": "Commands invoke sudo or root privileges. Verify this elevated access is necessary and justified."
+                },
                 "id": "PE2",
                 "shortDescription": {
-                  "text": "Sudo/Root Execution"
+                  "text": "Sudo/Root Invocation"
                 }
               }
             ]

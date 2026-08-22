@@ -430,9 +430,12 @@
             "name": "skillspector",
             "rules": [
               {
+                "fullDescription": {
+                  "text": "A Deep Agents agent is given a Skill source path that nothing stops it writing to. Upstream states the default in as many words -- agents can write to skill files if the backend permits it and no permission rule blocks the path -- so an application that adds no denying rule has handed the agent the instructions it runs on. The agent can then rewrite its own Skill, and every later run reads the rewritten one."
+                },
                 "id": "DA-SKILL-WRITABLE",
                 "shortDescription": {
-                  "text": "The agent is given the Skill source path /skills/personal/ and nothing denies it write access, so it can rewrite the instructions it runs on and no human is asked."
+                  "text": "Writable Skill Source"
                 }
               }
             ]

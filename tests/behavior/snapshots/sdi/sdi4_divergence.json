@@ -467,9 +467,12 @@
             "name": "skillspector",
             "rules": [
               {
+                "fullDescription": {
+                  "text": "Permission is declared but no corresponding code capability was detected. This may indicate removed functionality or pre-staging for future abuse."
+                },
                 "id": "LP4",
                 "shortDescription": {
-                  "text": "Permission 'read:files' is declared but no corresponding code capability (file_read) was detected."
+                  "text": "Overdeclared Permission"
                 }
               }
             ]

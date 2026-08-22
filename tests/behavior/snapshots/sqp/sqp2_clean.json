@@ -529,18 +529,27 @@
             "name": "skillspector",
             "rules": [
               {
+                "fullDescription": {
+                  "text": "subprocess module calls execute external commands. Without careful input validation, this enables command injection."
+                },
                 "id": "AST4",
                 "shortDescription": {
                   "text": "subprocess module call"
                 }
               },
               {
+                "fullDescription": {
+                  "text": "Skill declares no tool scope ('permissions' or 'allowed-tools') in its manifest but code uses detectable capabilities. Without a declaration, the skill's intent is opaque and cannot be validated."
+                },
                 "id": "LP3",
                 "shortDescription": {
-                  "text": "Skill declares no tool scope ('permissions' or 'allowed-tools') but code capabilities were detected: shell."
+                  "text": "Missing Permission Declaration"
                 }
               },
               {
+                "fullDescription": {
+                  "text": "Tool parameters are crafted to achieve unintended or unsafe behavior. Parameter abuse can bypass intended safety checks (e.g. shell=True, --force, dangerous glob patterns)."
+                },
                 "id": "TM1",
                 "shortDescription": {
                   "text": "Tool Parameter Abuse"

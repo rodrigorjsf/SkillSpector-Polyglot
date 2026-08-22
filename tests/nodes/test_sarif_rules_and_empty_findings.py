@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 SkillSpector-Polyglot contributors
 # SPDX-License-Identifier: Apache-2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -117,11 +118,16 @@ class TestSarifRulesArray:
         assert len(driver["rules"]) == 1
 
     def test_rule_has_id_and_description(self) -> None:
+        # The descriptor describes the *rule*, so it comes from the Rule
+        # catalogue and not from this Finding's message (issue #118). The
+        # message-shaped assertion this used to make is what the defect looked
+        # like from inside the suite.
         findings = [_make_finding(rule_id="PE3", message="Credential Access")]
         sarif = _build_sarif(findings)
         rule = sarif["runs"][0]["tool"]["driver"]["rules"][0]
         assert rule["id"] == "PE3"
-        assert rule["shortDescription"]["text"] == "Credential Access"
+        assert rule["shortDescription"]["text"] == "Credential File Access"
+        assert rule["fullDescription"]["text"].startswith("Code accesses credential files")
 
     def test_multiple_rules_deduplicated(self) -> None:
         findings = [

@@ -467,15 +467,21 @@
             "name": "skillspector",
             "rules": [
               {
+                "fullDescription": {
+                  "text": "Skill enables autonomous high-impact decisions without human-in-the-loop verification. Critical operations (destructive commands, financial transactions, data deletion) should require explicit user confirmation."
+                },
                 "id": "EA2",
                 "shortDescription": {
                   "text": "Autonomous Decision Making"
                 }
               },
               {
+                "fullDescription": {
+                  "text": "Skill declares no tool scope ('permissions' or 'allowed-tools') in its manifest but code uses detectable capabilities. Without a declaration, the skill's intent is opaque and cannot be validated."
+                },
                 "id": "LP3",
                 "shortDescription": {
-                  "text": "Skill declares no tool scope ('permissions' or 'allowed-tools') but code capabilities were detected: file_read."
+                  "text": "Missing Permission Declaration"
                 }
               }
             ]

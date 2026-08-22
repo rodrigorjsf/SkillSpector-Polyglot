@@ -43,6 +43,10 @@ from skillspector.llm_utils import is_llm_available
 from skillspector.logging_config import get_logger
 from skillspector.manifest_status import MANIFEST_STATUS_MESSAGES, ManifestStatus
 from skillspector.models import Finding
+from skillspector.nodes.analyzers.pattern_defaults import (
+    lookup_explanation,
+    lookup_pattern_name,
+)
 from skillspector.nodes.deduplicate import deduplicate
 from skillspector.python_ast import clear_python_ast_cache
 from skillspector.sarif_models import (
@@ -385,6 +389,39 @@ def _not_scored_suffix(
     return f" ({unscored_rule_note.strip() or _NOT_SCORED_FALLBACK_NOTE})"
 
 
+def _rule_descriptor(rule_id: str, fallback_message: str) -> SarifReportingDescriptor:
+    """The SARIF rule descriptor for *rule_id*, built from the Rule catalogue.
+
+    SARIF 2.1.0 defines ``reportingDescriptor.shortDescription`` as a concise
+    description of the *rule*, with the per-result sentence belonging to
+    ``result.message`` -- which this report already sets correctly. The builder
+    used to record whichever Finding of a rule it saw first and put that sentence
+    here instead, so a rule-level slot carried text that changed with the input
+    rather than with the rule (issue #118). The shortcut was invisible until Rules
+    with per-instance messages arrived: for the ``P*``/``TP*`` families the
+    message *is* the rule text.
+
+    *fallback_message* is that first message, and it is still needed. The
+    ``SPEC-*`` and ``AE*`` families and every LLM-emitted rule id reach the report
+    with no catalogue entry, and a descriptor with no ``shortDescription`` at all
+    would be worse than a borrowed sentence.
+
+    The two catalogue lookups are **independent**, not one gate feeding both
+    slots: ``AST1``--``AST9`` carry an explanation and no name, and a single gate
+    would either drop those paragraphs or title them ``"Unknown"``.
+
+    One decision point serves both passes over the findings -- the reported one
+    and the suppressed one -- which is what stops a report whose only Finding of
+    some rule was suppressed from taking its descriptor from that suppression.
+    """
+    explanation = lookup_explanation(rule_id)
+    return SarifReportingDescriptor(
+        id=rule_id,
+        shortDescription=SarifMessage(text=lookup_pattern_name(rule_id) or fallback_message),
+        fullDescription=SarifMessage(text=explanation) if explanation else None,
+    )
+
+
 def _severity_to_sarif_level(severity: str) -> Literal["error", "warning", "note"]:
     """Map Finding.severity to SARIF result level."""
     return {
@@ -590,7 +627,9 @@ def _build_sarif(
 ) -> dict[str, object]:
     """Build one SARIF invocation with canonical inspection notifications."""
     results: list[SarifResult] = []
-    seen_rule_ids: dict[str, str] = {}
+    # rule id -> the message of the first Finding seen for it, kept only as the
+    # fall-back for a rule id the catalogue does not describe.
+    first_message_by_rule_id: dict[str, str] = {}
 
     for finding in findings:
         if not finding.rule_id or not finding.message:
@@ -623,8 +662,8 @@ def _build_sarif(
                     ],
                 )
             )
-        if finding.rule_id not in seen_rule_ids:
-            seen_rule_ids[finding.rule_id] = finding.message
+        if finding.rule_id not in first_message_by_rule_id:
+            first_message_by_rule_id[finding.rule_id] = finding.message
 
     # Baseline-suppressed findings are kept in the SARIF for an audit trail, but
     # marked with the `suppressions` property so consumers exclude them from counts.
@@ -661,15 +700,12 @@ def _build_sarif(
                     suppressions=[SarifSuppression(kind="external", justification=sf.reason)],
                 )
             )
-        if finding.rule_id not in seen_rule_ids:
-            seen_rule_ids[finding.rule_id] = finding.message
+        if finding.rule_id not in first_message_by_rule_id:
+            first_message_by_rule_id[finding.rule_id] = finding.message
 
     rules = [
-        SarifReportingDescriptor(
-            id=rule_id,
-            shortDescription=SarifMessage(text=description),
-        )
-        for rule_id, description in sorted(seen_rule_ids.items())
+        _rule_descriptor(rule_id, fallback_message)
+        for rule_id, fallback_message in sorted(first_message_by_rule_id.items())
     ]
 
     completeness = analysis_completeness or {}

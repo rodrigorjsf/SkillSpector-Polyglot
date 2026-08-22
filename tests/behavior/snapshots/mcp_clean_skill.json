@@ -478,15 +478,21 @@
             "name": "skillspector",
             "rules": [
               {
+                "fullDescription": {
+                  "text": "subprocess module calls execute external commands. Without careful input validation, this enables command injection."
+                },
                 "id": "AST4",
                 "shortDescription": {
                   "text": "subprocess module call"
                 }
               },
               {
+                "fullDescription": {
+                  "text": "Data from a source is assigned to a variable that is later passed to a sink, creating a variable-mediated taint flow."
+                },
                 "id": "TT2",
                 "shortDescription": {
-                  "text": "Tainted flow: 'formatted' from pathlib.Path.read_text (line 15, file read) → pathlib.Path.write_text (file write)"
+                  "text": "Variable-Mediated Taint Flow"
                 }
               }
             ]

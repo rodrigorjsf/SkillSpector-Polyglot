@@ -620,24 +620,36 @@
             "name": "skillspector",
             "rules": [
               {
+                "fullDescription": {
+                  "text": "Two Skill sources one Deep Agents application passes to skills=[...] both declare a Skill of the same name. Later sources override earlier ones -- last one wins -- so the Skill the agent loads is the one in the later source and the earlier one never runs. Where the later source is writable, or is where a per-user directory lives, that is a supply-chain substitution expressed entirely in configuration: nothing in either Skill directory read on its own shows it, and a reviewer who vetted the shared library vetted a Skill the agent does not use."
+                },
                 "id": "DA-SHADOW",
                 "shortDescription": {
-                  "text": "The Skill ticket-triage is declared in both the Skill source /skills/shared/ and the later source /skills/personal/. Later sources override earlier ones for Skills of the same name, so the agent loads library/skills/personal/ticket-triage/SKILL.md and the earlier one never runs."
+                  "text": "Shadowed Skill Source"
                 }
               },
               {
+                "fullDescription": {
+                  "text": "A Deep Agents agent is given a Skill source path that nothing stops it writing to. Upstream states the default in as many words -- agents can write to skill files if the backend permits it and no permission rule blocks the path -- so an application that adds no denying rule has handed the agent the instructions it runs on. The agent can then rewrite its own Skill, and every later run reads the rewritten one."
+                },
                 "id": "DA-SKILL-WRITABLE",
                 "shortDescription": {
-                  "text": "The agent is given the Skill source path /skills/personal/ and nothing denies it write access, so it can rewrite the instructions it runs on and no human is asked."
+                  "text": "Writable Skill Source"
                 }
               },
               {
+                "fullDescription": {
+                  "text": "A Deep Agents application defines a custom subagent without Skills of its own. Upstream states that only the general-purpose subagent inherits the main agent's Skills and that every custom subagent needs its own skills parameter, so this subagent runs without the Skills the application around it was given. Nothing at runtime reports it: the subagent answers, and it answers without the procedure it was supposed to follow."
+                },
                 "id": "DA-SUBAGENT-SKILLS",
                 "shortDescription": {
-                  "text": "This custom subagent is defined without Skills of its own. A custom subagent does not inherit the main agent's Skills, so it runs without the Skills the application around it was given."
+                  "text": "Subagent Without Skills"
                 }
               },
               {
+                "fullDescription": {
+                  "text": "Dependencies lack version pinning, allowing potential malicious package updates. Consider pinning versions."
+                },
                 "id": "SC1",
                 "shortDescription": {
                   "text": "Unpinned Dependencies"
