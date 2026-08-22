@@ -344,6 +344,33 @@ class TestARepositoryScan:
             sorted(entry) for entry in reference["skills"]
         ]
 
+    def test_each_mode_names_its_own_discovery_in_the_scope_field(self, tmp_path: Path) -> None:
+        """The one field that says which mode built the object, asserted per mode.
+
+        The shared keys are compared as an equivalence above; ``scope`` is the
+        deliberate difference and so cannot be asserted that way. It is also the
+        only field that lets a reader tell a Repository Scan's zeroed
+        ``public_finding_records`` and ``report_characters`` -- budgets that mode
+        does not have -- from a recursive Scan that really consumed none of its
+        own. And it is a vocabulary contract: ``CONTEXT.md`` lists "recursive
+        scan" among the spellings a Repository Scan is never called, and a
+        machine-readable field is prose too.
+        """
+        repository = self._repository(tmp_path)
+        flat = tmp_path / "flat"
+        _write_skill(flat / "one", "one")
+        _write_skill(flat / "two", "two")
+
+        repo_scan = runner.invoke(
+            app, ["scan", str(repository), "--repo-scan", "--no-llm", "-f", "json"]
+        )
+        recursive = runner.invoke(app, ["scan", str(flat), "--recursive", "--no-llm", "-f", "json"])
+
+        assert repo_scan.exit_code == 0, repo_scan.output
+        assert recursive.exit_code == 0, recursive.output
+        assert json.loads(repo_scan.stdout)["analysis_completeness"]["scope"] == "repository_skills"
+        assert json.loads(recursive.stdout)["analysis_completeness"]["scope"] == "recursive_skills"
+
     def test_a_raising_child_is_still_counted_as_scanned_in_both_modes(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
