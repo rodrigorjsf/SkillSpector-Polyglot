@@ -84,7 +84,7 @@ import yaml
 from typer.testing import CliRunner
 
 from skillspector import __version__
-from skillspector.cli import _multi_skill_public_record_count, app
+from skillspector.cli import _combined_skill_entry, _multi_skill_public_record_count, app
 from skillspector.models import Finding
 from skillspector.nodes.report import reported_findings
 from skillspector.sarif_models import validate_sarif_report
@@ -1792,7 +1792,8 @@ class TestASummaryTableAgreesWithItsReport:
         assert reported_findings({"findings": [finding]}) == [finding]
 
     def test_a_suppressed_finding_is_subtracted(self) -> None:
-        """The first defect, isolated: no findings key in state has suppression applied."""
+        """The first defect, isolated: a state carrying both partitions is read
+        as though the kept side were the whole of it."""
         kept = Finding(rule_id="TM1", message="m", severity="LOW", confidence=1.0, file="a.py")
         accepted = Finding(rule_id="TM2", message="m", severity="LOW", confidence=1.0, file="b.py")
 
@@ -1886,10 +1887,17 @@ class TestOneRecursiveScanCountsItsFindingsOnce:
         left the budget one ahead.
         """
         result = _SELECTION_SHAPES["no filtered key, a suppressed partition"]
-        suppressed_records = 1
+        suppressed = result.get("suppressed_findings")
+        suppressed_records = len(suppressed) if isinstance(suppressed, list) else 0
 
-        assert _multi_skill_public_record_count(result) - suppressed_records == len(
-            reported_findings(result)
+        # Through the entry builder, not through a second call to the same reader.
+        # Re-expressing the production selection here would make the assertion
+        # true of itself, and a regression that inlined the selection at the call
+        # site would leave this green.
+        entry = _combined_skill_entry("one", "skills/one", result)
+
+        assert (
+            _multi_skill_public_record_count(result) - suppressed_records == entry["finding_count"]
         )
 
 
