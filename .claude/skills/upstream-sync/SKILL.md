@@ -161,11 +161,21 @@ with no attributable delta left in it.
 **If it has already been squashed**, the repair does not touch a single file:
 
 ```bash
-git merge -s ours upstream/main          # records the parent, keeps main's tree
+git merge -s ours <synced-sha>           # records the parent, keeps main's tree
 ```
+
+`<synced-sha>` is the upstream commit the sync actually merged — the second parent of the sync
+branch's merge commit — and **not** `upstream/main`. If upstream has moved since, `upstream/main`
+would record commits nobody integrated as already merged, and the next sync would skip them without
+a single conflict to say so.
 
 Verify before pushing: the tree must be byte-identical to the squash commit's
 (`git rev-parse <squash>^{tree}` equals `HEAD^{tree}`), the commit must have two parents, and the
-count above must be `0`. Landed once already, in `208cfee`, after `#104` was squashed.
+count above must equal the commits upstream added after `<synced-sha>` — `0` when it has not moved.
+
+Land it with a fast-forward push to `main`, and ask the maintainer before doing so. A pull request
+would route the repair through the same squash and rebase buttons that removed the parent. Needed
+twice so far: `208cfee` after `#104` was squashed, and `c099f68` after `#142` was — a warning at the
+top of the pull request body did not prevent the second.
 
 File whatever the sync surfaced and could not close as its own issue, per `CLAUDE.md`.
