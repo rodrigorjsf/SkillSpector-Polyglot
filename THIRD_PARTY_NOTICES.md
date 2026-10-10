@@ -130,8 +130,9 @@ and project URL.
 ### regex
 
 - **License:** Apache-2.0 AND CNRI-Python — the Apache-2.0 text is reproduced
-  below; the CNRI-Python terms cover the portion derived from Secret Labs' `sre`
-  and ship in the distribution's own `LICENSE.txt`
+  below. The distribution's `LICENSE.txt` names "CNRI's Python 1.6 license" for
+  the portion derived from the `re` module of CPython 2.6 and 3.1, and does not
+  reproduce that license's text; neither does this file
 - **Copyright:** copyright (c) 1998-2001 by Secret Labs AB — the only copyright
   line `LICENSE.txt` carries; it licenses "all additions and alterations" under
   Apache-2.0 without naming a holder for them
