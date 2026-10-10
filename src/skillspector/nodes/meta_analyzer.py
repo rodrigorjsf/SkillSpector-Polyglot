@@ -25,12 +25,14 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Sequence
+from dataclasses import replace
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
 from skillspector.agent_skills_spec import RULES as _SPEC_RULES
 from skillspector.constants import _SKILLSPECTOR_DEFAULT_MODEL
+from skillspector.dependency_sources import redact_text
 from skillspector.inspection_ledger import (
     AnalyzerStatus,
     AnalyzerStatusEvent,
@@ -49,6 +51,7 @@ from skillspector.llm_analyzer_base import (
     BatchFailure,
     LLMAnalyzerBase,
     LLMRuntimeLimitError,
+    append_output_language_instruction,
     estimate_tokens,
 )
 from skillspector.llm_utils import run_async
@@ -76,6 +79,7 @@ logger = get_logger(__name__)
 class MetaAnalyzerFinding(BaseModel):
     """A single finding evaluated by the meta-analyzer LLM (filter/enrich mode)."""
 
+    finding_id: str | None = Field(default=None, description="Exact static Finding ID.")
     pattern_id: str = Field(description="The static analysis pattern ID (e.g. E2, P1)")
     start_line: int | None = Field(
         default=None,
@@ -192,9 +196,8 @@ For each static analysis finding, evaluate:
 4. Does the skill context make this more or less dangerous?
    (e.g., "cyanide" in a cooking skill = CRITICAL, in a chemistry education skill = maybe OK)
 
-IMPORTANT: Include the start_line from each finding's Location field (the number
-after the colon, e.g. for "Location: file.md:15" use start_line=15). This is
-required to distinguish multiple findings with the same pattern ID in one file.
+IMPORTANT: Copy each finding's Finding ID exactly and include its start_line.
+The Finding ID distinguishes multiple findings that share a pattern ID and line.
 
 For findings you confirm as vulnerabilities, provide an explanation of WHY
 this is dangerous and remediation steps for HOW to fix the issue.
@@ -231,10 +234,12 @@ def _format_findings_for_prompt(findings: list[Finding]) -> str:
     for i, f in enumerate(findings, 1):
         end = f"–{f.end_line}" if f.end_line and f.end_line != f.start_line else ""
         loc = f"{f.file}:{f.start_line}{end}"
-        matched = f.matched_text or f.message
-        ctx = f.context or ""
+        message = redact_text(f.message)
+        matched = redact_text(f.matched_text or f.message)
+        ctx = redact_text(f.context or "")
         lines.append(
-            f"{i}. [{f.rule_id}] {f.message} ({f.severity})\n"
+            f"{i}. Finding ID: {f.finding_id}\n"
+            f"   [{f.rule_id}] {message} ({f.severity})\n"
             f"   Location: {loc}\n"
             f"   Matched: {matched}\n"
             f"   Context:\n   " + "\n   ".join(ctx.splitlines())
@@ -297,36 +302,22 @@ def _model_visible(findings: Sequence[Finding]) -> list[Finding]:
     return [finding for finding in findings if finding.rule_id not in _SPEC_RULE_IDS]
 
 
+_AUTHORITATIVE_DETERMINISTIC_RULES = frozenset({"SC9", "SC10"})
+
+
 def _fallback_filtered(findings: list[Finding]) -> list[Finding]:
     """Preserve deterministic findings and add defaults in --no-llm mode."""
     result: list[Finding] = []
     for f in findings:
+        if f.rule_id in _AUTHORITATIVE_DETERMINISTIC_RULES:
+            result.append(f)
+            continue
         result.append(
-            Finding(
-                rule_id=f.rule_id,
-                message=f.message,
-                finding_id=f.finding_id,
-                severity=f.severity,
-                confidence=f.confidence,
-                file=f.file,
-                start_line=f.start_line,
-                end_line=f.end_line,
+            replace(
+                f,
                 remediation=f.remediation or get_remediation(f.rule_id),
-                tags=f.tags,
-                context=f.context,
-                matched_text=f.matched_text,
-                transitive_depth=f.transitive_depth,
-                source_url=f.source_url,
-                source_identity=f.source_identity,
-                source_digest=f.source_digest,
-                category=getattr(f, "category", None),
-                pattern=getattr(f, "pattern", None),
-                finding=getattr(f, "finding", None),
-                explanation=getattr(f, "explanation", None),
-                code_snippet=getattr(f, "code_snippet", None) or f.context,
+                code_snippet=f.code_snippet or f.context,
                 evidence=dict(f.evidence),
-                intent=f.intent,
-                match_fingerprint=f.match_fingerprint,
                 occurrences=list(f.occurrences),
             )
         )
@@ -345,35 +336,109 @@ def _passthrough_with_defaults(findings: list[Finding]) -> list[Finding]:
     should fail-closed — showing more findings is safer than silently dropping.
     """
     return [
-        Finding(
-            rule_id=f.rule_id,
-            message=f.message,
-            finding_id=f.finding_id,
-            severity=f.severity,
-            confidence=f.confidence,
-            file=f.file,
-            start_line=f.start_line,
-            end_line=f.end_line,
-            remediation=f.remediation or get_remediation(f.rule_id),
-            tags=f.tags,
-            context=f.context,
-            matched_text=f.matched_text,
-            transitive_depth=f.transitive_depth,
-            source_url=f.source_url,
-            source_identity=f.source_identity,
-            source_digest=f.source_digest,
-            category=getattr(f, "category", None),
-            pattern=getattr(f, "pattern", None),
-            finding=getattr(f, "finding", None),
-            explanation=getattr(f, "explanation", None),
-            code_snippet=getattr(f, "code_snippet", None) or f.context,
-            evidence=dict(f.evidence),
-            intent=f.intent,
-            match_fingerprint=f.match_fingerprint,
-            occurrences=list(f.occurrences),
+        (
+            f
+            if f.rule_id in _AUTHORITATIVE_DETERMINISTIC_RULES
+            else replace(
+                f,
+                remediation=f.remediation or get_remediation(f.rule_id),
+                code_snippet=f.code_snippet or f.context,
+                evidence=dict(f.evidence),
+                occurrences=list(f.occurrences),
+            )
         )
         for f in findings
     ]
+
+
+def _review_evidence(
+    finding: Finding, outcome: str, item: dict[str, Any] | None = None
+) -> dict[str, object]:
+    """Preserve original evidence while recording review metadata only."""
+    evidence = {**finding.evidence, "llm_review_outcome": outcome}
+    if item is not None:
+        confidence = item.get("confidence")
+        if isinstance(confidence, (int, float)) and not isinstance(confidence, bool):
+            evidence["llm_review_confidence"] = confidence
+    return evidence
+
+
+def _review_outcome(item: dict[str, Any]) -> str:
+    if not item.get("is_vulnerability", False):
+        return "disagreed"
+    return "low-confidence" if float(item.get("confidence", 0.7)) < 0.6 else "confirmed"
+
+
+_REVIEW_OUTCOME_PRIORITY = {"disagreed": 0, "low-confidence": 1, "confirmed": 2}
+
+
+def _prefer_assessment(
+    current: dict[str, Any] | None,
+    candidate: dict[str, Any],
+) -> dict[str, Any]:
+    """Return the stronger assessment, preserving first input order on ties."""
+    if current is None:
+        return candidate
+    current_priority = _REVIEW_OUTCOME_PRIORITY.get(_review_outcome(current), -1)
+    candidate_priority = _REVIEW_OUTCOME_PRIORITY.get(_review_outcome(candidate), -1)
+    return candidate if candidate_priority > current_priority else current
+
+
+def _assessment_matches_finding(
+    item: dict[str, Any],
+    finding: Finding,
+    batch_file_path: str,
+) -> bool:
+    """Return whether an id-bearing assessment actually describes *finding*."""
+    pattern_id = item.get("pattern_id")
+    if not isinstance(pattern_id, str) or pattern_id != finding.rule_id:
+        return False
+    if str(item.get("_file", batch_file_path)) != finding.file:
+        return False
+    start_line = item.get("start_line")
+    if start_line is not None:
+        try:
+            if int(start_line) != finding.start_line:
+                return False
+        except (TypeError, ValueError):
+            return False
+    end_line = item.get("end_line")
+    if end_line is not None and finding.end_line is not None:
+        try:
+            if int(end_line) != finding.end_line:
+                return False
+        except (TypeError, ValueError):
+            return False
+    return True
+
+
+def _mark_unconfirmed(
+    finding: Finding, outcome: str, item: dict[str, Any] | None = None
+) -> Finding:
+    tags = list(finding.tags)
+    if "llm-unconfirmed" not in tags:
+        tags.append("llm-unconfirmed")
+    return replace(
+        finding,
+        remediation=finding.remediation or get_remediation(finding.rule_id),
+        tags=tags,
+        code_snippet=finding.code_snippet or finding.context,
+        evidence=_review_evidence(finding, outcome, item),
+        occurrences=list(finding.occurrences),
+    )
+
+
+def _mark_review_failed(finding: Finding) -> Finding:
+    """Record a failed review without conflating the outage with disagreement."""
+    if finding.rule_id in _AUTHORITATIVE_DETERMINISTIC_RULES:
+        return finding
+    return replace(
+        finding,
+        remediation=finding.remediation or get_remediation(finding.rule_id),
+        code_snippet=finding.code_snippet or finding.context,
+        evidence=_review_evidence(finding, "failed"),
+        occurrences=list(finding.occurrences),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -427,14 +492,29 @@ class LLMMetaAnalyzer(LLMAnalyzerBase):
         return bool(_model_visible(batch.findings))
 
     def build_prompt(self, batch: Batch, **kwargs: object) -> str:
-        metadata_text = kwargs.get("metadata_text", "No metadata available")
+        metadata_text = redact_text(str(kwargs.get("metadata_text", "No metadata available")))
         findings_text = _format_findings_for_prompt(_model_visible(batch.findings))
-        return self.base_prompt.format(
-            metadata=metadata_text,
-            file_label=batch.file_label,
-            file_content=batch.content,
-            static_findings=findings_text,
+        return append_output_language_instruction(
+            self.base_prompt.format(
+                metadata=metadata_text,
+                file_label=batch.file_label,
+                file_content=batch.content,
+                static_findings=findings_text,
+            )
         )
+
+    def get_batches(
+        self,
+        file_paths: list[str],
+        file_cache: dict[str, str],
+        findings: list[Finding] | None = None,
+    ) -> list[Batch]:
+        """Redact credential-bearing SC10 source text before provider batching."""
+        batches = super().get_batches(file_paths, file_cache, findings)
+        for batch in batches:
+            if any(finding.rule_id == "SC10" for finding in batch.findings):
+                batch.content = redact_text(batch.content)
+        return batches
 
     def parse_response(  # type: ignore[override]  # Base class permits custom parsed values.
         self,
@@ -458,12 +538,12 @@ class LLMMetaAnalyzer(LLMAnalyzerBase):
     ) -> list[Finding]:
         """Enrich deterministic findings without letting LLM output suppress them.
 
-        Uses granular ``(file, rule_id, start_line, end_line)`` keying when the
-        LLM provides a ``start_line``, so multiple findings with the same
-        rule_id in one file are independently confirmed or rejected.  ``end_line``
-        is included in the key when provided but falls back to ``None`` so
-        callers that omit it still match.  Falls back to coarse
-        ``(file, rule_id)`` keying for LLM responses that omit ``start_line``.
+        Exact ``finding_id`` values are validated against the submitted batch
+        and the item's rule/file/start location.  Every item is also indexed by
+        granular ``(file, rule_id, start_line, end_line)`` when ``start_line`` is
+        present, falling back to ``(file, rule_id, start_line)`` or coarse
+        ``(file, rule_id)`` when needed.  Duplicate assessments are merged
+        deterministically with confirmed > low-confidence > disagreed.
 
         Every deterministic finding remains in primary output. Unconfirmed
         findings receive an annotation tag; confirmed findings may gain an
@@ -482,43 +562,74 @@ class LLMMetaAnalyzer(LLMAnalyzerBase):
         anyway -- a stale id, a hallucinated one -- from reaching a Finding; see
         ``_SPEC_RULE_IDS`` for why the exemption is additive.
         """
-        _enrichment = tuple[str, str, float]
-        confirmed_granular: dict[tuple[str, str, int, int | None], _enrichment] = {}
+        assessments_by_id: dict[str, dict[str, Any]] = {}
+        confirmed_granular: dict[tuple[str, str, int, int | None], dict[str, Any]] = {}
         # Fallback index keyed without end_line (see lookup below). Issue #67.
-        confirmed_by_start: dict[tuple[str, str, int], _enrichment] = {}
-        confirmed_coarse: dict[tuple[str, str], _enrichment] = {}
+        confirmed_by_start: dict[tuple[str, str, int], dict[str, Any]] = {}
+        confirmed_coarse: dict[tuple[str, str], dict[str, Any]] = {}
+        exact_counts: dict[tuple[str, str, int, int | None], int] = {}
+        for finding in findings:
+            key = (finding.file, finding.rule_id, finding.start_line, finding.end_line)
+            exact_counts[key] = exact_counts.get(key, 0) + 1
 
         for batch, llm_items in batch_results:
+            batch_findings_by_id = {
+                finding.finding_id: finding
+                for finding in batch.findings
+                if isinstance(finding.finding_id, str) and finding.finding_id
+            }
             for item in llm_items:
+                file_path = str(item.get("_file", batch.file_path))
                 pattern_id = item.get("pattern_id")
-                if not pattern_id or not item.get("is_vulnerability", False):
-                    continue
-                conf = float(item.get("confidence", 0.7))
-                if conf < 0.6:
-                    continue
-                pattern_id = str(pattern_id)
-                explanation = (item.get("explanation") or "").strip() or get_explanation(pattern_id)
-                remediation = (item.get("remediation") or "").strip() or get_remediation(pattern_id)
-                file_path = item.get("_file", batch.file_path)
-                enrichment: _enrichment = (explanation, remediation, conf)
+                pattern_id = str(pattern_id) if pattern_id else ""
                 start_line = item.get("start_line")
-                if start_line is not None:
-                    end_line = item.get("end_line")
-                    confirmed_granular[
-                        (
-                            file_path,
-                            pattern_id,
-                            int(start_line),
-                            int(end_line) if end_line is not None else None,
+                end_line = item.get("end_line")
+
+                # Index every item by location too, so a bad or absent id can
+                # still bind when the rule and location are unambiguous.
+                if pattern_id:
+                    if start_line is not None:
+                        try:
+                            start_line_int = int(start_line)
+                            end_line_int = int(end_line) if end_line is not None else None
+                        except (TypeError, ValueError):
+                            start_line_int = None
+                            end_line_int = None
+                        if start_line_int is not None:
+                            granular_key = (
+                                file_path,
+                                pattern_id,
+                                start_line_int,
+                                end_line_int,
+                            )
+                            confirmed_granular[granular_key] = _prefer_assessment(
+                                confirmed_granular.get(granular_key), item
+                            )
+                            start_key = (file_path, pattern_id, start_line_int)
+                            confirmed_by_start[start_key] = _prefer_assessment(
+                                confirmed_by_start.get(start_key), item
+                            )
+                    else:
+                        coarse_key = (file_path, pattern_id)
+                        confirmed_coarse[coarse_key] = _prefer_assessment(
+                            confirmed_coarse.get(coarse_key), item
                         )
-                    ] = enrichment
-                    confirmed_by_start[(file_path, pattern_id, int(start_line))] = enrichment
-                else:
-                    confirmed_coarse[(file_path, pattern_id)] = enrichment
+
+                finding_id = item.get("finding_id")
+                if not isinstance(finding_id, str) or not finding_id:
+                    continue
+                batch_finding = batch_findings_by_id.get(finding_id)
+                if batch_finding is None or not _assessment_matches_finding(
+                    item, batch_finding, batch.file_path
+                ):
+                    continue
+                assessments_by_id[finding_id] = _prefer_assessment(
+                    assessments_by_id.get(finding_id), item
+                )
 
         result: list[Finding] = []
         for f in findings:
-            if f.rule_id in _SPEC_RULE_IDS:
+            if f.rule_id in _SPEC_RULE_IDS or f.rule_id in _AUTHORITATIVE_DETERMINISTIC_RULES:
                 # A deterministic conformance finding bypasses this filter whole,
                 # rather than merely surviving it. It was never in the prompt --
                 # `_model_visible` withholds it -- so there is no verdict to look
@@ -536,80 +647,56 @@ class LLMMetaAnalyzer(LLMAnalyzerBase):
                 # is what both answer to. It is left untagged for the same reason
                 # `_TAGS` is empty: `llm-unconfirmed` says the model was asked and
                 # declined, and here it was never asked.
+                #
+                # Upstream's authoritative deterministic Rules take the same exit
+                # for their own reason: their evidence is exact, so the model's
+                # opinion is not an input.
                 result.append(f)
                 continue
             exact_key = (f.file, f.rule_id, f.start_line, f.end_line)
             start_only_key = (f.file, f.rule_id, f.start_line, None)
             coarse_key = (f.file, f.rule_id)
             start_key = (f.file, f.rule_id, f.start_line) if f.start_line is not None else None
-            if exact_key in confirmed_granular:
-                expl, rem, conf = confirmed_granular[exact_key]
-            elif start_only_key in confirmed_granular:
-                expl, rem, conf = confirmed_granular[start_only_key]
-            elif f.end_line is None and start_key is not None and start_key in confirmed_by_start:
-                expl, rem, conf = confirmed_by_start[start_key]
-            elif coarse_key in confirmed_coarse:
-                expl, rem, conf = confirmed_coarse[coarse_key]
-            else:
-                unconfirmed_tags = list(f.tags)
-                if "llm-unconfirmed" not in unconfirmed_tags:
-                    unconfirmed_tags.append("llm-unconfirmed")
-                result.append(
-                    Finding(
-                        rule_id=f.rule_id,
-                        message=f.message,
-                        finding_id=f.finding_id,
-                        severity=f.severity,
-                        confidence=f.confidence,
-                        file=f.file,
-                        start_line=f.start_line,
-                        end_line=f.end_line,
-                        remediation=f.remediation or get_remediation(f.rule_id),
-                        tags=unconfirmed_tags,
-                        context=f.context,
-                        matched_text=f.matched_text,
-                        transitive_depth=f.transitive_depth,
-                        source_url=f.source_url,
-                        source_identity=f.source_identity,
-                        source_digest=f.source_digest,
-                        category=getattr(f, "category", None),
-                        pattern=getattr(f, "pattern", None),
-                        finding=getattr(f, "finding", None),
-                        explanation=getattr(f, "explanation", None),
-                        code_snippet=getattr(f, "code_snippet", None) or f.context,
-                        evidence=dict(f.evidence),
-                        intent=f.intent,
-                        match_fingerprint=f.match_fingerprint,
-                        occurrences=list(f.occurrences),
-                    )
-                )
+            assessment = assessments_by_id.get(f.finding_id)
+            if assessment is None:
+                if exact_counts.get(exact_key, 0) > 1:
+                    assessment = None
+                elif exact_key in confirmed_granular:
+                    assessment = confirmed_granular[exact_key]
+                elif start_only_key in confirmed_granular:
+                    assessment = confirmed_granular[start_only_key]
+                elif (
+                    f.end_line is None and start_key is not None and start_key in confirmed_by_start
+                ):
+                    assessment = confirmed_by_start[start_key]
+                else:
+                    assessment = confirmed_coarse.get(coarse_key)
+            if assessment is None:
+                result.append(_mark_unconfirmed(f, "missing"))
                 continue
+            outcome = _review_outcome(assessment)
+            if outcome != "confirmed":
+                result.append(_mark_unconfirmed(f, outcome, assessment))
+                continue
+            explanation = (assessment.get("explanation") or "").strip()
+            remediation = (assessment.get("remediation") or "").strip()
+            # Resolve SC4's evidence-specific fallback per matched finding,
+            # including when one coarse assessment confirms multiple findings.
+            if f.rule_id == "SC4":
+                explanation = explanation or (f.explanation or "").strip()
+                remediation = remediation or (f.remediation or "").strip()
+            explanation = explanation or get_explanation(f.rule_id)
+            remediation = remediation or get_remediation(f.rule_id)
+            confidence = float(assessment.get("confidence", 0.7))
             result.append(
-                Finding(
-                    rule_id=f.rule_id,
-                    message=expl,
-                    finding_id=f.finding_id,
-                    severity=f.severity,
-                    confidence=max(f.confidence, conf),
-                    file=f.file,
-                    start_line=f.start_line,
-                    end_line=f.end_line,
-                    remediation=rem,
-                    tags=f.tags,
-                    context=f.context,
-                    matched_text=f.matched_text,
-                    transitive_depth=f.transitive_depth,
-                    source_url=f.source_url,
-                    source_identity=f.source_identity,
-                    source_digest=f.source_digest,
-                    category=getattr(f, "category", None),
-                    pattern=getattr(f, "pattern", None),
-                    finding=getattr(f, "finding", None),
-                    explanation=expl,
-                    code_snippet=getattr(f, "code_snippet", None) or f.context,
-                    evidence=dict(f.evidence),
-                    intent=f.intent,
-                    match_fingerprint=f.match_fingerprint,
+                replace(
+                    f,
+                    message=explanation,
+                    confidence=max(f.confidence, confidence),
+                    remediation=remediation,
+                    explanation=explanation,
+                    code_snippet=f.code_snippet or f.context,
+                    evidence=_review_evidence(f, outcome, assessment),
                     occurrences=list(f.occurrences),
                 )
             )
@@ -762,8 +849,10 @@ def meta_analyzer(state: SkillspectorState) -> MetaAnalyzerResponse:
     When ``use_llm`` is *True* and an LLM API key is configured (see
     ``llm_utils._resolve_llm_credentials``), each file that has at least one
     finding gets its own LLM call (or multiple calls if the file is too
-    large for the model's input budget).  Findings are matched back by
-    ``(file, rule_id)`` so enrichment is precise.
+    large for the model's input budget).  Findings are matched back by exact
+    ``finding_id`` when that id validates against the submitted batch, with
+    unambiguous ``(file, rule_id, start_line, end_line)`` location matching as
+    the fallback so enrichment stays precise.
 
     Falls back to default remediations when ``use_llm`` is *False* or when
     an LLM call fails.
@@ -773,6 +862,7 @@ def meta_analyzer(state: SkillspectorState) -> MetaAnalyzerResponse:
         return {
             "findings": [],
             "effective_finding_ids": [],
+            "meta_review_required": False,
             "inspection_ledger": [],
             "analyzer_status_events": [
                 analyzer_status_event(
@@ -795,6 +885,7 @@ def meta_analyzer(state: SkillspectorState) -> MetaAnalyzerResponse:
         response: MetaAnalyzerResponse = {
             "findings": findings,
             "effective_finding_ids": _effective_finding_ids(findings),
+            "meta_review_required": True,
             "inspection_ledger": events,
             "analyzer_status_events": [analyzer_status_for_events("meta_analyzer", events)],
         }
@@ -814,6 +905,7 @@ def meta_analyzer(state: SkillspectorState) -> MetaAnalyzerResponse:
         return {
             "findings": filtered,
             "effective_finding_ids": _effective_finding_ids(filtered),
+            "meta_review_required": False,
             "inspection_ledger": [],
             "analyzer_status_events": [
                 analyzer_status_event(
@@ -852,6 +944,7 @@ def meta_analyzer(state: SkillspectorState) -> MetaAnalyzerResponse:
         return {
             "findings": filtered_local,
             "effective_finding_ids": _effective_finding_ids(filtered_local),
+            "meta_review_required": False,
             "inspection_ledger": events,
             "analyzer_status_events": [analyzer_status_for_events("meta_analyzer", events)],
         }
@@ -948,7 +1041,7 @@ def meta_analyzer(state: SkillspectorState) -> MetaAnalyzerResponse:
                 len(unanalysed),
                 len({f.file for f in unanalysed}),
             )
-            filtered.extend(_fallback_filtered(unanalysed))
+            filtered.extend(_mark_review_failed(finding) for finding in unanalysed)
         filtered_local = _fallback_filtered(local_only_findings)
         filtered.extend(filtered_local)
 
@@ -977,6 +1070,7 @@ def meta_analyzer(state: SkillspectorState) -> MetaAnalyzerResponse:
         return {
             "findings": filtered,
             "effective_finding_ids": _effective_finding_ids(filtered),
+            "meta_review_required": True,
             "inspection_ledger": ledger_events,
             "analyzer_status_events": [status],
             "llm_call_log": (
@@ -1003,6 +1097,10 @@ def meta_analyzer(state: SkillspectorState) -> MetaAnalyzerResponse:
         if isinstance(e, LLMRuntimeLimitError):
             filtered = _passthrough_with_defaults(findings)
             eligible_ids = {finding.finding_id for finding in eligible_findings}
+            filtered = [
+                _mark_review_failed(finding) if finding.finding_id in eligible_ids else finding
+                for finding in filtered
+            ]
             filtered_eligible = [
                 finding for finding in filtered if finding.finding_id in eligible_ids
             ]
@@ -1016,6 +1114,7 @@ def meta_analyzer(state: SkillspectorState) -> MetaAnalyzerResponse:
             return {
                 "findings": filtered,
                 "effective_finding_ids": _effective_finding_ids(filtered),
+                "meta_review_required": True,
                 "inspection_ledger": ledger_events,
                 "analyzer_status_events": [
                     analyzer_status_for_events("meta_analyzer", ledger_events)
@@ -1036,6 +1135,11 @@ def meta_analyzer(state: SkillspectorState) -> MetaAnalyzerResponse:
             raise
         logger.warning("LLM call failed, passing all findings through (fail-closed): %s", e)
         filtered = _passthrough_with_defaults(findings)
+        eligible_ids = {finding.finding_id for finding in eligible_findings}
+        filtered = [
+            _mark_review_failed(finding) if finding.finding_id in eligible_ids else finding
+            for finding in filtered
+        ]
         filtered_local = [finding for finding in filtered if finding.finding_id in local_only_ids]
         if post_response_value_error:
             ledger_events, status = _meta_ledger_response(
@@ -1057,6 +1161,7 @@ def meta_analyzer(state: SkillspectorState) -> MetaAnalyzerResponse:
         return {
             "findings": filtered,
             "effective_finding_ids": _effective_finding_ids(filtered),
+            "meta_review_required": True,
             "inspection_ledger": ledger_events,
             "analyzer_status_events": [status],
             "llm_call_log": [llm_call_record("meta_analyzer", ok=False, error=str(e))],

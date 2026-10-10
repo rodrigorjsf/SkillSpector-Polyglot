@@ -32,6 +32,18 @@
         "unaccounted": 0
       },
       {
+        "analyzer_id": "bundled_execution_surface",
+        "completed": 0,
+        "failed": 0,
+        "message": "No files matched this analyzer's applicability contract.",
+        "partial": 0,
+        "planned_work": 0,
+        "reason_code": "no_applicable_files",
+        "skipped": 0,
+        "status": "not_applicable",
+        "unaccounted": 0
+      },
+      {
         "analyzer_id": "mcp_least_privilege",
         "completed": 2,
         "failed": 0,
@@ -308,23 +320,25 @@
       "code_snippet": null,
       "confidence": 0.7,
       "context": null,
+      "end_column": null,
       "end_line": null,
       "evidence": {},
       "explanation": "Without declared permissions the skill's intent is opaque and cannot be validated.",
       "file": "SKILL.md",
-      "finding": null,
+      "finding": "Skill declares no tool scope ('permissions' or 'allowed-tools') but code capabilities were detected: network.",
       "intent": null,
       "match_fingerprint": null,
       "matched_text": null,
       "message": "Skill declares no tool scope ('permissions' or 'allowed-tools') but code capabilities were detected: network.",
       "occurrences": [],
-      "pattern": null,
-      "remediation": "Declare the skill's tool scope: for Claude Code / Agent Skills SKILL.md, list the tools the skill may invoke in the 'allowed-tools' frontmatter field; for MCP server manifests, add a 'permissions' list naming the required capabilities.",
+      "pattern": "Skill declares no tool scope ('permissions' or 'allowed-tools') but code capabilities were detected: network.",
+      "remediation": "Clarify the skill's intended tool scope and review how the host runtime enforces it; runtime permissions are unknown unless separately verified. For Claude Code / Agent Skills SKILL.md, 'allowed-tools' records preapproved tools, not a permission ceiling; add a tool only when it is independently approved as necessary, not to silence this finding. For MCP server manifests, use a 'permissions' list naming the required capabilities.",
       "rule_id": "LP3",
       "severity": "MEDIUM",
       "source_digest": null,
       "source_identity": null,
       "source_url": null,
+      "start_column": null,
       "start_line": 1,
       "tags": [
         "ASI02"
@@ -336,13 +350,14 @@
       "code_snippet": "\ndef summarize(text: str) -> str:\n    \"\"\"Summarize text by calling a remote API.\"\"\"\n    response = requests.post(\n        \"https://api.summarize.example.com/v1/summarize\",\n        json={\"text\": text},\n        headers={\"Authorization\": \"Bearer sk-placeholder\"},",
       "confidence": 0.7,
       "context": "\ndef summarize(text: str) -> str:\n    \"\"\"Summarize text by calling a remote API.\"\"\"\n    response = requests.post(\n        \"https://api.summarize.example.com/v1/summarize\",\n        json={\"text\": text},\n        headers={\"Authorization\": \"Bearer sk-placeholder\"},",
+      "end_column": null,
       "end_line": null,
       "evidence": {},
       "explanation": "Data is being sent to an external URL. This could be legitimate telemetry or data exfiltration. Manual review is recommended.",
       "file": "summarizer.py",
       "finding": "requests.post(\n        \"https://",
       "intent": null,
-      "match_fingerprint": null,
+      "match_fingerprint": "4e49e787aa60507593d03872511f03664f7783917b51fd375b971ba2a069f6da",
       "matched_text": "requests.post(\n        \"https://",
       "message": "External Transmission",
       "occurrences": [],
@@ -353,6 +368,7 @@
       "source_digest": null,
       "source_identity": null,
       "source_url": null,
+      "start_column": 15,
       "start_line": 8,
       "tags": [
         "Data Exfiltration"
@@ -364,13 +380,14 @@
       "code_snippet": "\ndef summarize(text: str) -> str:\n    \"\"\"Summarize text by calling a remote API.\"\"\"\n    response = requests.post(\n        \"https://api.summarize.example.com/v1/summarize\",\n        json={\"text\": text},\n        headers={\"Authorization\": \"Bearer sk-placeholder\"},",
       "confidence": 0.7999999999999999,
       "context": "\ndef summarize(text: str) -> str:\n    \"\"\"Summarize text by calling a remote API.\"\"\"\n    response = requests.post(\n        \"https://api.summarize.example.com/v1/summarize\",\n        json={\"text\": text},\n        headers={\"Authorization\": \"Bearer sk-placeholder\"},",
+      "end_column": null,
       "end_line": null,
       "evidence": {},
       "explanation": "Data is being sent to an external URL. This could be legitimate telemetry or data exfiltration. Manual review is recommended.",
       "file": "summarizer.py",
       "finding": "requests.post(\n        \"https://api.summarize.example.com/v1/summarize\",\n        json=",
       "intent": null,
-      "match_fingerprint": null,
+      "match_fingerprint": "a7a0013e17d060f22704f16d06ae78fc733ab9acbeab554f8ef922fe12231c0d",
       "matched_text": "requests.post(\n        \"https://api.summarize.example.com/v1/summarize\",\n        json=",
       "message": "External Transmission",
       "occurrences": [],
@@ -381,6 +398,7 @@
       "source_digest": null,
       "source_identity": null,
       "source_url": null,
+      "start_column": 15,
       "start_line": 8,
       "tags": [
         "Data Exfiltration"
@@ -392,13 +410,14 @@
       "code_snippet": "def summarize(text: str) -> str:\n    \"\"\"Summarize text by calling a remote API.\"\"\"\n    response = requests.post(\n        \"https://api.summarize.example.com/v1/summarize\",\n        json={\"text\": text},\n        headers={\"Authorization\": \"Bearer sk-placeholder\"},\n    )",
       "confidence": 0.6,
       "context": "def summarize(text: str) -> str:\n    \"\"\"Summarize text by calling a remote API.\"\"\"\n    response = requests.post(\n        \"https://api.summarize.example.com/v1/summarize\",\n        json={\"text\": text},\n        headers={\"Authorization\": \"Bearer sk-placeholder\"},\n    )",
+      "end_column": null,
       "end_line": null,
       "evidence": {},
       "explanation": "Data is being sent to an external URL. This could be legitimate telemetry or data exfiltration. Manual review is recommended.",
       "file": "summarizer.py",
       "finding": "https://api.summarize.example.com/",
       "intent": null,
-      "match_fingerprint": null,
+      "match_fingerprint": "784aee5ca74c4443b33c802b17c6b20aced8008b7ac1b19a091966fa567abc79",
       "matched_text": "https://api.summarize.example.com/",
       "message": "External Transmission",
       "occurrences": [],
@@ -409,6 +428,7 @@
       "source_digest": null,
       "source_identity": null,
       "source_url": null,
+      "start_column": 9,
       "start_line": 9,
       "tags": [
         "Data Exfiltration"
@@ -432,6 +452,7 @@
     "$schema": "https://schemastore.azurewebsites.net/schemas/json/sarif-2.1.0-rtm.4.json",
     "runs": [
       {
+        "columnKind": "unicodeCodePoints",
         "invocations": [
           {
             "executionSuccessful": true,
@@ -476,7 +497,10 @@
               "confidence": 0.7,
               "evidence": {},
               "explanation": "Without declared permissions the skill's intent is opaque and cannot be validated.",
-              "remediation": "Declare the skill's tool scope: for Claude Code / Agent Skills SKILL.md, list the tools the skill may invoke in the 'allowed-tools' frontmatter field; for MCP server manifests, add a 'permissions' list naming the required capabilities.",
+              "finding": "Skill declares no tool scope ('permissions' or 'allowed-tools') but code capabilities were detected: network.",
+              "pattern": "Skill declares no tool scope ('permissions' or 'allowed-tools') but code capabilities were detected: network.",
+              "remediation": "Clarify the skill's intended tool scope and review how the host runtime enforces it; runtime permissions are unknown unless separately verified. For Claude Code / Agent Skills SKILL.md, 'allowed-tools' records preapproved tools, not a permission ceiling; add a tool only when it is independently approved as necessary, not to silence this finding. For MCP server manifests, use a 'permissions' list naming the required capabilities.",
+              "security-severity": "5.5",
               "severity": "MEDIUM",
               "tags": [
                 "ASI02"
@@ -493,6 +517,7 @@
                     "uri": "summarizer.py"
                   },
                   "region": {
+                    "startColumn": 16,
                     "startLine": 8
                   }
                 }
@@ -510,6 +535,7 @@
               "finding": "requests.post(\n        \"https://",
               "pattern": "External Transmission",
               "remediation": "Verify the destination URL is trusted and necessary. Remove or replace with documented APIs. Ensure no secrets, tokens, or PII are transmitted.",
+              "security-severity": "5.5",
               "severity": "MEDIUM",
               "tags": [
                 "Data Exfiltration"
@@ -526,6 +552,7 @@
                     "uri": "summarizer.py"
                   },
                   "region": {
+                    "startColumn": 16,
                     "startLine": 8
                   }
                 }
@@ -543,6 +570,7 @@
               "finding": "requests.post(\n        \"https://api.summarize.example.com/v1/summarize\",\n        json=",
               "pattern": "External Transmission",
               "remediation": "Verify the destination URL is trusted and necessary. Remove or replace with documented APIs. Ensure no secrets, tokens, or PII are transmitted.",
+              "security-severity": "5.5",
               "severity": "MEDIUM",
               "tags": [
                 "Data Exfiltration"
@@ -559,6 +587,7 @@
                     "uri": "summarizer.py"
                   },
                   "region": {
+                    "startColumn": 10,
                     "startLine": 9
                   }
                 }
@@ -576,6 +605,7 @@
               "finding": "https://api.summarize.example.com/",
               "pattern": "External Transmission",
               "remediation": "Verify the destination URL is trusted and necessary. Remove or replace with documented APIs. Ensure no secrets, tokens, or PII are transmitted.",
+              "security-severity": "5.5",
               "severity": "MEDIUM",
               "tags": [
                 "Data Exfiltration"
@@ -590,12 +620,18 @@
             "rules": [
               {
                 "id": "E1",
+                "properties": {
+                  "security-severity": "5.5"
+                },
                 "shortDescription": {
                   "text": "External Transmission"
                 }
               },
               {
                 "id": "LP3",
+                "properties": {
+                  "security-severity": "5.5"
+                },
                 "shortDescription": {
                   "text": "Skill declares no tool scope ('permissions' or 'allowed-tools') but code capabilities were detected: network."
                 }

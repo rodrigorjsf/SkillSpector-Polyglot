@@ -36,6 +36,18 @@
         "unaccounted": 0
       },
       {
+        "analyzer_id": "bundled_execution_surface",
+        "completed": 0,
+        "failed": 0,
+        "message": "No files matched this analyzer's applicability contract.",
+        "partial": 0,
+        "planned_work": 0,
+        "reason_code": "no_applicable_files",
+        "skipped": 0,
+        "status": "not_applicable",
+        "unaccounted": 0
+      },
+      {
         "analyzer_id": "mcp_least_privilege",
         "completed": 0,
         "failed": 0,
@@ -282,35 +294,14 @@
     "findings_after_filtering": 0,
     "findings_before_filtering": 0,
     "fully_inspected_files": 1,
-    "is_complete": false,
-    "ledger_exceptions": [
-      {
-        "end_line": 30,
-        "fatal": false,
-        "message": "A local path-like reference could not be resolved unambiguously.",
-        "outcome": "partial",
-        "path": "SKILL.md",
-        "phase": "reference_resolution",
-        "reason_code": "reference_unresolved",
-        "start_line": 30
-      }
-    ],
+    "is_complete": true,
+    "ledger_exceptions": [],
     "limitations": [],
     "partially_inspected_files": 0,
-    "references": [
-      {
-        "column": 20,
-        "disposition": "partial",
-        "evidence": "- \"deploy\" without infrastructure/Terraform context",
-        "line": 30,
-        "source_path": "SKILL.md",
-        "status": "missing",
-        "target_path": null
-      }
-    ],
+    "references": [],
     "scanned_components": 1,
     "scope_exclusions": [],
-    "status": "partial",
+    "status": "complete",
     "total_components": 1
   },
   "component_metadata": [
@@ -336,13 +327,14 @@
       "terraform apply"
     ]
   },
-  "risk_recommendation": "CAUTION",
+  "risk_recommendation": "SAFE",
   "risk_score": 0,
   "risk_severity": "LOW",
   "sarif_report": {
     "$schema": "https://schemastore.azurewebsites.net/schemas/json/sarif-2.1.0-rtm.4.json",
     "runs": [
       {
+        "columnKind": "unicodeCodePoints",
         "invocations": [
           {
             "executionSuccessful": true,
@@ -351,44 +343,17 @@
                 "coveragePercent": 100.0,
                 "entirelyUninspectedFiles": 0,
                 "fullyInspectedFiles": 1,
-                "isComplete": false,
-                "ledgerExceptionCount": 1,
+                "isComplete": true,
+                "ledgerExceptionCount": 0,
                 "limitationCount": 0,
                 "notificationRecordLimit": 10000,
                 "notificationsTruncated": false,
                 "partiallyInspectedFiles": 0,
                 "scopeExclusionCount": 0,
-                "status": "partial",
+                "status": "complete",
                 "totalComponents": 1
               }
-            },
-            "toolExecutionNotifications": [
-              {
-                "level": "warning",
-                "locations": [
-                  {
-                    "physicalLocation": {
-                      "artifactLocation": {
-                        "uri": "SKILL.md"
-                      },
-                      "region": {
-                        "endLine": 30,
-                        "startLine": 30
-                      }
-                    }
-                  }
-                ],
-                "message": {
-                  "text": "A local path-like reference could not be resolved unambiguously."
-                },
-                "properties": {
-                  "fatal": false,
-                  "outcome": "partial",
-                  "phase": "reference_resolution",
-                  "reasonCode": "reference_unresolved"
-                }
-              }
-            ]
+            }
           }
         ],
         "results": [],

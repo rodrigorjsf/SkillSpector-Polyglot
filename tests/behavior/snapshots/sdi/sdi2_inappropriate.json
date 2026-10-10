@@ -32,6 +32,18 @@
         "unaccounted": 0
       },
       {
+        "analyzer_id": "bundled_execution_surface",
+        "completed": 0,
+        "failed": 0,
+        "message": "No files matched this analyzer's applicability contract.",
+        "partial": 0,
+        "planned_work": 0,
+        "reason_code": "no_applicable_files",
+        "skipped": 0,
+        "status": "not_applicable",
+        "unaccounted": 0
+      },
+      {
         "analyzer_id": "mcp_least_privilege",
         "completed": 2,
         "failed": 0,
@@ -273,8 +285,8 @@
     "coverage_percent": 100.0,
     "entirely_uninspected_files": 0,
     "execution_successful": true,
-    "findings_after_filtering": 4,
-    "findings_before_filtering": 4,
+    "findings_after_filtering": 3,
+    "findings_before_filtering": 3,
     "fully_inspected_files": 2,
     "is_complete": true,
     "ledger_exceptions": [],
@@ -308,23 +320,25 @@
       "code_snippet": null,
       "confidence": 0.7,
       "context": null,
+      "end_column": null,
       "end_line": null,
       "evidence": {},
       "explanation": "Without declared permissions the skill's intent is opaque and cannot be validated.",
       "file": "SKILL.md",
-      "finding": null,
+      "finding": "Skill declares no tool scope ('permissions' or 'allowed-tools') but code capabilities were detected: shell.",
       "intent": null,
       "match_fingerprint": null,
       "matched_text": null,
       "message": "Skill declares no tool scope ('permissions' or 'allowed-tools') but code capabilities were detected: shell.",
       "occurrences": [],
-      "pattern": null,
-      "remediation": "Declare the skill's tool scope: for Claude Code / Agent Skills SKILL.md, list the tools the skill may invoke in the 'allowed-tools' frontmatter field; for MCP server manifests, add a 'permissions' list naming the required capabilities.",
+      "pattern": "Skill declares no tool scope ('permissions' or 'allowed-tools') but code capabilities were detected: shell.",
+      "remediation": "Clarify the skill's intended tool scope and review how the host runtime enforces it; runtime permissions are unknown unless separately verified. For Claude Code / Agent Skills SKILL.md, 'allowed-tools' records preapproved tools, not a permission ceiling; add a tool only when it is independently approved as necessary, not to silence this finding. For MCP server manifests, use a 'permissions' list naming the required capabilities.",
       "rule_id": "LP3",
       "severity": "MEDIUM",
       "source_digest": null,
       "source_identity": null,
       "source_url": null,
+      "start_column": null,
       "start_line": 1,
       "tags": [
         "ASI02"
@@ -336,14 +350,15 @@
       "code_snippet": "\ndef format_file(path: str) -> None:\n    \"\"\"Format a markdown file using an external tool.\"\"\"\n    subprocess.run([\"pandoc\", \"--wrap=auto\", \"-o\", path, path], check=True)\n    subprocess.run([\"bash\", \"-c\", f\"chmod 644 {path}\"], check=True)",
       "confidence": 0.7,
       "context": "\ndef format_file(path: str) -> None:\n    \"\"\"Format a markdown file using an external tool.\"\"\"\n    subprocess.run([\"pandoc\", \"--wrap=auto\", \"-o\", path, path], check=True)\n    subprocess.run([\"bash\", \"-c\", f\"chmod 644 {path}\"], check=True)",
+      "end_column": 75,
       "end_line": 8,
       "evidence": {},
       "explanation": "subprocess module calls execute external commands. Without careful input validation, this enables command injection.",
       "file": "formatter.py",
-      "finding": "    subprocess.run([\"pandoc\", \"--wrap=auto\", \"-o\", path, path], check=True)",
+      "finding": "subprocess.run([\"pandoc\", \"--wrap=auto\", \"-o\", path, path], check=True)",
       "intent": null,
-      "match_fingerprint": null,
-      "matched_text": "    subprocess.run([\"pandoc\", \"--wrap=auto\", \"-o\", path, path], check=True)",
+      "match_fingerprint": "eb9a25eb3cbb45c05c65ee41f07bcafcce5af451f068a84ca9da113900a92d09",
+      "matched_text": "subprocess.run([\"pandoc\", \"--wrap=auto\", \"-o\", path, path], check=True)",
       "message": "subprocess module call",
       "occurrences": [],
       "pattern": "subprocess module call",
@@ -353,37 +368,10 @@
       "source_digest": null,
       "source_identity": null,
       "source_url": null,
+      "start_column": 4,
       "start_line": 8,
       "tags": [
         "Dangerous Code Execution"
-      ],
-      "transitive_depth": 0
-    },
-    {
-      "category": "Privilege Escalation",
-      "code_snippet": "def format_file(path: str) -> None:\n    \"\"\"Format a markdown file using an external tool.\"\"\"\n    subprocess.run([\"pandoc\", \"--wrap=auto\", \"-o\", path, path], check=True)\n    subprocess.run([\"bash\", \"-c\", f\"chmod 644 {path}\"], check=True)",
-      "confidence": 0.8,
-      "context": "def format_file(path: str) -> None:\n    \"\"\"Format a markdown file using an external tool.\"\"\"\n    subprocess.run([\"pandoc\", \"--wrap=auto\", \"-o\", path, path], check=True)\n    subprocess.run([\"bash\", \"-c\", f\"chmod 644 {path}\"], check=True)",
-      "end_line": null,
-      "evidence": {},
-      "explanation": "Commands invoke sudo or root privileges. Verify this elevated access is necessary and justified.",
-      "file": "formatter.py",
-      "finding": "chmod 644",
-      "intent": null,
-      "match_fingerprint": null,
-      "matched_text": "chmod 644",
-      "message": "Sudo/Root Execution",
-      "occurrences": [],
-      "pattern": "Sudo/Root Execution",
-      "remediation": "Avoid sudo/root unless strictly required. Prefer least-privilege patterns. If elevation is needed, document the justification and scope.",
-      "rule_id": "PE2",
-      "severity": "MEDIUM",
-      "source_digest": null,
-      "source_identity": null,
-      "source_url": null,
-      "start_line": 9,
-      "tags": [
-        "Privilege Escalation"
       ],
       "transitive_depth": 0
     },
@@ -392,14 +380,15 @@
       "code_snippet": "def format_file(path: str) -> None:\n    \"\"\"Format a markdown file using an external tool.\"\"\"\n    subprocess.run([\"pandoc\", \"--wrap=auto\", \"-o\", path, path], check=True)\n    subprocess.run([\"bash\", \"-c\", f\"chmod 644 {path}\"], check=True)",
       "confidence": 0.7,
       "context": "def format_file(path: str) -> None:\n    \"\"\"Format a markdown file using an external tool.\"\"\"\n    subprocess.run([\"pandoc\", \"--wrap=auto\", \"-o\", path, path], check=True)\n    subprocess.run([\"bash\", \"-c\", f\"chmod 644 {path}\"], check=True)",
+      "end_column": 67,
       "end_line": 9,
       "evidence": {},
       "explanation": "subprocess module calls execute external commands. Without careful input validation, this enables command injection.",
       "file": "formatter.py",
-      "finding": "    subprocess.run([\"bash\", \"-c\", f\"chmod 644 {path}\"], check=True)",
+      "finding": "subprocess.run([\"bash\", \"-c\", f\"chmod 644 {path}\"], check=True)",
       "intent": null,
-      "match_fingerprint": null,
-      "matched_text": "    subprocess.run([\"bash\", \"-c\", f\"chmod 644 {path}\"], check=True)",
+      "match_fingerprint": "82653c8d6aaabbc481d746114a217a6e62b23e7bc702ed355cb8aed7ed8386f0",
+      "matched_text": "subprocess.run([\"bash\", \"-c\", f\"chmod 644 {path}\"], check=True)",
       "message": "subprocess module call",
       "occurrences": [],
       "pattern": "subprocess module call",
@@ -409,6 +398,7 @@
       "source_digest": null,
       "source_identity": null,
       "source_url": null,
+      "start_column": 4,
       "start_line": 9,
       "tags": [
         "Dangerous Code Execution"
@@ -425,13 +415,14 @@
     "permissions": [],
     "triggers": []
   },
-  "risk_recommendation": "CAUTION",
-  "risk_score": 31,
-  "risk_severity": "MEDIUM",
+  "risk_recommendation": "SAFE",
+  "risk_score": 20,
+  "risk_severity": "LOW",
   "sarif_report": {
     "$schema": "https://schemastore.azurewebsites.net/schemas/json/sarif-2.1.0-rtm.4.json",
     "runs": [
       {
+        "columnKind": "unicodeCodePoints",
         "invocations": [
           {
             "executionSuccessful": true,
@@ -476,7 +467,10 @@
               "confidence": 0.7,
               "evidence": {},
               "explanation": "Without declared permissions the skill's intent is opaque and cannot be validated.",
-              "remediation": "Declare the skill's tool scope: for Claude Code / Agent Skills SKILL.md, list the tools the skill may invoke in the 'allowed-tools' frontmatter field; for MCP server manifests, add a 'permissions' list naming the required capabilities.",
+              "finding": "Skill declares no tool scope ('permissions' or 'allowed-tools') but code capabilities were detected: shell.",
+              "pattern": "Skill declares no tool scope ('permissions' or 'allowed-tools') but code capabilities were detected: shell.",
+              "remediation": "Clarify the skill's intended tool scope and review how the host runtime enforces it; runtime permissions are unknown unless separately verified. For Claude Code / Agent Skills SKILL.md, 'allowed-tools' records preapproved tools, not a permission ceiling; add a tool only when it is independently approved as necessary, not to silence this finding. For MCP server manifests, use a 'permissions' list naming the required capabilities.",
+              "security-severity": "5.5",
               "severity": "MEDIUM",
               "tags": [
                 "ASI02"
@@ -493,7 +487,9 @@
                     "uri": "formatter.py"
                   },
                   "region": {
+                    "endColumn": 76,
                     "endLine": 8,
+                    "startColumn": 5,
                     "startLine": 8
                   }
                 }
@@ -508,9 +504,10 @@
               "confidence": 0.7,
               "evidence": {},
               "explanation": "subprocess module calls execute external commands. Without careful input validation, this enables command injection.",
-              "finding": "    subprocess.run([\"pandoc\", \"--wrap=auto\", \"-o\", path, path], check=True)",
+              "finding": "subprocess.run([\"pandoc\", \"--wrap=auto\", \"-o\", path, path], check=True)",
               "pattern": "subprocess module call",
               "remediation": "Use subprocess.run() with shell=False and an explicit argument list. Validate all inputs and avoid passing user-controlled data to commands.",
+              "security-severity": "5.5",
               "severity": "MEDIUM",
               "tags": [
                 "Dangerous Code Execution"
@@ -527,40 +524,9 @@
                     "uri": "formatter.py"
                   },
                   "region": {
-                    "startLine": 9
-                  }
-                }
-              }
-            ],
-            "message": {
-              "text": "Sudo/Root Execution"
-            },
-            "properties": {
-              "category": "Privilege Escalation",
-              "code_snippet": "def format_file(path: str) -> None:\n    \"\"\"Format a markdown file using an external tool.\"\"\"\n    subprocess.run([\"pandoc\", \"--wrap=auto\", \"-o\", path, path], check=True)\n    subprocess.run([\"bash\", \"-c\", f\"chmod 644 {path}\"], check=True)",
-              "confidence": 0.8,
-              "evidence": {},
-              "explanation": "Commands invoke sudo or root privileges. Verify this elevated access is necessary and justified.",
-              "finding": "chmod 644",
-              "pattern": "Sudo/Root Execution",
-              "remediation": "Avoid sudo/root unless strictly required. Prefer least-privilege patterns. If elevation is needed, document the justification and scope.",
-              "severity": "MEDIUM",
-              "tags": [
-                "Privilege Escalation"
-              ]
-            },
-            "ruleId": "PE2"
-          },
-          {
-            "level": "warning",
-            "locations": [
-              {
-                "physicalLocation": {
-                  "artifactLocation": {
-                    "uri": "formatter.py"
-                  },
-                  "region": {
+                    "endColumn": 68,
                     "endLine": 9,
+                    "startColumn": 5,
                     "startLine": 9
                   }
                 }
@@ -575,9 +541,10 @@
               "confidence": 0.7,
               "evidence": {},
               "explanation": "subprocess module calls execute external commands. Without careful input validation, this enables command injection.",
-              "finding": "    subprocess.run([\"bash\", \"-c\", f\"chmod 644 {path}\"], check=True)",
+              "finding": "subprocess.run([\"bash\", \"-c\", f\"chmod 644 {path}\"], check=True)",
               "pattern": "subprocess module call",
               "remediation": "Use subprocess.run() with shell=False and an explicit argument list. Validate all inputs and avoid passing user-controlled data to commands.",
+              "security-severity": "5.5",
               "severity": "MEDIUM",
               "tags": [
                 "Dangerous Code Execution"
@@ -592,20 +559,20 @@
             "rules": [
               {
                 "id": "AST4",
+                "properties": {
+                  "security-severity": "5.5"
+                },
                 "shortDescription": {
                   "text": "subprocess module call"
                 }
               },
               {
                 "id": "LP3",
+                "properties": {
+                  "security-severity": "5.5"
+                },
                 "shortDescription": {
                   "text": "Skill declares no tool scope ('permissions' or 'allowed-tools') but code capabilities were detected: shell."
-                }
-              },
-              {
-                "id": "PE2",
-                "shortDescription": {
-                  "text": "Sudo/Root Execution"
                 }
               }
             ]

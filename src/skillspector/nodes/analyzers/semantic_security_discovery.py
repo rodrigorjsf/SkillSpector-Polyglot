@@ -46,6 +46,7 @@ from skillspector.state import (
 )
 
 ANALYZER_ID = "semantic_security_discovery"
+requires_api_key = True
 logger = get_logger(__name__)
 
 

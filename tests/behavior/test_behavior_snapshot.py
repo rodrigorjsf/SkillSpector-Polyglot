@@ -165,8 +165,8 @@ def test_the_corpus_matches_the_measured_target_count() -> None:
     The literal lives here and nowhere else in the tests: growing the corpus
     means changing this one number, deliberately, alongside the new snapshot.
     """
-    assert len(proj.CORPUS_NAMES) == 38
-    assert len(set(proj.CORPUS_NAMES)) == 38
+    assert len(proj.CORPUS_NAMES) == 47
+    assert len(set(proj.CORPUS_NAMES)) == 47
 
 
 def test_every_family_parent_is_excluded_and_is_really_a_container() -> None:
@@ -480,23 +480,23 @@ def test_the_sort_orders_a_tied_pair_regardless_of_input_order() -> None:
     assert proj._sort(pair, "$.findings") == proj._sort(list(reversed(pair)), "$.findings")
 
 
-#: The one fixture whose scan records a ledger exception, and the reason it
-#: records. Upstream's `c94b50a` brought reference resolution to this contract,
-#: and this fixture's ``SKILL.md`` carries a path-like string that resolves to
-#: nothing -- so ``ledger_exceptions`` stopped being empty everywhere. Named
-#: rather than counted, so a *different* exception appearing anywhere still
-#: fails here.
-_LEDGER_EXCEPTION_FIXTURES = {"sqp/sqp1_clean": ["reference_unresolved"]}
+#: The fixtures whose scan records a ledger exception, and the reason each
+#: records. Empty again since the 2.12.0 upstream sync: ``sqp/sqp1_clean`` held
+#: the one entry, ``reference_unresolved``, because upstream's `c94b50a` read
+#: the slash in its prose "infrastructure/Terraform" as a path that resolved to
+#: nothing, and upstream's `f161b70` stopped reading prose that way. Named
+#: rather than counted, so an exception appearing anywhere still fails here.
+_LEDGER_EXCEPTION_FIXTURES: dict[str, list[str]] = {}
 
 
 def test_only_the_named_fixture_records_a_ledger_exception() -> None:
-    """``scope_exclusions`` is still unexercised; ``ledger_exceptions`` no longer is.
+    """``scope_exclusions`` is unexercised, and ``ledger_exceptions`` is again too.
 
-    ``scope_exclusions``' named sort key has therefore still never ordered
-    anything, which is a stated coverage limit rather than a defect. Asserted so
-    that the day a fixture populates it, this fails and the limit is revisited
-    instead of quietly becoming false -- which is exactly what happened to
-    ``ledger_exceptions``, now pinned above to the one fixture that populates it.
+    Neither named sort key has therefore ordered anything in a committed
+    snapshot, which is a stated coverage limit rather than a defect. Asserted so
+    that the day a fixture populates either, this fails and the limit is
+    revisited instead of quietly becoming false -- which is exactly what
+    happened to ``ledger_exceptions`` once already, in both directions.
     """
     observed = {}
     for name in proj.CORPUS_NAMES:

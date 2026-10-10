@@ -1,9 +1,12 @@
 ---
 paths:
   - "extensions/*.ts"
+  - ".opencode/tools/*.ts"
 ---
 
-# Pi extension
+# Pi and OpenCode extensions
+
+Two extensions, one security contract. The helper names below are Pi's; the OpenCode tool under `.opencode/tools/` keeps the same contract under its own names: `redact()` on both streams, `SKILLSPECTOR_BIN` first in binary resolution, `noLlm` defaulting to true.
 
 - Subprocess calls go through `pi.exec(bin, argsArray, {...})` with an argument **array**. Never build a shell string — there is no shell in this path and adding one reintroduces injection.
 - Both `stdout` and `stderr` must pass through `redactSecrets()` before being returned to the caller.

@@ -111,3 +111,7 @@ credentials.json
 
 # Agent session scaffolding, not a deliverable
 docs/handoffs/
+# Reports (generated artifacts only — anchored to repo root)
+/report*.md
+/report*.json
+/report*.sarif

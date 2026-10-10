@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Static patterns: supply chain (SC1–SC9) and trigger analysis (TR1–TR3).
+"""Static patterns: supply chain (SC1–SC10) and trigger analysis (TR1–TR3).
 
 SC1–SC3: regex-based pattern matching (original implementation).
 SC4: Known vulnerable dependencies — live OSV.dev lookup with static fallback.
@@ -22,6 +22,7 @@ SC6: Typosquatting — flags package names similar to popular packages.
 SC7: Untrusted container image — flags image signature / registry-verification bypass.
 SC8: Shipped Python bytecode — flags __pycache__/ and *.pyc/*.pyo that discovery skips.
 SC9: Concealed executable artifact — flags executables nested in document or hidden artifacts.
+SC10: Dependency source redirection — flags noncanonical package registries and indexes.
 TR1–TR3: Trigger analysis — flags overly broad, shadowing, or baiting triggers.
 
 Node and analyze() in one module.
@@ -29,14 +30,19 @@ Node and analyze() in one module.
 
 from __future__ import annotations
 
+import ast
+import codecs
+import functools
 import io
 import json
 import os
 import re
+import shlex
 import sys
 import time
 import tomllib
-from collections.abc import Iterator
+from bisect import bisect_right
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlparse
@@ -44,6 +50,10 @@ from urllib.parse import urlparse
 from packaging.requirements import InvalidRequirement, Requirement
 from packaging.version import InvalidVersion, Version
 
+from skillspector.dependency_sources import (
+    DependencySourceLimitation,
+    analyze_dependency_sources_detailed,
+)
 from skillspector.inspection_ledger import (
     MAX_FINDING_OUTPUT_RECORDS,
     LedgerOutcome,
@@ -62,7 +72,12 @@ from skillspector.state import (
 )
 
 from . import static_runner
-from .common import get_context, get_line_number
+from .common import (
+    LOGICAL_LINE_BREAK,
+    get_context_from_lines,
+    get_line_number,
+    logical_line_starts,
+)
 from .osv_client import (
     ECOSYSTEM_NPM,
     ECOSYSTEM_PYPI,
@@ -74,11 +89,21 @@ from .osv_client import (
     was_osv_reachable,
 )
 from .pattern_defaults import PatternCategory
+from .static_patterns_tool_misuse import (
+    _ROOT_GLOB_COMMAND_CHARS,
+    _bounded_shell_tokens,
+    _markdown_shell_text,
+    _skip_backtick_substitution,
+    _skip_command_substitution,
+)
 from .static_runner import analyzer_finding_to_finding
 
 logger = get_logger(__name__)
 
 ANALYZER_ID = "static_patterns_supply_chain"
+# SC2 literal-XOR decoding and SC3 key on file_type, so Python executed via a
+# shebang (extensionless, .md, ...) must receive "python" rather than its suffix.
+USES_PYTHON_SOURCE_TYPE = True
 
 # Dependency work is supplemental to the canonical text scan and therefore
 # needs its own aggregate ceilings.  These apply across every manifest in a
@@ -97,19 +122,22 @@ MAX_DEPENDENCY_SPEC_CHARS = 4_096
 # SC1–SC3: Original regex-based patterns
 # ---------------------------------------------------------------------------
 
-SC1_PATTERNS = [
+SC1_CODE_PATTERNS = [
     (r"^[a-zA-Z][a-zA-Z0-9_-]*\s*$", 0.6),
     (r"^[a-zA-Z][a-zA-Z0-9_-]*\s*>=\s*[\d.]+\s*$", 0.5),
     (r"^[a-zA-Z][a-zA-Z0-9_-]*\s*==\s*\*\s*$", 0.7),
     (r'"[^"]+"\s*:\s*"(?:\*|latest)"', 0.7),
     (r'"[^"]+"\s*:\s*"\^[\d.]+"', 0.4),
+]
+SC1_PROSE_PATTERNS = [
     (
         r"install\s+(?:the\s+)?latest\s+(?:version\s+)?(?:of\s+)?(?:all\s+)?(?:packages?|dependencies)",
         0.6,
     ),
     (r"(?:don't|do\s+not)\s+(?:pin|lock|specify)\s+(?:package\s+)?versions?", 0.7),
 ]
-SC2_PATTERNS = [
+SC1_PATTERNS = SC1_CODE_PATTERNS + SC1_PROSE_PATTERNS
+SC2_CODE_PATTERNS = [
     (r"curl\s+[^|]*\|\s*(?:sudo\s+)?(?:ba)?sh", 0.9),
     (r"wget\s+[^|]*\|\s*(?:sudo\s+)?(?:ba)?sh", 0.9),
     (r"curl\s+[^|]*\|\s*(?:sudo\s+)?(?:python|python3|node|ruby|perl)", 0.9),
@@ -121,10 +149,123 @@ SC2_PATTERNS = [
     (r"eval\s*\(\s*(?:await\s+)?fetch\s*\(", 0.9),
     (r"new\s+Function\s*\([^)]*fetch\s*\(", 0.9),
     (r"subprocess\.[^(]+\([^)]*(?:curl|wget)\s+https?://", 0.8),
+]
+SC2_PROSE_PATTERNS = [
     (r"download\s+and\s+(?:run|execute)\s+(?:the\s+)?script", 0.7),
     (r"run\s+(?:this|the)\s+(?:following\s+)?(?:curl|wget)\s+command", 0.6),
 ]
-SC3_PATTERNS = [
+SC2_PATTERNS = SC2_CODE_PATTERNS + SC2_PROSE_PATTERNS
+_SC2_SHELL_PATTERNS = frozenset(SC2_CODE_PATTERNS[:6])
+_SC2_FETCH_COMMAND = re.compile(r"(?:curl|wget)\s+", re.IGNORECASE)
+_SC2_SUBSTITUTION_START = re.compile(r"\$\(|`")
+_SC2_ATTACHED_EXECUTOR = re.compile(
+    r"(?:\||&&)\s*(?:sudo\s+)?(?:bash|sh|python3?|node|ruby|perl)",
+    re.IGNORECASE,
+)
+_SC2_FENCE_LINE = re.compile(
+    rf"(?:\A|{LOGICAL_LINE_BREAK.pattern})[ \t]*(?P<marker>`{{3,}}|~{{3,}})"
+    r"[^\r\n\v\f\x1c-\x1e\x85\u2028\u2029]*"
+)
+_SC2_COMPOUND_TOKEN = re.compile(
+    r"(?P<quoted>\"(?:\\.|[^\"\\])*\"|'[^']*')"
+    r"|(?P<escaped>\\[\s\S])"
+    r"|(?P<comment>(?<![^\s;&|()<>])\#[^\r\n]*)"
+    r"|(?P<heredoc><{2})"
+    r"|(?P<word>(?<![^\s;|&(){}])(?:if|fi|for|while|until|select|done|case|esac|begin|end|function)"
+    r"(?=[\s;|&(){}]|\Z))"
+    r"|(?P<delimiter>[(){}])|(?P<unclosed_quote>['\"`])",
+)
+_SC2_CLAUSE_PREFIX = re.compile(r"[ \t]*(?:(?:then|do|else|elif|time(?:[ \t]+-p)?|!)[ \t]+)*")
+_INSTALLER_WARNING = re.compile(r"\b(?:warning|caution)\b", re.IGNORECASE)
+_INTERNAL_INSTALLER = re.compile(
+    r"\binternal\b[^\n]{0,80}\binstaller\b|\binstaller\b[^\n]{0,80}\binternal\b",
+    re.IGNORECASE,
+)
+_SOURCE_REVIEW_BEFORE_RUN = re.compile(
+    r"\b(?:review|inspect)\b[^\n]{0,80}\bsource\b[^\n]{0,80}"
+    r"\bbefore\b[^\n]{0,40}\b(?:run|execute|launch)(?:ning|d|s)?\b",
+    re.IGNORECASE,
+)
+_INSTALLER_WARNING_NEGATION = re.compile(
+    r"\b(?:not|no)\s+(?:an?\s+)?(?:warning|caution)\b|"
+    r"\b(?:never|do\s+not|don't)\s+(?:review|inspect)\b",
+    re.IGNORECASE,
+)
+_PIPE_TO_SHELL = re.compile(
+    r"\b(?:curl|wget)\b[^|\n]*\|\s*(?:sudo\s+)?(?:ba)?sh\b",
+    re.IGNORECASE,
+)
+_MAX_WARNED_INSTALLER_LINE_CHARS = 4_096
+_MAX_LITERAL_XOR_KEY_BYTES = 256
+_MAX_LITERAL_XOR_VALUES = 4_096
+
+
+def _decoded_literal_xor_calls(content: str) -> list[tuple[int, str]]:
+    """Decode literal byte arrays passed to a recognizable local XOR helper.
+
+    This stays regex-based because the workflow shares one Python AST parse among
+    behavioral analyzers. A second parse in static pattern analysis breaks that
+    graph-level cache.
+    """
+    function_pattern = re.compile(r"^def\s+(?P<name>[A-Za-z_]\w*)\(", re.MULTILINE)
+    body_pattern = re.compile(r"(?:\n[ \t]+.*)+")
+    # A backslash belongs only to an escape, so a missing closing quote cannot
+    # explore exponentially many partitions of a run of backslashes.
+    key_pattern = re.compile(r"\b\w+\s*=\s*b(['\"])(?P<key>(?:\\[\s\S]|[^'\"\\])*)\1")
+    decoded: list[tuple[int, str]] = []
+    closing_paren = -1
+    consumed_until = 0
+    for function in function_pattern.finditer(content):
+        if function.start() < consumed_until:
+            continue
+        # Reuse the next closing parenthesis across malformed headers instead
+        # of searching the same suffix once for every unclosed function.
+        if closing_paren < function.end():
+            closing_paren = content.find(")", function.end())
+        if closing_paren < 0:
+            break
+        if not content.startswith(":", closing_paren + 1):
+            continue
+        body_match = body_pattern.match(content, closing_paren + 2)
+        if body_match is None:
+            continue
+        consumed_until = body_match.end()
+        body = body_match.group()
+        key_match = key_pattern.search(body)
+        if key_match is None or "bytes(" not in body or "^" not in body or ".decode(" not in body:
+            continue
+        try:
+            key = codecs.decode(key_match.group("key"), "unicode_escape").encode("latin1")
+        except (UnicodeError, ValueError):
+            continue
+        if not key or len(key) > _MAX_LITERAL_XOR_KEY_BYTES:
+            continue
+        call_pattern = re.compile(
+            rf"\b{re.escape(function.group('name'))}\(\s*\[(?P<values>[\d,\s]+)\]\s*\)"
+        )
+        for call in call_pattern.finditer(content):
+            try:
+                values = [int(value) for value in call.group("values").split(",") if value.strip()]
+            except ValueError:
+                continue
+            if (
+                not values
+                or len(values) > _MAX_LITERAL_XOR_VALUES
+                or any(value < 0 or value > 255 for value in values)
+            ):
+                continue
+            try:
+                decoded_bytes = bytes(
+                    value ^ key[index % len(key)] for index, value in enumerate(values)
+                )
+                command = decoded_bytes.decode("utf-8")
+            except (UnicodeDecodeError, ValueError):
+                continue
+            decoded.append((get_line_number(content, call.start()), command))
+    return decoded
+
+
+SC3_CODE_PATTERNS = [
     (r"exec\s*\(\s*(?:base64\.)?b64decode\s*\(", 0.95),
     (r"eval\s*\(\s*(?:base64\.)?b64decode\s*\(", 0.95),
     (r"exec\s*\(\s*codecs\.decode\s*\([^)]*['\"]hex['\"]\s*\)", 0.95),
@@ -141,8 +282,11 @@ SC3_PATTERNS = [
     (r"['\"][A-Za-z0-9+/=]{200,}['\"]", 0.5),
     (r"\(lambda\s+_:\s*exec\s*\(", 0.9),
     (r"__import__\s*\(['\"]os['\"]\s*\)\.system", 0.85),
+]
+SC3_PROSE_PATTERNS = [
     (r"decode\s+(?:this|the)\s+(?:base64|hex)\s+(?:and\s+)?(?:run|execute)", 0.8),
 ]
+SC3_PATTERNS = SC3_CODE_PATTERNS + SC3_PROSE_PATTERNS
 
 # SC7: Untrusted Container Image — pulling images with signature/registry
 # verification turned off. These flags disable image trust regardless of the
@@ -247,95 +391,265 @@ _ABANDONED_PACKAGES: set[str] = {
 # SC6: Typosquatting — popular packages and edit-distance check
 # ---------------------------------------------------------------------------
 
-_POPULAR_PYPI: set[str] = {
-    "requests",
-    "numpy",
-    "pandas",
-    "flask",
-    "django",
-    "boto3",
-    "setuptools",
-    "pip",
-    "urllib3",
-    "pyyaml",
-    "cryptography",
-    "pillow",
-    "pydantic",
-    "sqlalchemy",
-    "pytest",
-    "click",
-    "jinja2",
-    "httpx",
-    "aiohttp",
-    "fastapi",
-    "celery",
-    "paramiko",
-    "beautifulsoup4",
-    "lxml",
-    "scrapy",
-    "redis",
-    "pymongo",
-    "psycopg2",
-    "matplotlib",
-    "scipy",
-    "scikit-learn",
-    "tensorflow",
-    "torch",
-    "keras",
-    "transformers",
-    "openai",
-    "langchain",
-    "gunicorn",
-    "uvicorn",
-    "rich",
-    "typer",
-    "black",
-    "ruff",
-    "mypy",
-    "pylint",
-    "flake8",
-    "isort",
-    "perseus-ctx",
-    "mimir-mcp",
-}
+_POPULAR_PYPI: frozenset[str] = frozenset(
+    {
+        "requests",
+        "numpy",
+        "pandas",
+        "flask",
+        "django",
+        "boto3",
+        "setuptools",
+        "pip",
+        "urllib3",
+        "pyyaml",
+        "cryptography",
+        "pillow",
+        "pydantic",
+        "sqlalchemy",
+        "pytest",
+        "click",
+        "jinja2",
+        "httpx",
+        "aiohttp",
+        "fastapi",
+        "celery",
+        "paramiko",
+        "beautifulsoup4",
+        "lxml",
+        "scrapy",
+        "redis",
+        "pymongo",
+        "psycopg2",
+        "matplotlib",
+        "scipy",
+        "scikit-learn",
+        "tensorflow",
+        "torch",
+        "keras",
+        "transformers",
+        "openai",
+        "langchain",
+        "gunicorn",
+        "uvicorn",
+        "rich",
+        "typer",
+        "black",
+        "ruff",
+        "mypy",
+        "pylint",
+        "flake8",
+        "isort",
+        "colorama",
+        "python-dateutil",
+        "discord.py",
+        "python-dotenv",
+        "pycryptodome",
+        "perseus-ctx",
+        "mimir-mcp",
+    }
+)
 
-_POPULAR_NPM: set[str] = {
-    "express",
-    "react",
-    "react-dom",
-    "next",
-    "vue",
-    "angular",
-    "lodash",
-    "axios",
-    "moment",
-    "chalk",
-    "commander",
-    "inquirer",
-    "webpack",
-    "babel",
-    "eslint",
-    "prettier",
-    "typescript",
-    "jest",
-    "mocha",
-    "chai",
-    "puppeteer",
-    "socket.io",
-    "mongoose",
-    "sequelize",
-    "passport",
-    "jsonwebtoken",
-    "dotenv",
-    "cors",
-    "body-parser",
-    "nodemon",
-    "pm2",
-}
+_POPULAR_NPM: frozenset[str] = frozenset(
+    {
+        "express",
+        "react",
+        "react-dom",
+        "next",
+        "vue",
+        "angular",
+        "lodash",
+        "axios",
+        "moment",
+        "chalk",
+        "commander",
+        "inquirer",
+        "webpack",
+        "babel",
+        "eslint",
+        "prettier",
+        "typescript",
+        "jest",
+        "mocha",
+        "chai",
+        "puppeteer",
+        "socket.io",
+        "mongoose",
+        "sequelize",
+        "passport",
+        "jsonwebtoken",
+        "dotenv",
+        "cors",
+        "body-parser",
+        "nodemon",
+        "pm2",
+        "electron",
+        "discord.js",
+        "ethers",
+        "cross-env",
+        "jquery",
+        "nodemailer",
+        "bootstrap",
+    }
+)
+
+# SC6 known-legitimate neighbours: established packages whose names fall within
+# the typosquat threshold of a _POPULAR_* entry and are never reported. Built by
+# running SC6 against the top 15,000 PyPI packages (hugovk/top-pypi-packages,
+# 30-day list) and npm-high-impact (~17,300 names). Six PyPI names that a manual
+# review keeps flagged (beautifulsoup, dydantic, httpr, pyyml, slack, xoto3) are
+# deliberately left out. The resulting 97 -> 6 (PyPI) and 26 -> 0 (npm) counts are
+# in-sample: names outside those two lists can still be flagged. Established
+# packages reported from outside the sample in review (#647) were checked one by
+# one (repository, age, downloads) and added: jets, jqueryui, bootstrap3,
+# bootstrap5 (npm), colormap (PyPI). python-direnv (PyPI) was reviewed too and is
+# kept flagged on purpose (#687): little history, two edits from python-dotenv.
+_KNOWN_LEGIT_PYPI: frozenset[str] = frozenset(
+    {
+        "afsapi",
+        "aioftp",
+        "aiortsp",
+        "astrapy",
+        "bcpandas",
+        "blake3",
+        "boto",
+        "canvas",
+        "colormap",
+        "cpplint",
+        "crick",
+        "djangoql",
+        "djlint",
+        "fasta2a",
+        "fastai",
+        "fastar",
+        "fastui",
+        "grequests",
+        "httpx2",
+        "hyper",
+        "ipytest",
+        "j2lint",
+        "k5test",
+        "lkml",
+        "lml",
+        "mip",
+        "niquests",
+        "open3d",
+        "openapi3",
+        "openbb",
+        "opencc",
+        "opendal",
+        "openlit",
+        "openmim",
+        "openml",
+        "openmm",
+        "p4p",
+        "panda3d",
+        "pandasai",
+        "pandasql",
+        "pandoc",
+        "pantab",
+        "pid",
+        "pin",
+        "pipe",
+        "pipx",
+        "piq",
+        "piqp",
+        "psycopg",
+        "psycopg-c",
+        "pyaml",
+        "pybamm",
+        "pycryptodomex",
+        "pydbml",
+        "pygame",
+        "pygaul",
+        "pylama",
+        "pylast",
+        "pylink",
+        "pymantic",
+        "pymzml",
+        "pynacl",
+        "pynini",
+        "pynvml",
+        "pyqwest",
+        "pyrect",
+        "pysaml2",
+        "pytango",
+        "pytket",
+        "pytoml",
+        "rltest",
+        "ruyaml",
+        "scanpy",
+        "scapy",
+        "scipp",
+        "scramp",
+        "scrapli",
+        "scrapydo",
+        "scrypt",
+        "shyaml",
+        "sip",
+        "sodapy",
+        "syrupy",
+        "tclint",
+        "tensorflowjs",
+        "tftest",
+        "torchx",
+        "unicon",
+        "unicorn",
+        "usort",
+        "vastai",
+        "vyper",
+        "willow",
+        "x-transformers",
+    }
+)
+
+_KNOWN_LEGIT_NPM: frozenset[str] = frozenset(
+    {
+        "angular2",
+        "bootstrap3",
+        "bootstrap5",
+        "chat",
+        "commondir",
+        "commoner",
+        "crossvent",
+        "cypress",
+        "docdash",
+        "dtslint",
+        "electrodb",
+        "enquirer",
+        "esquery",
+        "expresso",
+        "ext",
+        "gaxios",
+        "getenv",
+        "jets",
+        "jqueryui",
+        "jshint",
+        "jslint",
+        "keypress",
+        "mquery",
+        "net",
+        "nuxt",
+        "oxlint",
+        "preact",
+        "radash",
+        "react-dnd",
+        "test",
+        "tether",
+        "tslint",
+        "ttypescript",
+        "vm2",
+        "vuex",
+    }
+)
 
 
 def _edit_distance(a: str, b: str) -> int:
-    """Compute Levenshtein edit distance between two strings."""
+    """Compute Levenshtein edit distance between two strings.
+
+    SC6 now uses ``_osa_distance``; this plain Levenshtein is kept as the
+    reference the unit tests compare it against (a swap counts as two edits).
+    """
     if len(a) < len(b):
         return _edit_distance(b, a)
     if len(b) == 0:
@@ -350,16 +664,90 @@ def _edit_distance(a: str, b: str) -> int:
     return prev_row[-1]
 
 
-def _is_typosquat(pkg_name: str, popular: set[str], max_distance: int = 2) -> str | None:
-    """Return the popular package name if pkg_name is a close-but-not-exact match."""
-    normalized = pkg_name.lower().replace("_", "-")
-    for popular_name in sorted(popular):
-        pop_norm = popular_name.lower().replace("_", "-")
-        if normalized == pop_norm:
-            return None
-        if len(normalized) < 3 or len(pop_norm) < 3:
+def _osa_distance(a: str, b: str) -> int:
+    """Optimal string alignment distance between two strings.
+
+    Levenshtein plus adjacent transpositions: swapping two neighbouring
+    characters ("recat" vs "react") is a single typing slip, so it counts as
+    one edit instead of two. Short transposition typosquats then pass the
+    relative-distance guard in ``_is_typosquat``.
+    """
+    rows, cols = len(a) + 1, len(b) + 1
+    d = [[0] * cols for _ in range(rows)]
+    for i in range(rows):
+        d[i][0] = i
+    for j in range(cols):
+        d[0][j] = j
+    for i in range(1, rows):
+        for j in range(1, cols):
+            cost = 0 if a[i - 1] == b[j - 1] else 1
+            d[i][j] = min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + cost)
+            if i > 1 and j > 1 and a[i - 1] == b[j - 2] and a[i - 2] == b[j - 1]:
+                d[i][j] = min(d[i][j], d[i - 2][j - 2] + 1)
+    return d[-1][-1]
+
+
+def _typosquat_normalize(name: str, pep503: bool) -> str:
+    """Normalize a package name for SC6 comparisons.
+
+    PyPI treats runs of ``-``, ``_`` and ``.`` as equivalent (PEP 503), so
+    ``discord-py`` *is* ``discord.py``. npm does not (``socket-io`` and
+    ``socket.io`` are distinct packages), so npm keeps the historical rule.
+    """
+    if pep503:
+        return re.sub(r"[-_.]+", "-", name).lower()
+    return name.lower().replace("_", "-")
+
+
+@functools.lru_cache(maxsize=32)
+def _typosquat_targets(names: frozenset[str], pep503: bool) -> tuple[tuple[str, str], ...]:
+    """Return ``(name, normalized name)`` pairs sorted by name, once per name set.
+
+    SC6 runs for every dependency, so normalizing and sorting the popular and
+    known-legitimate sets on each call used to dominate the per-scan cost.
+    """
+    return tuple(sorted((name, _typosquat_normalize(name, pep503)) for name in names))
+
+
+@functools.lru_cache(maxsize=32)
+def _typosquat_normalized_set(names: frozenset[str], pep503: bool) -> frozenset[str]:
+    """Return the normalized names of ``names`` (cached, see ``_typosquat_targets``)."""
+    return frozenset(norm for _, norm in _typosquat_targets(names, pep503))
+
+
+def _is_typosquat(
+    pkg_name: str,
+    popular: set[str],
+    max_distance: int = 2,
+    *,
+    known_legit: frozenset[str] = frozenset(),
+    pep503: bool = False,
+) -> str | None:
+    """Return the popular package name if pkg_name is a close-but-not-exact match.
+
+    ``known_legit`` lists established packages whose names happen to fall
+    within the threshold of a popular one (``psycopg`` vs ``psycopg2``,
+    ``preact`` vs ``react``); they are never reported.
+    """
+    normalized = _typosquat_normalize(pkg_name, pep503)
+    popular_set = popular if isinstance(popular, frozenset) else frozenset(popular)
+    legit_set = known_legit if isinstance(known_legit, frozenset) else frozenset(known_legit)
+    # A known package must win over any earlier, similar name (e.g. gunicorn
+    # sorts before uvicorn). Apply the same normalization on both sides.
+    if normalized in _typosquat_normalized_set(popular_set, pep503):
+        return None
+    if normalized in _typosquat_normalized_set(legit_set, pep503):
+        return None
+    if len(normalized) < 3:
+        return None
+    for popular_name, pop_norm in _typosquat_targets(popular_set, pep503):
+        if len(pop_norm) < 3:
             continue
-        dist = _edit_distance(normalized, pop_norm)
+        # OSA distance is never below the length difference, so this skip is
+        # exact and avoids the quadratic distance computation for most pairs.
+        if abs(len(normalized) - len(pop_norm)) > max_distance:
+            continue
+        dist = _osa_distance(normalized, pop_norm)
         if not 0 < dist <= max_distance:
             continue
         # Relative-distance guard: a genuine typosquat perturbs only a small
@@ -367,8 +755,8 @@ def _is_typosquat(pkg_name: str, popular: set[str], max_distance: int = 2) -> st
         # under an absolute distance of 2 (e.g. "task" is edit-distance 2 from
         # "flask" yet is a real package) and are not typosquats. Require
         # dist/len <= 1/3, so short names need an all-but-one-character match
-        # while longer names may still differ by two (e.g. "reqeusts" vs
-        # "requests").
+        # while longer names may still differ by two (e.g. "reqeuts" vs
+        # "requests": one swap plus one deletion).
         shorter = min(len(normalized), len(pop_norm))
         if dist * 3 > shorter:
             continue
@@ -461,6 +849,268 @@ _OVERLY_BROAD_SINGLE_WORDS: set[str] = {
     "hello",
     "hey",
 }
+
+# Activation-condition signals for description clauses. A description clause
+# only counts as trigger-like when it says *when* the skill activates (a
+# bounded condition), not merely what it does: bare behavior prose such as
+# "Always preserves file permissions when copying files" does not qualify.
+_DESCRIPTION_ACTIVATION_CONDITION_RE = re.compile(
+    r"\b(?:"
+    r"whenever|"
+    r"(?:when|if)\s+(?:the\s+)?user\s+(?:says?|asks?|types?|sends?|requests?)|"
+    r"every\s+time|each\s+time"
+    r")\b",
+    re.IGNORECASE,
+)
+
+# Universal-scope signals for description clauses. The scope must be
+# unconditional: a subject or domain qualifier such as "about PostgreSQL",
+# "with PDF files" or "related to Kubernetes" keeps the clause describing a
+# capability, not a catch-all trigger. Up to three leading determiners,
+# quantifiers or "of" are transparent ("about this codebase", "about any AWS
+# service", "about all the services", "about all of the services" are still
+# bounded by the noun after them). A qualifier whose object is only a pronoun
+# or a generic noun ("anything with it", "anything with anyone", "anything
+# with any of them", "anything related to any topic", "any messages with any
+# content") bounds nothing and stays universal. Broad prepositions ("in",
+# "for", "on") are deliberately not qualifiers: "any message in the chat" is
+# still every message.
+_DESCRIPTION_SCOPE_DETERMINER = (
+    r"(?:the|a|an|this|that|these|those|any|all|every|each|some|"
+    r"my|your|our|their|its|his|her)"
+)
+_DESCRIPTION_UNBOUNDED_OBJECT = (
+    r"(?:it|them|you|me|us|him|her|anything|everything|whatever|something|"
+    r"nothing|anyone|anybody|someone|somebody|everyone|everybody|nobody|"
+    r"topics?|subjects?|things?|content)"
+)
+_DESCRIPTION_UNIVERSAL_SCOPE_RE = re.compile(
+    r"\b(?:"
+    r"anything|everything|whatever|"
+    r"(?:all|any|every)\s+(?:messages?|requests?|questions?|queries?|inputs?|tasks?)"
+    r")\b"
+    r"(?!\s+(?:about|with|involving|regarding|concerning|(?:related|relating)\s+to)\s+"
+    rf"(?:(?:{_DESCRIPTION_SCOPE_DETERMINER}|of)\s+){{0,3}}"
+    rf"(?!(?:{_DESCRIPTION_UNBOUNDED_OBJECT}|{_DESCRIPTION_SCOPE_DETERMINER}|of)\b)[a-z0-9])",
+    re.IGNORECASE,
+)
+
+# Invocation/shadowing intent signals. A description only counts as a shadow
+# command when it shows the skill means to intercept or override a command.
+# The slash branch only matches a slash that starts a token (a slash-command
+# invocation such as "/build"), never a slash embedded in a larger token:
+# "CI/CD" must not read as invocation intent for "build".
+_DESCRIPTION_INVOCATION_RE = re.compile(
+    r"\b(?:commands?|slash|invoke[sd]?|invoking|intercept(?:s|ed|ing)?|"
+    r"override[sd]?|overriding|overridden|shadow(?:s|ed|ing)?)\b|(?<![\w/])/[a-z]",
+    re.IGNORECASE,
+)
+
+# Command-interception evidence for the TR2 shadow-command rule. Unlike the
+# broader extraction gate above, this requires an actual
+# invocation/interception/override claim (or a literal slash-command token):
+# merely discussing commands as a noun ("Show available build commands",
+# "documents the build and test commands") describes documentation or help
+# prose, not shadowing intent, so it must not establish TR2 on its own.
+# The shadowed command must also be the object of that evidence, not any
+# built-in word that happens to share the clause: a slash-command token names
+# a command by its whole name ("/ask-matt" is "ask-matt", not the built-in
+# "ask"), and an interception verb governs the built-ins that follow it in
+# the clause ("Intercepts and replaces the built-in deploy command"). A
+# slash-command token that is not a built-in ("/ask-matt") stays one name, and
+# a home-relative path ("~/build") is not a slash command.
+_DESCRIPTION_SLASH_COMMAND_RE = re.compile(r"(?<![\w/.~])/([a-z][\w-]*)", re.IGNORECASE)
+_DESCRIPTION_INTERCEPTION_VERB_RE = re.compile(
+    r"\b(?:invoke[sd]?|invoking|intercept(?:s|ed|ing)?|"
+    r"override[sd]?|overriding|overridden|shadow(?:s|ed|ing)?)\b",
+    re.IGNORECASE,
+)
+# Passive interception claims name the command before the verb: "the built-in
+# deploy command is intercepted", "types deploy it is intercepted", "the deploy
+# command will be intercepted", "deploy commands are now shadowed". The
+# auxiliary may be "is"/"are" (optionally "being"), "gets", "will be" or
+# "has/have been", and one adverb may precede the participle. The adverb slot
+# takes a short list plus "-ly" words, so a negation ("is not intercepted",
+# "is never shadowed") does not count.
+_DESCRIPTION_PASSIVE_INTERCEPTION_RE = re.compile(
+    r"(?<![\w/.~-])/?([a-z][\w-]*)\s+(?:commands?\s+|it\s+)?"
+    r"(?:(?:is|are)(?:\s+being)?|gets?|will\s+be|ha(?:s|ve)\s+been)\s+"
+    r"(?:(?:always|now|also|still|already|[a-z]+ly)\s+)?"
+    r"(?:intercepted|overridden|shadowed|invoked)\b",
+    re.IGNORECASE,
+)
+_DESCRIPTION_COMMAND_TOKEN_RE = re.compile(r"(?<![\w/.~-])/?([a-z][\w-]*)", re.IGNORECASE)
+
+# Trigger-phrase extraction for the TR1 broad/short-trigger rule on
+# descriptions: the word or phrase the skill claims to activate on, as in
+# "whenever the user says hello". Filler words between the verb and the
+# phrase ("asks to create", "asks for a poster") are skipped so the rule
+# judges the real trigger phrase, never a preposition like "to". The bare
+# articles "the"/"a"/"an" are deliberately NOT filler: they are also overly
+# broad single-word triggers, so skipping them would drop the broad word
+# from the analysis entirely ("says the zone" must capture "the zone", not
+# "zone"). The phrase is the complete bounded wording the skill names
+# ("code review", not just "code"): only a literal single word can be an
+# overly broad trigger, matching the legacy trigger grammar where multiword
+# triggers are never TR1.
+_DESCRIPTION_TRIGGER_PHRASE_RE = re.compile(
+    r"\b(?:whenever|when|if)\s+(?:the\s+)?user\s+"
+    r"(?:says?|asks?|types?|sends?|requests?)\s+"
+    r"(?:(?:the\s+(?:word|phrase)|to|for|about|on|of|that)\s+)*"
+    r"['\"]?(?P<phrase>[A-Za-z][\w-]*(?:\s+[A-Za-z][\w-]*){0,7})['\"]?",
+    re.IGNORECASE,
+)
+
+# Bare universal-scope statements: the whole clause is a catch-all scope
+# ("all messages"), which the legacy trigger grammar also flags as TR3.
+_DESCRIPTION_BARE_SCOPE_RE = re.compile(
+    r"(?:all|any|every)\s+(?:messages?|inputs?|requests?|queries?|questions?)",
+    re.IGNORECASE,
+)
+
+# Boundaries that end an activation-condition span. A universal-scope word
+# after one belongs to a separate instruction, not to the activation
+# condition: in "whenever code changes and summarize all messages", the
+# "all messages" are compiler output in a new conjunct, not the trigger's
+# scope.
+_DESCRIPTION_CONDITION_BOUNDARY_RE = re.compile(
+    r"\b(?:and|but|or|while|then|plus)\b|[;,]",
+    re.IGNORECASE,
+)
+
+# Bounds for description clause extraction: keep the analysis cheap and the
+# extracted trigger phrases reviewable. The clause budget counts only
+# signal-bearing clauses (benign padding never consumes it); raising it
+# keeps realistic multi-sentence descriptions fully inspected, and any
+# signal-bearing clause dropped past the budget is reported as explicit
+# incomplete coverage instead of being silently discarded.
+_MAX_DESCRIPTION_CLAUSES = 32
+_MAX_DESCRIPTION_CLAUSE_CHARS = 120
+# Per-clause cap on signal-anchored windows: each window is bounded, so
+# per-clause work stays bounded however many signals a clause carries.
+_MAX_DESCRIPTION_SIGNAL_WINDOWS = 3
+# Backstop on the activation-condition span searched for a bound scope.
+_MAX_DESCRIPTION_CONDITION_SPAN = 160
+
+
+def _description_clause_has_signal(text: str) -> bool:
+    """Cheap gate: does this clause carry any trigger-relevant intent?"""
+    return (
+        _DESCRIPTION_ACTIVATION_CONDITION_RE.search(text) is not None
+        or _DESCRIPTION_UNIVERSAL_SCOPE_RE.search(text) is not None
+        or _DESCRIPTION_INVOCATION_RE.search(text) is not None
+    )
+
+
+def _description_signal_windows(text: str) -> list[str]:
+    """Bounded text windows anchored at each intent-signal match.
+
+    Overlong clauses are analyzed through windows centered on the signal
+    matches themselves (activation condition, universal scope, or
+    invocation/shadowing intent), so a trigger sentence buried in the middle
+    of padding is still inspected while per-clause work stays bounded: each
+    window extends at most ``_MAX_DESCRIPTION_CLAUSE_CHARS`` past its match
+    and the window count per clause is capped.
+    """
+    spans: list[tuple[int, int]] = []
+    for pattern in (
+        _DESCRIPTION_ACTIVATION_CONDITION_RE,
+        _DESCRIPTION_UNIVERSAL_SCOPE_RE,
+        _DESCRIPTION_INVOCATION_RE,
+    ):
+        for match in pattern.finditer(text):
+            spans.append(
+                (
+                    max(0, match.start() - _MAX_DESCRIPTION_CLAUSE_CHARS),
+                    match.end() + _MAX_DESCRIPTION_CLAUSE_CHARS,
+                )
+            )
+    spans.sort()
+    merged: list[list[int]] = []
+    for start, end in spans:
+        if merged and start <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], end)
+        else:
+            merged.append([start, end])
+    return [text[start:end].strip() for start, end in merged[:_MAX_DESCRIPTION_SIGNAL_WINDOWS]]
+
+
+def _description_condition_has_universal_scope(clause: str) -> bool:
+    """Check the universal scope is bound to the activation condition.
+
+    The scope must sit inside the condition's own span: the text after the
+    activation-condition match, up to the next coordinating conjunction or
+    clause punctuation (and bounded in length). A scope word anywhere else
+    in the clause does not establish an unconditional user-input trigger:
+    in "Run tests whenever code changes and summarize all messages from
+    the compiler", activation is limited to code changes while "all
+    messages" are compiler output in a separate instruction.
+    """
+    condition = _DESCRIPTION_ACTIVATION_CONDITION_RE.search(clause)
+    if condition is None:
+        return False
+    rest = clause[condition.end() :]
+    boundary = _DESCRIPTION_CONDITION_BOUNDARY_RE.search(rest)
+    span = rest[: boundary.start()] if boundary else rest
+    span = span[:_MAX_DESCRIPTION_CONDITION_SPAN]
+    return _DESCRIPTION_UNIVERSAL_SCOPE_RE.search(span) is not None
+
+
+def _description_shadowed_commands(clause: str) -> list[str]:
+    """Built-in commands a description clause claims to invoke or intercept.
+
+    Only commands tied to interception evidence count: a slash-command token
+    whose whole name is a built-in, a built-in named anywhere after an
+    invocation/interception/override verb in the clause, or a built-in that a
+    passive claim names right before its auxiliary ("deploy is intercepted",
+    "deploy command has been overridden").
+    Returns the sorted set of shadowed built-in commands.
+    """
+    shadowed = {
+        match.group(1).lower()
+        for match in _DESCRIPTION_SLASH_COMMAND_RE.finditer(clause)
+        if match.group(1).lower() in _BUILTIN_COMMANDS
+    }
+    verb = _DESCRIPTION_INTERCEPTION_VERB_RE.search(clause)
+    if verb is not None:
+        tokens = _DESCRIPTION_COMMAND_TOKEN_RE.findall(clause[verb.end() :])
+        shadowed.update(t.lower() for t in tokens if t.lower() in _BUILTIN_COMMANDS)
+    shadowed.update(
+        match.group(1).lower()
+        for match in _DESCRIPTION_PASSIVE_INTERCEPTION_RE.finditer(clause)
+        if match.group(1).lower() in _BUILTIN_COMMANDS
+    )
+    return sorted(shadowed)
+
+
+def _extract_description_trigger_clauses(description: str) -> tuple[list[str], int]:
+    """Extract bounded trigger-like clauses from a skill description.
+
+    Every clause is scanned for cheap intent signals, so benign padding
+    sentences never consume the clause budget and cannot push a trigger
+    clause out of the analysis. Overlong clauses are analyzed through
+    bounded windows anchored at each intent-signal match, so activation
+    intent in the middle of a padded clause is still inspected while
+    per-clause work stays bounded.
+
+    Returns the extracted clauses plus the number of signal-bearing clauses
+    omitted by the clause budget, so the caller can record explicit
+    incomplete coverage instead of silently dropping relevant text.
+    """
+    clauses = re.split(r"[.;:!?]\s*|\s+-\s+", description)
+    extracted: list[str] = []
+    omitted = 0
+    for clause in clauses:
+        text = clause.strip().strip(",")
+        if not text or not _description_clause_has_signal(text):
+            continue
+        if len(extracted) >= _MAX_DESCRIPTION_CLAUSES:
+            omitted += 1
+            continue
+        if len(text) > _MAX_DESCRIPTION_CLAUSE_CHARS:
+            text = " ... ".join(_description_signal_windows(text))
+        extracted.append(text)
+    return extracted, omitted
 
 
 def _pinned_version(operator: str | None, version: str | None) -> str | None:
@@ -834,6 +1484,116 @@ def _is_python_lockfile(file_path: str) -> bool:
     return "uv.lock" in lower_path or "poetry.lock" in lower_path
 
 
+def _normalize_npm_package_name(name: str) -> str:
+    """Normalize an npm package name.
+
+    Deliberately *not* ``_normalize_package_name``: that one folds ``_`` into ``-`` for PyPI,
+    where the two are the same project. On npm they are different packages — ``string_decoder``
+    and ``string-decoder`` both exist — so folding them would resolve a dependency against
+    another package's lockfile entry.
+    """
+    return name.strip().lower()
+
+
+def _is_npm_lockfile(file_path: str) -> bool:
+    lower_path = file_path.lower()
+    return lower_path.endswith(("package-lock.json", "npm-shrinkwrap.json"))
+
+
+def _npm_lock_line_index(content: str) -> dict[str, int]:
+    """Map each JSON key to the first line it appears on, in a single pass.
+
+    The obvious implementation — search the file once per package — is quadratic, because both
+    the search and the offset-to-line conversion restart from the top every time. On a 5000-entry
+    lockfile that cost 6.3s, and lockfiles that size are ordinary. One pass costs ~20ms.
+    """
+    index: dict[str, int] = {}
+    line = 1
+    pos = 0
+    for match in re.finditer(r'"((?:[^"\\]|\\.)*)"\s*:', content):
+        line += content.count("\n", pos, match.start())
+        pos = match.start()
+        index.setdefault(match.group(1), line)
+    return index
+
+
+def _npm_lock_entries(content: str) -> list[tuple[str, str, int, int]]:
+    """Extract (name, version, line, depth) for every install recorded in an npm lockfile.
+
+    Covers both layouts: ``lockfileVersion`` 2/3 keep every install under ``packages`` keyed by
+    install path, while version 1 nests ``dependencies``. The root entry (empty key) is the
+    project itself, not a dependency, and is skipped.
+
+    *depth* is 0 for a top-level install and grows with nesting, which is what tells a direct
+    dependency from a transitive one — the manifest's ``^1.2.3`` resolves to the top-level copy.
+
+    Deduplication is by name *and* version, never by name alone: npm installs the same package
+    at several versions routinely, nesting the odd ones out under their dependents. Keeping one
+    entry per name would drop the others silently, and the dropped copy is as installed — and as
+    exploitable — as the one that happened to be seen first.
+    """
+    try:
+        data = json.loads(content)
+    except (ValueError, TypeError):
+        return []
+    if not isinstance(data, dict):
+        return []
+
+    line_index = _npm_lock_line_index(content)
+    entries: list[tuple[str, str, int, int]] = []
+    seen: set[tuple[str, str]] = set()
+
+    def add(name: object, version: object, key: str, depth: int) -> None:
+        if not isinstance(name, str) or not name.strip():
+            return
+        if not isinstance(version, str) or not version.strip():
+            return
+        name, version = name.strip(), version.strip()
+        identity = (_normalize_npm_package_name(name), version)
+        if identity in seen:
+            return
+        seen.add(identity)
+        entries.append((name, version, line_index.get(key, 1), depth))
+
+    packages = data.get("packages")
+    if isinstance(packages, dict):
+        for path, entry in packages.items():
+            if not path or not isinstance(entry, dict):
+                continue
+            # "node_modules/a/node_modules/b" is package b installed under a: the name is the
+            # last segment, and "name" is only present for aliased installs.
+            name = entry.get("name")
+            if not isinstance(name, str) or not name.strip():
+                name = path.split("node_modules/")[-1]
+            add(name, entry.get("version"), path, path.count("node_modules/") - 1)
+
+    def walk(tree: object, depth: int) -> None:
+        if not isinstance(tree, dict):
+            return
+        for name, entry in tree.items():
+            if not isinstance(entry, dict):
+                continue
+            add(name, entry.get("version"), name, depth)
+            walk(entry.get("dependencies"), depth + 1)
+
+    walk(data.get("dependencies"), 0)
+    return entries
+
+
+def _extract_packages_from_npm_lock(
+    content: str,
+    *,
+    limit: int | None = None,
+) -> list[tuple[str, str | None, int]]:
+    """Extract exact package versions from an npm lockfile."""
+    if limit is not None and limit <= 0:
+        return []
+    found: list[tuple[str, str | None, int]] = [
+        (name, version, line) for name, version, line, _depth in _npm_lock_entries(content)
+    ]
+    return found if limit is None else found[:limit]
+
+
 def _extract_packages_from_toml_lock(
     content: str,
     *,
@@ -871,13 +1631,14 @@ def _extract_packages_from_toml_lock(
 def _apply_locked_versions(
     packages: list[tuple[str, str | None, int]],
     locked_versions: dict[str, str] | None,
+    normalize: Callable[[str], str] = _normalize_package_name,
 ) -> list[tuple[str, str | None, int]]:
     """Prefer lockfile versions for manifest dependencies without exact versions."""
     if not locked_versions:
         return packages
     resolved: list[tuple[str, str | None, int]] = []
     for name, version, line_num in packages:
-        locked_version = locked_versions.get(_normalize_package_name(name))
+        locked_version = locked_versions.get(normalize(name))
         resolved.append((name, version or locked_version, line_num))
     return resolved
 
@@ -988,6 +1749,50 @@ def _collect_locked_versions_detailed(
     return locked_versions, limitations
 
 
+def _collect_npm_locked_versions(
+    file_cache: dict[str, str],
+    components: list[str],
+    *,
+    max_files: int | None = None,
+    timeout_seconds: float | None = None,
+) -> dict[str, str]:
+    """Build package -> exact version map from npm lockfiles in the project.
+
+    Kept separate from the Python map: the two ecosystems share package names (``semver``,
+    ``packaging``, ``requests`` all exist in both), so a single map would resolve a PyPI
+    dependency against an npm version, and vice versa.
+
+    Bounded by the same file count and clock the Python collector is bounded by. A lockfile is
+    attacker-shaped input — a skill can ship one — and an unbounded parse next to a bounded one
+    is not half-safe, it is the way in: the cap that matters is the smallest one, and here that
+    would have been no cap at all.
+    """
+    locked_versions: dict[str, str] = {}
+    depths: dict[str, int] = {}
+    started_at = time.monotonic()
+    files_read = 0
+    for path in components:
+        if not _is_npm_lockfile(path):
+            continue
+        if max_files is not None and files_read >= max_files:
+            break
+        if timeout_seconds is not None and time.monotonic() - started_at >= timeout_seconds:
+            break
+        content = file_cache.get(path)
+        if not content:
+            continue
+        files_read += 1
+        for name, version, _line_num, depth in _npm_lock_entries(content):
+            key = _normalize_npm_package_name(name)
+            # A manifest range names a *direct* dependency, so it resolves to the top-level
+            # install. Nested copies exist for other packages' constraints; answering with one
+            # would report a version this manifest never asked for.
+            if key not in depths or depth < depths[key]:
+                locked_versions[key] = version
+                depths[key] = depth
+    return locked_versions
+
+
 def _version_lt(v1: str, v2: str) -> bool:
     """Simple version comparison: True if v1 < v2 (numeric tuple comparison)."""
 
@@ -1005,15 +1810,201 @@ def _version_lt(v1: str, v2: str) -> bool:
 # ---------------------------------------------------------------------------
 
 
+def _sc2_substitution_ranges(shell_text: str) -> list[tuple[int, int]]:
+    """Locate nested output flows; Markdown fences are not shell backticks."""
+    ranges: list[tuple[int, int]] = []
+    cursor = 0
+    while marker := _SC2_SUBSTITUTION_START.search(shell_text, cursor):
+        start = marker.start()
+        limit = min(len(shell_text), start + _ROOT_GLOB_COMMAND_CHARS)
+        skip = (
+            _skip_command_substitution if marker.group(0) == "$(" else _skip_backtick_substitution
+        )
+        end = skip(shell_text, start, limit)
+        if end is None:
+            ranges.append((start, len(shell_text)))
+            break
+        ranges.append((start, end))
+        cursor = end
+    return ranges
+
+
+def _sc2_has_unproved_compound_context(
+    content: str, offset: int, fence_ends: tuple[int, ...]
+) -> bool:
+    """A child terminator cannot disconnect an enclosing command's output flow.
+
+    This is a conservative ownership guard, not a compound-shell evaluator.
+    Balanced quotes and comments cannot close a parent group. Unclosed groups,
+    conditionals, loops, case statements and truncated context retain legacy
+    evidence rather than granting a single-command boundary.
+    """
+    start = max(0, offset - _ROOT_GLOB_COMMAND_CHARS)
+    fence_index = bisect_right(fence_ends, offset)
+    if fence_index and fence_ends[fence_index - 1] >= start:
+        start = fence_ends[fence_index - 1]
+    elif start > 0:
+        return True
+    stack: list[str] = []
+    endings = {
+        "if": "fi",
+        "for": "done",
+        "while": "done",
+        "until": "done",
+        "select": "done",
+        "case": "esac",
+        "begin": "end",
+        "function": "end",
+        "(": ")",
+        "{": "}",
+    }
+    for token in _SC2_COMPOUND_TOKEN.finditer(content, start, offset):
+        if token.lastgroup in {"unclosed_quote", "heredoc"}:
+            return True
+        if token.lastgroup == "escaped" and any(char in token.group(0) for char in "\r\n"):
+            # Shell lexing removes continuations before recognizing reserved words.
+            return True
+        if token.lastgroup not in {"word", "delimiter"}:
+            continue
+        value = token.group(0)
+        if token.lastgroup == "word" or value == "}":
+            boundary = max(content.rfind(char, start, token.start()) for char in "\n;|&(){}")
+            if _SC2_CLAUSE_PREFIX.fullmatch(content[boundary + 1 : token.start()]) is None:
+                if value == "}":
+                    return True
+                continue
+        if value in endings:
+            stack.append(endings[value])
+        elif stack and value == stack[-1]:
+            stack.pop()
+        elif value in {"fi", "done", "esac", "end", "}"}:
+            return True
+        # A case arm's ')' is not a parenthesis-group close.
+        elif value == ")" and ")" in stack:
+            return True
+    return bool(stack)
+
+
+def _sc2_shell_command_ranges(content: str, file_type: str) -> tuple[tuple[int, int | None], ...]:
+    """Bound fetch/executor matches to a shell command without rewriting source.
+
+    A newline or semicolon after a completed fetch is not a pipe into an
+    interpreter elsewhere in the document. Reuse the bounded shell parser so
+    quoted newlines, line continuations and nested substitutions stay intact.
+    An unproved boundary retains the existing conservative regex behavior.
+    """
+    ranges: list[tuple[int, int | None]] = []
+    # Project fence delimiters once. Inline ticks remain conservative shell syntax.
+    shell_text = (
+        _markdown_shell_text(content, lambda: None, complete_context=False)
+        if file_type in {"markdown", "text"}
+        else content
+    )
+    proof_text = shell_text
+    if file_type in {"markdown", "text"}:
+        # Logical lines establish documentary ownership, but Unicode/control
+        # separators remain native shell argument data during command parsing.
+        proof_text = LOGICAL_LINE_BREAK.sub(
+            lambda line_break: "\n" + " " * (len(line_break.group(0)) - 1), shell_text
+        )
+    fences = tuple(
+        (fence.start(), fence.end())
+        for fence in _SC2_FENCE_LINE.finditer(content)
+        if shell_text[fence.start("marker") : fence.end("marker")].isspace()
+    )
+    fence_starts = tuple(start for start, _ in fences)
+    fence_ends = tuple(end for _, end in fences)
+    substitutions = _sc2_substitution_ranges(shell_text)
+    substitution_index = 0
+    for fetch in _SC2_FETCH_COMMAND.finditer(content):
+        while (
+            substitution_index < len(substitutions)
+            and substitutions[substitution_index][1] <= fetch.start()
+        ):
+            substitution_index += 1
+        if (
+            substitution_index < len(substitutions)
+            and substitutions[substitution_index][0] < fetch.start()
+        ):
+            # A parent echo/printf can pass substitution output into a later
+            # interpreter. A child command's newline/closing delimiter does
+            # not prove that the fetch and outer executor are disconnected.
+            ranges.append((fetch.start(), None))
+            break
+        if _sc2_has_unproved_compound_context(
+            shell_text, fetch.start(), fence_ends
+        ) or _sc2_has_unproved_compound_context(proof_text, fetch.start(), fence_ends):
+            ranges.append((fetch.start(), None))
+            break
+        fence_index = bisect_right(fence_starts, fetch.start())
+        document_end = fence_starts[fence_index] if fence_index < len(fences) else len(content)
+        parse_start = max(0, fetch.start() - _ROOT_GLOB_COMMAND_CHARS)
+        # One extra character distinguishes a parser limit from a genuine EOF.
+        parse_end = min(document_end, fetch.start() + 4 + _ROOT_GLOB_COMMAND_CHARS + 1)
+        _, local_end, limited = _bounded_shell_tokens(
+            shell_text[parse_start:parse_end],
+            fetch.start() - parse_start,
+            fetch.start() + 4 - parse_start,
+        )
+        command_end = parse_start + local_end
+        if (
+            limited
+            or content[command_end : command_end + 1] in {"'", '"', "`", ")"}
+            # CMD caret continuation is outside the Bourne parser's proof.
+            or re.search(r"\^[ \t]*\r?$", content[fetch.start() : command_end]) is not None
+            # A logical-line view cannot turn argument data into a group close.
+            or _sc2_has_unproved_compound_context(shell_text, command_end, fence_ends)
+            or _sc2_has_unproved_compound_context(proof_text, command_end, fence_ends)
+        ):
+            # Preserve legacy nonoverlapping matching on uncertain syntax,
+            # rather than repeatedly parsing overlapping suffixes.
+            ranges.append((fetch.start(), None))
+            break
+        executor = _SC2_ATTACHED_EXECUTOR.match(content, command_end)
+        if executor is not None:
+            ranges.append((fetch.start(), executor.end()))
+    return tuple(ranges)
+
+
+def _iter_sc2_shell_matches(
+    pattern: str,
+    content: str,
+    command_ranges: tuple[tuple[int, int | None], ...],
+) -> Iterator[re.Match[str]]:
+    compiled = re.compile(pattern, re.IGNORECASE | re.MULTILINE)
+    covered = 0
+    for start, end in command_ranges:
+        if end is None:
+            yield from compiled.finditer(content, max(start, covered))
+            return
+        if start < covered:
+            continue
+        match = compiled.match(content, start, end)
+        if match is not None:
+            yield match
+            covered = match.end()
+
+
 def analyze(content: str, file_path: str, file_type: str) -> list[AnalyzerFinding]:
     """Analyze content for supply chain patterns (SC1–SC3, SC7)."""
     findings: list[AnalyzerFinding] = []
+    line_starts = logical_line_starts(content)
+    content_lines = content.splitlines()
+    shell_command_ranges = _sc2_shell_command_ranges(content, file_type)
 
     def loc(ln: int) -> Location:
         return Location(file=file_path, start_line=ln)
 
     def ctx(start: int) -> str:
-        return str(get_context(content, start))
+        line_num = bisect_right(line_starts, start)
+        return get_context_from_lines(
+            content_lines,
+            line_num,
+            column=start - line_starts[line_num - 1],
+        )
+
+    def line_number(start: int) -> int:
+        return bisect_right(line_starts, start)
 
     tag = [PatternCategory.SUPPLY_CHAIN.value]
 
@@ -1023,8 +2014,13 @@ def analyze(content: str, file_path: str, file_type: str) -> list[AnalyzerFindin
     )
     if is_dep_file:
         for pattern, confidence in SC1_PATTERNS:
-            for match in re.finditer(pattern, content, re.MULTILINE):
-                line_num = get_line_number(content, match.start())
+            matches = (
+                static_runner.iter_paragraph_matches
+                if (pattern, confidence) in SC1_PROSE_PATTERNS
+                else re.finditer
+            )
+            for match in matches(pattern, content, re.MULTILINE):
+                line_num = line_number(match.start())
                 findings.append(
                     AnalyzerFinding(
                         rule_id="SC1",
@@ -1035,34 +2031,111 @@ def analyze(content: str, file_path: str, file_type: str) -> list[AnalyzerFindin
                         tags=tag,
                         context=ctx(match.start()),
                         matched_text=match.group(0)[:200],
+                        complete_match=match.group(0),
                     )
                 )
     for pattern, confidence in SC2_PATTERNS:
-        for match in re.finditer(pattern, content, re.IGNORECASE | re.MULTILINE):
-            line_num = get_line_number(content, match.start())
+        if (pattern, confidence) in _SC2_SHELL_PATTERNS:
+            matches = _iter_sc2_shell_matches(pattern, content, shell_command_ranges)
+        elif (pattern, confidence) in SC2_PROSE_PATTERNS:
+            matches = static_runner.iter_paragraph_matches(
+                pattern, content, re.IGNORECASE | re.MULTILINE
+            )
+        else:
+            matches = re.finditer(pattern, content, re.IGNORECASE | re.MULTILINE)
+        for match in matches:
+            line_num = line_number(match.start())
             mt = match.group(0)
-            if _is_safe_supply_chain_pattern(mt):
+            warned_internal_installer = _is_warned_internal_installer(
+                content,
+                match,
+                file_type,
+                line_starts,
+            )
+            data_consumer = _interpreter_reads_stdin_as_data(
+                content,
+                match.start(),
+                line_starts,
+            )
+            if _is_safe_supply_chain_pattern(mt) or data_consumer:
                 adj = min(confidence, 0.15)
                 sev = Severity.LOW
             else:
                 adj = confidence
                 sev = Severity.HIGH
+            finding_tags = list(tag)
+            if warned_internal_installer:
+                finding_tags.extend(["contextual-triage", "explicit-risk-warning"])
+            if data_consumer:
+                finding_tags.append("data-only-stdin-consumer")
+            if warned_internal_installer:
+                message = "Warned Pipe-to-Shell Installer"
+                remediation = (
+                    "Keep the warning adjacent to this command. Prefer a checksum, signature, "
+                    "or inspect-before-execute flow instead of piping fetched content directly "
+                    "to a shell."
+                )
+                explanation = (
+                    "The matched documentation explicitly warns that an internal installer "
+                    "is fetched and piped directly to a shell. The warning provides context, "
+                    "but the command still executes remote code without an inspection step."
+                )
+            elif data_consumer:
+                message = "Inline Program Reads Download as Data"
+                remediation = (
+                    "Prefer structured data formats and validate the fetched content before "
+                    "using it in a program."
+                )
+                explanation = (
+                    "The fetched content is parsed as data by the interpreter program supplied "
+                    "on the command line; the download is not executed as a script."
+                )
+            else:
+                message = "External Script Fetching"
+                remediation = None
+                explanation = None
             findings.append(
                 AnalyzerFinding(
                     rule_id="SC2",
-                    message="External Script Fetching",
+                    message=message,
                     severity=sev,
                     location=loc(line_num),
                     confidence=adj,
-                    tags=tag,
+                    remediation=remediation,
+                    explanation=explanation,
+                    tags=finding_tags,
                     context=ctx(match.start()),
                     matched_text=mt[:200],
+                    complete_match=mt,
                 )
             )
-    if file_type in ("python", "javascript", "shell", "other"):
+    if file_type == "python":
+        for line_num, command in _decoded_literal_xor_calls(content):
+            for pattern, confidence in SC2_PATTERNS:
+                if not re.search(pattern, command, re.IGNORECASE | re.MULTILINE):
+                    continue
+                findings.append(
+                    AnalyzerFinding(
+                        rule_id="SC2",
+                        message="External Script Fetching",
+                        severity=Severity.HIGH,
+                        location=loc(line_num),
+                        confidence=confidence,
+                        tags=list(tag),
+                        context=ctx(line_starts[line_num - 1]),
+                        matched_text=command[:200],
+                    )
+                )
+                break
+    if file_type in ("python", "javascript", "shell", "perl", "other"):
         for pattern, confidence in SC3_PATTERNS:
-            for match in re.finditer(pattern, content, re.IGNORECASE | re.MULTILINE):
-                line_num = get_line_number(content, match.start())
+            matches = (
+                static_runner.iter_paragraph_matches
+                if (pattern, confidence) in SC3_PROSE_PATTERNS
+                else re.finditer
+            )
+            for match in matches(pattern, content, re.IGNORECASE | re.MULTILINE):
+                line_num = line_number(match.start())
                 findings.append(
                     AnalyzerFinding(
                         rule_id="SC3",
@@ -1073,12 +2146,13 @@ def analyze(content: str, file_path: str, file_type: str) -> list[AnalyzerFindin
                         tags=tag,
                         context=ctx(match.start()),
                         matched_text=match.group(0)[:200],
+                        complete_match=match.group(0),
                     )
                 )
     # SC7: untrusted container image. Example filtering is delegated to the runner.
     for pattern, confidence in SC7_PATTERNS:
         for match in re.finditer(pattern, content, re.IGNORECASE | re.MULTILINE):
-            line_num = get_line_number(content, match.start())
+            line_num = line_number(match.start())
             findings.append(
                 AnalyzerFinding(
                     rule_id="SC7",
@@ -1089,9 +2163,51 @@ def analyze(content: str, file_path: str, file_type: str) -> list[AnalyzerFindin
                     tags=tag,
                     context=ctx(match.start()),
                     matched_text=match.group(0)[:200],
+                    complete_match=match.group(0),
                 )
             )
     return findings
+
+
+def _is_warned_internal_installer(
+    content: str,
+    match: re.Match[str],
+    file_type: str,
+    line_starts: tuple[int, ...],
+) -> bool:
+    """Return whether a pipe-to-shell example carries an explicit local warning."""
+    if file_type not in {"markdown", "text"}:
+        return False
+    pipe_match = _PIPE_TO_SHELL.search(match.group(0))
+    if pipe_match is None:
+        return False
+    pipe_start = match.start() + pipe_match.start()
+    pipe_end = match.start() + pipe_match.end()
+    if LOGICAL_LINE_BREAK.search(content, pipe_start, pipe_end) is not None:
+        return False
+    line_index = max(0, bisect_right(line_starts, pipe_start) - 1)
+    line_start = line_starts[line_index]
+    separator = LOGICAL_LINE_BREAK.search(content, pipe_end)
+    line_end = separator.start() if separator is not None else len(content)
+    if line_end - line_start > _MAX_WARNED_INSTALLER_LINE_CHARS:
+        return False
+    line = content[line_start:line_end]
+    if len(tuple(_PIPE_TO_SHELL.finditer(line))) != 1:
+        return False
+    local_pipe_start = pipe_start - line_start
+    local_pipe_end = pipe_end - line_start
+    code_start = line.rfind("`", 0, local_pipe_start)
+    descriptor_end = code_start if code_start >= 0 else local_pipe_start
+    descriptor_prefix = re.split(r"(?:[.!?;]\s+|\n)", line[:descriptor_end])[-1]
+    trailing_context = line[local_pipe_end:]
+    relevant_context = f"{descriptor_prefix} {trailing_context}"
+    if _INSTALLER_WARNING_NEGATION.search(relevant_context):
+        return False
+    return (
+        _INSTALLER_WARNING.search(descriptor_prefix) is not None
+        and _INTERNAL_INSTALLER.search(descriptor_prefix) is not None
+        and _SOURCE_REVIEW_BEFORE_RUN.search(trailing_context) is not None
+    )
 
 
 _TRUSTED_DOMAINS: tuple[str, ...] = (
@@ -1132,6 +2248,238 @@ def _is_trusted_source(text: str) -> bool:
 def _is_safe_supply_chain_pattern(text: str) -> bool:
     """Return True when the matched text is a known-safe install or fetch pattern."""
     return _is_trusted_source(text) or bool(_SAFE_INSTALL_PATTERN.search(text))
+
+
+# A fetched program supplied on the interpreter command line leaves the
+# download as data on stdin.  Every other shape stays HIGH.
+_MAX_SC2_LOGICAL_LINE_CHARS = 4_096
+_PYTHON_SAFE_CALLS = frozenset(
+    {
+        "bool",
+        "dict",
+        "float",
+        "int",
+        "json.dump",
+        "json.dumps",
+        "json.load",
+        "json.loads",
+        "len",
+        "list",
+        "print",
+        "str",
+        "sys.stderr.write",
+        "sys.stdin.buffer.read",
+        "sys.stdin.buffer.readline",
+        "sys.stdin.read",
+        "sys.stdin.readline",
+        "sys.stdout.write",
+    }
+)
+_PYTHON_SAFE_CALL_ROOTS = frozenset(name.split(".", 1)[0] for name in _PYTHON_SAFE_CALLS)
+_PYTHON_SAFE_ATTRIBUTES = frozenset(
+    {
+        "buffer",
+        "dump",
+        "dumps",
+        "load",
+        "loads",
+        "read",
+        "readline",
+        "stderr",
+        "stdin",
+        "stdout",
+        "write",
+    }
+)
+_PYTHON_DANGEROUS = re.compile(
+    r"\b(?:exec|eval|compile|execfile|__import__|getattr|setattr|delattr|"
+    r"globals|locals|vars|open|input|system|popen|spawn\w*|runpy|pickle|"
+    r"marshal|dill|shelve|importlib|subprocess|os)\b|__"
+)
+_PYTHON_BINDING_NODES = (
+    ast.AsyncFunctionDef,
+    ast.ClassDef,
+    ast.FunctionDef,
+    ast.Global,
+    ast.Lambda,
+    ast.Nonlocal,
+)
+
+
+def _sc2_logical_command(
+    content: str,
+    match_start: int,
+    line_starts: tuple[int, ...],
+) -> str | None:
+    """Return the shell logical line containing *match_start*, if it starts it."""
+    line_index = bisect_right(line_starts, match_start) - 1
+    if line_index < 0:
+        return None
+    line_start = line_starts[line_index]
+
+    # Walk back only across escaped shell newlines after locating the current
+    # logical line in O(log n).  Any other logical break is not a shell
+    # command boundary and makes the exemption unsafe.
+    while line_index > 0:
+        separator_start = (
+            line_start - 2
+            if line_start >= 2 and content[line_start - 2 : line_start] == "\r\n"
+            else line_start - 1
+        )
+        separator = LOGICAL_LINE_BREAK.match(content, separator_start)
+        if separator is None:
+            return None
+        if separator.group(0) not in {"\n", "\r\n"}:
+            return None
+        if separator_start == 0 or content[separator_start - 1] != "\\":
+            break
+        line_index -= 1
+        line_start = line_starts[line_index]
+        if match_start - line_start > _MAX_SC2_LOGICAL_LINE_CHARS:
+            return None
+
+    if match_start - line_start > _MAX_SC2_LOGICAL_LINE_CHARS:
+        return None
+
+    line_end = len(content)
+    search_pos = match_start
+    search_end = min(len(content), line_start + _MAX_SC2_LOGICAL_LINE_CHARS + 1)
+    while search_pos <= len(content):
+        separator = LOGICAL_LINE_BREAK.search(content, search_pos, search_end)
+        if separator is None:
+            if len(content) - line_start > _MAX_SC2_LOGICAL_LINE_CHARS:
+                return None
+            break
+        if separator.group(0) not in {"\n", "\r\n"}:
+            return None
+        if separator.start() > 0 and content[separator.start() - 1] == "\\":
+            search_pos = separator.end()
+            if search_pos - line_start > _MAX_SC2_LOGICAL_LINE_CHARS:
+                return None
+            continue
+        line_end = separator.start()
+        break
+
+    if line_end - line_start > _MAX_SC2_LOGICAL_LINE_CHARS:
+        return None
+
+    # Only lower a pipeline that begins the logical line.  This rejects
+    # command substitutions, wrappers such as ``bash -c``, and ``eval``.
+    if content[line_start:match_start].strip():
+        return None
+    command = content[line_start:line_end]
+    return re.sub(r"\\\r?\n", " ", command)
+
+
+def _shell_tokens(command: str) -> list[str] | None:
+    """Tokenize a conservative subset of shell syntax, or return None."""
+    if re.search(r"[`$]", command):
+        return None
+    lexer = shlex.shlex(command, posix=True, punctuation_chars="|&;<>()")
+    lexer.whitespace_split = True
+    lexer.commenters = ""
+    try:
+        return list(lexer)
+    except ValueError:
+        return None
+
+
+def _dotted_name(node: ast.expr) -> str | None:
+    """Return a dotted name for ``a.b.c`` expressions, otherwise None."""
+    parts: list[str] = []
+    current = node
+    while isinstance(current, ast.Attribute):
+        parts.append(current.attr)
+        current = current.value
+    if not isinstance(current, ast.Name):
+        return None
+    parts.append(current.id)
+    return ".".join(reversed(parts))
+
+
+def _python_stdin_script_is_data_only(script: str) -> bool:
+    """Return whether a Python ``-c`` script only treats stdin as data.
+
+    This is deliberately a structural allowlist rather than a name-based
+    denylist.  Rebinding an allowlisted call root, any attribute or subscript
+    store, and any attribute outside the small data-processing allowlist makes
+    the script ambiguous and therefore ineligible for the SC2 downgrade.
+    """
+    if not script.strip() or len(script) > _MAX_SC2_LOGICAL_LINE_CHARS:
+        return False
+    try:
+        tree = ast.parse(script, mode="exec")
+    except (SyntaxError, ValueError):
+        return False
+
+    for node in ast.walk(tree):
+        if isinstance(node, _PYTHON_BINDING_NODES):
+            return False
+        if isinstance(node, ast.Import):
+            if any(alias.name not in {"json", "sys"} or alias.asname for alias in node.names):
+                return False
+        elif isinstance(node, ast.ImportFrom):
+            return False
+        elif isinstance(node, ast.Name):
+            if isinstance(node.ctx, (ast.Store, ast.Del)):
+                if node.id in _PYTHON_SAFE_CALL_ROOTS or node.id.startswith("__"):
+                    return False
+            elif _PYTHON_DANGEROUS.search(node.id):
+                return False
+        elif isinstance(node, ast.Attribute):
+            if node.attr not in _PYTHON_SAFE_ATTRIBUTES:
+                return False
+            if isinstance(node.ctx, (ast.Store, ast.Del)):
+                return False
+        elif isinstance(node, ast.Subscript):
+            if isinstance(node.ctx, (ast.Store, ast.Del)):
+                return False
+        elif isinstance(node, ast.Call):
+            name = _dotted_name(node.func)
+            if name is None or name not in _PYTHON_SAFE_CALLS:
+                return False
+    return True
+
+
+def _interpreter_reads_stdin_as_data(
+    content: str,
+    match_start: int,
+    line_starts: tuple[int, ...],
+) -> bool:
+    """Return whether the piped-to interpreter receives a command-line program."""
+    command = _sc2_logical_command(content, match_start, line_starts)
+    if command is None:
+        return False
+    tokens = _shell_tokens(command)
+    if tokens is None:
+        return False
+    if any(
+        token in {"|&", "||", "&&", ";", "&", "<", ">", ">>", "<<", "(", ")"} for token in tokens
+    ):
+        return False
+    pipes = [index for index, token in enumerate(tokens) if token == "|"]
+    if len(pipes) != 1:
+        return False
+
+    pipe_index = pipes[0]
+    fetch = tokens[:pipe_index]
+    tail = tokens[pipe_index + 1 :]
+    if not fetch or fetch[0].lower() not in {"curl", "wget"}:
+        return False
+    if tail[:1] == ["sudo"]:
+        tail = tail[1:]
+    if not tail:
+        return False
+
+    interpreter = tail[0].lower()
+    args = tail[1:]
+    if interpreter in {"python", "python3"}:
+        return args == ["-m", "json.tool"] or (
+            len(args) == 2 and args[0] == "-c" and _python_stdin_script_is_data_only(args[1])
+        )
+    # Node remains HIGH: arbitrary JavaScript cannot be proven data-only by
+    # this lightweight allowlist (computed properties can recover Function).
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -1240,6 +2588,15 @@ def _sc4_from_osv_detailed(
                 f" — {len(vulns)} advisory(ies): {vuln_desc}"
             )
             matched_text = f"{pkg_name}=={pkg_version}"
+            explanation = (
+                "OSV returned vulnerability advisories matching the dependency's resolved "
+                "version. Review the matched advisories to assess their impact."
+            )
+            remediation = (
+                "Review the matched advisories in OSV (osv.dev) for affected and fixed releases. "
+                "If a fixed release is available, update to a release that addresses the "
+                "matched advisories; otherwise remove or replace the affected dependency."
+            )
         else:
             # No resolvable version: OSV was queried by name only, so these advisories are
             # NOT matched against the release that will actually be installed — they are the
@@ -1255,6 +2612,17 @@ def _sc4_from_osv_detailed(
                 " whether the installed release is affected"
             )
             matched_text = pkg_name
+            explanation = (
+                "OSV returned advisories for this package, but its resolved version is "
+                "unknown. A package-name lookup does not establish whether the installed "
+                "release is affected by those advisories."
+            )
+            remediation = (
+                "Determine the dependency's exact resolved version from the environment or "
+                "lockfile and compare it with the advisories in OSV (osv.dev). If it is "
+                "affected, use a verified fixed release or remove or replace the dependency "
+                "when no fix is available."
+            )
         findings.append(
             AnalyzerFinding(
                 rule_id="SC4",
@@ -1264,6 +2632,8 @@ def _sc4_from_osv_detailed(
                 confidence=confidence,
                 tags=tag,
                 matched_text=matched_text,
+                explanation=explanation,
+                remediation=remediation,
             )
         )
     limitations = (
@@ -1295,6 +2665,16 @@ def _sc4_from_fallback(
                         confidence=confidence,
                         tags=tag,
                         matched_text=pkg_name,
+                        explanation=(
+                            "The static fallback database identifies this package as vulnerable "
+                            "or malicious without a version threshold. This evidence does not "
+                            "identify an available fixed release."
+                        ),
+                        remediation=(
+                            "Review the cited advisory and remove or replace the affected "
+                            "dependency with a maintained alternative. Do not assume a version "
+                            "upgrade resolves the issue without verifying the advisory."
+                        ),
                     )
                 )
             elif pkg_version and _version_lt(pkg_version, max_safe):
@@ -1310,6 +2690,16 @@ def _sc4_from_fallback(
                         confidence=confidence,
                         tags=tag,
                         matched_text=f"{pkg_name}=={pkg_version}",
+                        explanation=(
+                            "The dependency's resolved version is below the fixed-version "
+                            "threshold recorded in the static fallback database. Review the "
+                            "cited advisory to confirm applicability."
+                        ),
+                        remediation=(
+                            f"Update the dependency to version {max_safe} or later, as recorded "
+                            "in the static fallback database, and verify the cited advisory "
+                            "and compatibility before installing."
+                        ),
                     )
                 )
     return findings
@@ -1319,12 +2709,14 @@ def _analyze_dependencies(
     content: str,
     file_path: str,
     locked_versions: dict[str, str] | None = None,
+    npm_locked_versions: dict[str, str] | None = None,
 ) -> list[AnalyzerFinding]:
     """Run SC4/SC5/SC6 checks on dependency files."""
     findings, _limitations, _packages_seen = _analyze_dependencies_detailed(
         content,
         file_path,
         locked_versions,
+        npm_locked_versions,
     )
     return findings
 
@@ -1333,6 +2725,7 @@ def _analyze_dependencies_detailed(
     content: str,
     file_path: str,
     locked_versions: dict[str, str] | None = None,
+    npm_locked_versions: dict[str, str] | None = None,
     *,
     max_packages: int | None = None,
     max_findings: int | None = None,
@@ -1346,11 +2739,12 @@ def _analyze_dependencies_detailed(
 
     lower_path = file_path.lower()
     is_lockfile = _is_python_lockfile(lower_path)
+    is_npm_lock = _is_npm_lockfile(lower_path)
     is_python_dep = (
         any(n in lower_path for n in ["requirements", "pyproject.toml", "setup.py", "pipfile"])
         or is_lockfile
     )
-    is_npm_dep = "package.json" in lower_path
+    is_npm_dep = "package.json" in lower_path or is_npm_lock
 
     if not is_python_dep and not is_npm_dep:
         return findings, limitations, 0
@@ -1387,11 +2781,20 @@ def _analyze_dependencies_detailed(
         ecosystem = ECOSYSTEM_PYPI
         fallback_db = _FALLBACK_VULNERABLE_PYPI
         popular = _POPULAR_PYPI
+        known_legit = _KNOWN_LEGIT_PYPI
     else:
-        packages = _extract_packages_from_package_json(content, limit=extraction_limit)
+        if is_npm_lock:
+            packages = _extract_packages_from_npm_lock(content, limit=extraction_limit)
+        else:
+            packages = _apply_locked_versions(
+                _extract_packages_from_package_json(content, limit=extraction_limit),
+                npm_locked_versions,
+                _normalize_npm_package_name,
+            )
         ecosystem = ECOSYSTEM_NPM
         fallback_db = _FALLBACK_VULNERABLE_NPM
         popular = _POPULAR_NPM
+        known_legit = _KNOWN_LEGIT_NPM
 
     if len(packages) > package_limit:
         limitations.append(
@@ -1481,6 +2884,18 @@ def _analyze_dependencies_detailed(
                     confidence=1.0,
                     tags=tag,
                     matched_text="SC4 fallback active",
+                    explanation=(
+                        "The live vulnerability lookup failed, and the limited static fallback "
+                        "database found no matching advisory. Vulnerability coverage is "
+                        "incomplete; this does not establish that the dependencies are "
+                        "vulnerable or safe."
+                    ),
+                    remediation=(
+                        "Retry the scan and verify dependency versions against current "
+                        "advisories before relying on the incomplete results. If the lookup "
+                        "timed out or the network was unavailable, check connectivity to "
+                        "api.osv.dev or adjust SKILLSPECTOR_OSV_TIMEOUT before retrying."
+                    ),
                 )
             ]
         )
@@ -1506,7 +2921,12 @@ def _analyze_dependencies_detailed(
             )
 
         # SC6: Typosquatting
-        similar = _is_typosquat(pkg_name, popular)
+        similar = _is_typosquat(
+            pkg_name,
+            popular,
+            known_legit=known_legit,
+            pep503=ecosystem == ECOSYSTEM_PYPI,
+        )
         if similar:
             retain(
                 [
@@ -1537,13 +2957,46 @@ def _analyze_dependencies_detailed(
 # ---------------------------------------------------------------------------
 
 
-def _analyze_triggers(manifest: dict[str, object], skill_path: str) -> list[Finding]:
-    """Analyze the triggers field from SKILL.md manifest for abuse patterns."""
+def _analyze_triggers(
+    manifest: dict[str, object],
+    skill_path: str,
+    *,
+    on_description_truncated: Callable[[int, int], None] | None = None,
+) -> list[Finding]:
+    """Analyze trigger-like manifest content for abuse patterns.
+
+    Agent Skills exposes activation intent through ``description``; legacy
+    ``triggers`` metadata remains supported when present. Descriptions are not
+    passed to the legacy trigger grammar directly: every clause is scanned
+    for cheap intent signals, and only clauses carrying one are analyzed.
+    TR1 extracts the complete trigger phrase from activation prose and applies
+    the broad/short-trigger rule to it (only a literal single word can be
+    overly broad, as in the legacy grammar); TR2 requires an actual
+    invocation, interception, or override claim (or a slash-command token),
+    so command documentation prose is not shadowing; TR3 requires the
+    universal scope to sit inside the activation condition's own span (or a
+    bare universal-scope statement). Realistic activation prose is detected
+    while ordinary capability prose is skipped.
+
+    When ``on_description_truncated`` is given, it is called with
+    ``(omitted, limit)`` if signal-bearing description clauses had to be
+    dropped past the clause budget, so the caller can record explicit
+    incomplete coverage.
+    """
     triggers: list[str] = []
     raw = manifest.get("triggers", [])
     if isinstance(raw, list):
         triggers = [str(t).strip() for t in raw if str(t).strip()]
+    description_clauses: list[str] = []
     if not triggers:
+        description = manifest.get("description")
+        if isinstance(description, str) and description.strip():
+            description_clauses, omitted_clauses = _extract_description_trigger_clauses(
+                description.strip()
+            )
+            if omitted_clauses and on_description_truncated is not None:
+                on_description_truncated(omitted_clauses, _MAX_DESCRIPTION_CLAUSES)
+    if not triggers and not description_clauses:
         return []
 
     findings: list[Finding] = []
@@ -1629,6 +3082,122 @@ def _analyze_triggers(manifest: dict[str, object], skill_path: str) -> list[Find
                 )
                 break
 
+    for i, clause in enumerate(description_clauses, 1):
+        clause_lower = clause.lower().strip()
+
+        # TR1 (description-calibrated): extract the trigger phrase the skill
+        # claims to activate on ("whenever the user says hello") and apply
+        # the broad/short-trigger rule to it, as the legacy triggers field
+        # does.
+        phrase_match = _DESCRIPTION_TRIGGER_PHRASE_RE.search(clause)
+        if phrase_match:
+            phrase = phrase_match.group("phrase")
+            phrase_lower = phrase.lower()
+            phrase_words = phrase_lower.split()
+            # A multiword phrase names the complete bounded wording, even
+            # when its final word could also be read as discourse prose. In
+            # particular, "go there" and "work now" are valid phrases and
+            # must not be reduced to the broad heads "go" and "work".
+            if len(phrase_words) == 1 and phrase_lower in _OVERLY_BROAD_SINGLE_WORDS:
+                broad_word = phrase_words[0]
+                findings.append(
+                    Finding(
+                        rule_id="TR1",
+                        message=(
+                            f"Overly Broad Trigger: description clause '{clause}' "
+                            f"activates on '{broad_word}', a common word that will "
+                            "activate in many unintended contexts"
+                        ),
+                        severity="LOW",
+                        confidence=0.75,
+                        file=file_ref,
+                        start_line=i,
+                        tags=tag,
+                        matched_text=clause,
+                        category=PatternCategory.TRIGGER_ABUSE.value,
+                        pattern="Overly Broad Trigger",
+                    )
+                )
+            elif len(phrase_lower) <= 2:
+                findings.append(
+                    Finding(
+                        rule_id="TR1",
+                        message=(
+                            f"Overly Broad Trigger: description clause '{clause}' "
+                            f"activates on '{phrase}', which is too short and may "
+                            "match unintended inputs"
+                        ),
+                        severity="LOW",
+                        confidence=0.7,
+                        file=file_ref,
+                        start_line=i,
+                        tags=tag,
+                        matched_text=clause,
+                        category=PatternCategory.TRIGGER_ABUSE.value,
+                        pattern="Overly Broad Trigger",
+                    )
+                )
+
+        # TR2 (description-calibrated): only flag a shadow command when the
+        # clause shows an actual invocation, interception, or override claim
+        # about the command (or names a slash-command token); ordinary
+        # capability or documentation prose such as "Show available build
+        # commands" merely discusses commands and stays out of the trigger
+        # path. Invocation clauses pass the extraction gate on their own, so
+        # no broad-activation wording is required. The shadowed command must
+        # be the object of that claim: "/ask-matt" does not shadow "ask", and
+        # the noun "ask" elsewhere in the clause is not an invocation.
+        shadowed = _description_shadowed_commands(clause)
+        if shadowed:
+            findings.append(
+                Finding(
+                    rule_id="TR2",
+                    message=(
+                        f"Shadow Command Trigger: description clause '{clause}' "
+                        f"conflicts with built-in command '{shadowed[0]}'"
+                    ),
+                    severity="MEDIUM",
+                    confidence=0.7,
+                    file=file_ref,
+                    start_line=i,
+                    tags=tag,
+                    matched_text=clause,
+                    category=PatternCategory.TRIGGER_ABUSE.value,
+                    pattern="Shadow Command Trigger",
+                )
+            )
+
+        # TR3 (description-calibrated): require the universal scope to sit
+        # inside the activation condition's own span. A condition word and a
+        # scope word merely sharing a punctuation-delimited clause does not
+        # establish an unconditional user-input trigger ("whenever code
+        # changes and summarize all messages from the compiler" activates on
+        # code changes; the messages are compiler output). Bare behavior
+        # prose ("Always preserves file permissions when copying files") and
+        # subject-qualified scopes ("any questions about PostgreSQL") stay
+        # negative; a bare universal-scope statement ("all messages") still
+        # fires, as in the legacy trigger grammar.
+        has_condition_scope = _description_condition_has_universal_scope(clause)
+        is_bare_scope = _DESCRIPTION_BARE_SCOPE_RE.fullmatch(clause_lower) is not None
+        if has_condition_scope or is_bare_scope:
+            findings.append(
+                Finding(
+                    rule_id="TR3",
+                    message=(
+                        f"Keyword Baiting Trigger: description clause '{clause}' "
+                        "is designed to match all or most user inputs"
+                    ),
+                    severity="MEDIUM",
+                    confidence=0.8,
+                    file=file_ref,
+                    start_line=i,
+                    tags=tag,
+                    matched_text=clause,
+                    category=PatternCategory.TRIGGER_ABUSE.value,
+                    pattern="Keyword Baiting Trigger",
+                )
+            )
+
     return findings
 
 
@@ -1636,8 +3205,9 @@ def _analyze_triggers(manifest: dict[str, object], skill_path: str) -> list[Find
 # SC8: Shipped Python bytecode (closes silent __pycache__ / .pyc skip)
 # ---------------------------------------------------------------------------
 
-# Still skip heavy/vendor trees for SC8, but *do* descend into __pycache__.
-_SC8_SKIP_DIRS = frozenset({".git", "node_modules", ".venv", "venv", ".tox", ".pytest_cache"})
+# Still skip non-runtime metadata and vendor trees for SC8, but descend into
+# Python environments: their bytecode is importable by the bundled runtime.
+_SC8_SKIP_DIRS = frozenset({".git", "node_modules", ".pytest_cache"})
 _SC8_BYTECODE_SUFFIXES = (".pyc", ".pyo")
 MAX_SC8_DISCOVERED_ENTRIES = 10_000
 MAX_SC8_DIRECTORY_ENTRIES = 10_000
@@ -1881,10 +3451,9 @@ def _scan_shipped_bytecode(
 def _analyze_shipped_bytecode(skill_path: str) -> list[Finding]:
     """Emit SC8 when a skill ships __pycache__ dirs or .pyc/.pyo files.
 
-    ``build_context`` excludes ``__pycache__`` from inventory and
-    ``static_runner`` treats ``.pyc`` as binary, so malicious bytecode can
-    otherwise score SAFE. Presence alone is a HIGH supply-chain signal;
-    full disassembly can come later.
+    ``build_context`` keeps bytecode out of content analysis and
+    ``static_runner`` treats ``.pyc`` as binary. Presence alone is a HIGH
+    supply-chain signal; full disassembly can come later.
     """
     return _scan_shipped_bytecode(skill_path).findings
 
@@ -1892,10 +3461,13 @@ def _analyze_shipped_bytecode(skill_path: str) -> list[Finding]:
 def _analyze_concealed_executables(
     component_metadata: list[dict[str, object]],
 ) -> list[Finding]:
-    """Emit SC9 for executable content concealed in a local-only artifact."""
+    """Emit SC9 for concealed executables or incomplete excluded-artifact inspection."""
     findings: list[Finding] = []
     for metadata in component_metadata:
-        if not metadata.get("concealed_executable"):
+        if metadata.get("allowed_exclusion") is True:
+            continue
+        inspection_incomplete = metadata.get("excluded_inspection_incomplete") is True
+        if not metadata.get("concealed_executable") and not inspection_incomplete:
             continue
         path = str(metadata.get("path", ""))
         if not path:
@@ -1917,11 +3489,22 @@ def _analyze_concealed_executables(
             else:
                 concealment_reasons.append("disguised_container")
         concealment = concealment_reasons[0]
+        excluded_from_analysis = metadata.get("excluded_from_analysis") is True
+        referenced_uninspected = (
+            metadata.get("inspection_limitation_reason")
+            == LedgerReason.REFERENCED_UNINSPECTED.value
+        )
         findings.append(
             Finding(
                 rule_id="SC9",
                 message=(
-                    "Executable content is concealed inside a document, hidden, "
+                    "A referenced excluded artifact was not inspected."
+                    if referenced_uninspected
+                    else "An excluded artifact could not be completely inspected."
+                    if inspection_incomplete
+                    else "Executable content is excluded from analysis."
+                    if excluded_from_analysis
+                    else "Executable content is concealed inside a document, hidden, "
                     "or disguised artifact."
                 ),
                 severity="HIGH",
@@ -1929,19 +3512,41 @@ def _analyze_concealed_executables(
                 file=path,
                 start_line=1,
                 category="Supply Chain",
-                pattern="Concealed Executable Artifact",
+                pattern=(
+                    "Referenced Excluded Artifact Uninspected"
+                    if referenced_uninspected
+                    else "Excluded Artifact Inspection Incomplete"
+                    if inspection_incomplete
+                    else "Concealed Executable Artifact"
+                ),
                 finding=nested_path,
                 explanation=(
-                    "An executable nested in a document or hidden/disguised artifact can "
+                    "SKILL.md references an artifact whose content remains outside "
+                    "deterministic analyzer coverage."
+                    if referenced_uninspected
+                    else "A resource, read, or archive-safety limit left excluded content "
+                    "outside deterministic inspection coverage."
+                    if inspection_incomplete
+                    else "An executable artifact remains available under the skill install path "
+                    "but its content is outside analyzer coverage."
+                    if excluded_from_analysis
+                    else "An executable nested in a document or hidden/disguised artifact can "
                     "evade ordinary extension-based review while still being available to "
                     "the skill at runtime."
                 ),
                 remediation=(
-                    "Review the artifact provenance and the reason executable content is "
+                    "Move directly referenced runtime artifacts into normal analyzer scope "
+                    "or remove the reference."
+                    if referenced_uninspected
+                    else "Review the artifact provenance and the reason executable content is "
                     "packaged in this location; keep executable files explicit and directly "
                     "reviewable."
                 ),
-                tags=["supply-chain", "concealed-executable", "local-only"],
+                tags=[
+                    "supply-chain",
+                    "referenced-artifact" if referenced_uninspected else "concealed-executable",
+                    "local-only",
+                ],
                 matched_text=path,
                 evidence={
                     "outer_path": outer_path,
@@ -1952,6 +3557,11 @@ def _analyze_concealed_executables(
                     "concealment": concealment,
                     "concealment_reasons": concealment_reasons,
                     "local_only": True,
+                    "referenced": metadata.get("referenced") is True,
+                    "excluded_from_analysis": excluded_from_analysis,
+                    "excluded_inspection_incomplete": inspection_incomplete,
+                    "inherited_exclusion_reason": metadata.get("inherited_exclusion_reason"),
+                    "inspection_limitation_reason": metadata.get("inspection_limitation_reason"),
                 },
             )
         )
@@ -1964,7 +3574,7 @@ def _analyze_concealed_executables(
 
 
 def node(state: SkillspectorState) -> AnalyzerNodeResponse:
-    """Run supply_chain patterns (SC1–SC9) and trigger analysis (TR1–TR3)."""
+    """Run supply_chain patterns (SC1–SC10) and trigger analysis (TR1–TR3)."""
     # SC1–SC3 via static_runner
     response = static_runner.run_static_patterns_with_ledger(state, [sys.modules[__name__]])
     findings = response["findings"]
@@ -2000,7 +3610,7 @@ def node(state: SkillspectorState) -> AnalyzerNodeResponse:
 
     def record_limitation(
         path: str,
-        limitation: OsvQueryLimitation | _SupplementalLimitation,
+        limitation: OsvQueryLimitation | _SupplementalLimitation | DependencySourceLimitation,
         fallback_analyzer_id: str,
     ) -> None:
         """Project one supplemental omission into canonical partial accounting."""
@@ -2073,6 +3683,12 @@ def node(state: SkillspectorState) -> AnalyzerNodeResponse:
             limitation,
             f"{ANALYZER_ID}_dependencies",
         )
+    npm_locked_versions = _collect_npm_locked_versions(
+        file_cache,
+        components,
+        max_files=MAX_DEPENDENCY_FILES_PER_SCAN,
+        timeout_seconds=dependency_remaining_seconds(),
+    )
     dependency_files_seen = 0
     dependency_packages_seen = 0
     dependency_findings_seen = 0
@@ -2084,6 +3700,8 @@ def node(state: SkillspectorState) -> AnalyzerNodeResponse:
             for n in [
                 "requirements",
                 "package.json",
+                "package-lock.json",
+                "npm-shrinkwrap.json",
                 "pyproject.toml",
                 "setup.py",
                 "pipfile",
@@ -2154,6 +3772,7 @@ def node(state: SkillspectorState) -> AnalyzerNodeResponse:
             content,
             path,
             locked_versions,
+            npm_locked_versions,
             max_packages=min(MAX_DEPENDENCY_PACKAGES_PER_FILE, remaining_packages),
             max_findings=min(MAX_DEPENDENCY_FINDINGS_PER_FILE, remaining_dependency_findings),
             timeout_seconds=shared_remaining,
@@ -2179,7 +3798,23 @@ def node(state: SkillspectorState) -> AnalyzerNodeResponse:
     manifest: dict[str, object] = state.get("manifest") or {}
     if manifest:
         skill_path = state.get("skill_path") or ""
-        trigger_findings = _analyze_triggers(manifest, skill_path)
+
+        def _record_trigger_clause_truncation(omitted: int, limit: int) -> None:
+            record_limitation(
+                "SKILL.md",
+                OsvQueryLimitation(
+                    reason=LedgerReason.STATIC_PARSE_LIMIT,
+                    observed_records=omitted + limit,
+                    limit_records=limit,
+                ),
+                f"{ANALYZER_ID}_triggers",
+            )
+
+        trigger_findings = _analyze_triggers(
+            manifest,
+            skill_path,
+            on_description_truncated=_record_trigger_clause_truncation,
+        )
         trigger_limit = max(0, MAX_FINDING_OUTPUT_RECORDS - len(findings))
         omitted_triggers = len(trigger_findings) > trigger_limit
         trigger_findings = trigger_findings[:trigger_limit]
@@ -2251,6 +3886,30 @@ def node(state: SkillspectorState) -> AnalyzerNodeResponse:
                 limit_records=concealed_limit,
             ),
             f"{ANALYZER_ID}_concealed_executable",
+        )
+
+    # SC10: deterministic dependency registry/source trust-boundary changes.
+    dependency_source_scan = analyze_dependency_sources_detailed(
+        components,
+        file_cache,
+        component_metadata,
+        timeout_seconds=transitive_remaining_seconds(state),
+        max_findings=max(0, MAX_FINDING_OUTPUT_RECORDS - len(findings)),
+    )
+    dependency_source_findings = dependency_source_scan.findings
+    findings.extend(dependency_source_findings)
+    for finding_path in sorted({finding.file for finding in dependency_source_findings}):
+        record_extra_findings(
+            finding_path,
+            [finding for finding in dependency_source_findings if finding.file == finding_path],
+            f"{ANALYZER_ID}_dependency_source",
+        )
+
+    for source_limitation in dependency_source_scan.limitations:
+        record_limitation(
+            source_limitation.path,
+            source_limitation,
+            f"{ANALYZER_ID}_dependency_source",
         )
 
     logger.info("%s: %d findings", ANALYZER_ID, len(findings))
