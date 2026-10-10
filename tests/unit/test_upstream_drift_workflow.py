@@ -223,3 +223,14 @@ def test_third_party_actions_are_pinned_by_sha() -> None:
         if line.startswith("- uses:") and not re.search(r"@[0-9a-f]{40}\b", line)
     ]
     assert unpinned == [], f"third-party actions must be pinned by commit SHA: {unpinned}"
+
+
+def test_no_comment_carries_an_empty_expression() -> None:
+    """GitHub expands ``${{ }}`` inside a ``run:`` comment too, and rejects an empty one.
+
+    A comment that named the syntax literally made the whole file invalid:
+    every push recorded a failed run with no jobs, and the schedule never
+    fired, so the drift this workflow exists to report reached 805 commits
+    unannounced. Nothing local catches it -- the file is valid YAML.
+    """
+    assert not re.search(r"\$\{\{\s*\}\}", _workflow())

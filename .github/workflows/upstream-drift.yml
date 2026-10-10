@@ -129,9 +129,9 @@ jobs:
 
           # Every line of upstream-authored text (commit subjects, path names)
           # reaches this file by redirection, never by command substitution into
-          # a shell string and never through `${{ }}`. It is fenced as code for
-          # the same reason: an unfenced `(#357)` renders as a cross-reference
-          # and would backlink an unrelated fork issue every week.
+          # a shell string and never through an Actions expression. It is fenced
+          # as code for the same reason: an unfenced `(#357)` renders as a
+          # cross-reference and would backlink an unrelated fork issue every week.
           {
             printf '%s\n\n' "$ISSUE_MARKER"
             printf 'Upstream `NVIDIA/SkillSpector` has **%s commit(s)** this fork has not merged.\n' \
