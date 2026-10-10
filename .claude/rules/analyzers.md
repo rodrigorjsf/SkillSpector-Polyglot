@@ -6,7 +6,7 @@ paths:
 
 # Analyzer nodes
 
-Full walkthrough: `docs/DEVELOPMENT.md` §9. Signatures and the registration facts that doc omits:
+Full walkthrough: `docs/DEVELOPMENT.md` §9, whose registration steps are upstream text that still describes hand-editing `__init__.py` — that part is stale, and the bullets below win. Signatures and registration:
 
 - A node is `node(state: SkillspectorState) -> AnalyzerNodeResponse`, returning `{"findings": list[Finding]}`.
 - A static pattern module exposes `analyze(content: str, file_path: str, file_type: str) -> list[AnalyzerFinding]` and is driven by `static_runner.run_static_patterns`. Take category and remediation text from `pattern_defaults`.

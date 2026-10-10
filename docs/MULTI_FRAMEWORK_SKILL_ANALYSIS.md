@@ -75,30 +75,25 @@ this document was written; every row but the last is now a rule of
 | `compatibility` ≤ 500 chars | Field not parsed at all | SPEC-10, from the conformance analyzer's own parse — `_parse_manifest` still drops the field |
 | `SKILL.md` body ≤ 500 lines / ~5000 tokens | Not checked | SPEC-12, SPEC-13 |
 | File references one level deep, targets exist | Not checked | SPEC-15, SPEC-16, over Markdown link targets only |
-| `allowed-tools` is **space**-separated | **Parsed as comma-separated** | Unchanged, deliberately — no SPEC rule reads the field |
+| `allowed-tools` is **space**-separated | Parsed on whitespace, or on commas when the value contains one | Unchanged by the fork — no SPEC rule reads the field |
 
-The last row is a live defect rather than a missing feature. `_parse_manifest`
-(`build_context.py:297`) and `_normalize_allowed_tools`
-(`src/skillspector/nodes/analyzers/mcp_least_privilege.py:143`) both split on `,`. A
-spec-canonical value collapses to one token:
+The last row was a live defect until the 2.12.0 upstream sync. `_parse_manifest` and
+`_normalize_allowed_tools` both split on `,` alone, so a spec-canonical value collapsed to one
+token and mapped to no capability. Upstream's `1b87593` (#330) made both accept the
+space-separated form, and the fork took it with the sync:
 
 ```
-input:      "Bash(git:*) Bash(jq:*) Read"
-parsed:     ['Bash(git:*) Bash(jq:*) Read']
-categories: set()
+input:      "Read Write Bash"
+parsed:     ['Read', 'Write', 'Bash']
+categories: {'file_read', 'file_write', 'shell'}
 ```
 
-`_map_allowed_tools_to_categories` (`mcp_least_privilege.py:190`) does an exact lowercase
-lookup against `_TOOL_TO_CAPABILITY` (`mcp_least_privilege.py:172`), so the single token
-matches nothing. `has_declaration` is `True` at `mcp_least_privilege.py:334` while the
-derived capability set is empty — LP1/LP4 reason over a skill that appears to declare tools
-while granting no capabilities. Scoped syntax (`Bash(git:*)`) also fails to match even after
-correct whitespace splitting; the base tool name needs extracting first.
-
-**Decision: current behavior is retained.** Fixing this changes findings on existing
-inputs, which the non-negotiable constraint forbids. It is recorded as a known deviation
-with an explicit trigger rather than scheduled as work — see
-[§5, Known deviation](#known-deviation-allowed-tools-separator).
+One defect remains, and it was always independent of the separator. Scoped syntax does not
+map: `_map_allowed_tools_to_categories` does an exact lowercase lookup against
+`_TOOL_TO_CAPABILITY`, so `Bash(git:*)` matches nothing and a skill declaring only scoped
+tools derives an empty capability set while `has_declaration` is true. The base tool name
+needs extracting first — see
+[§5, Closed deviation](#closed-deviation-allowed-tools-separator).
 
 ### 2.2 LangChain4j (Java host)
 
@@ -1019,44 +1014,21 @@ constraint for correctness.
 [ADR 0004](adr/0004-langchain4j-before-deepagents.md) records why the Java track went first and why
 the analyzer and the Repository Scan were paired. Phase 8 is the only one that remains.
 
-### Known deviation: `allowed-tools` separator
+### Closed deviation: `allowed-tools` separator
 
-SkillSpector splits the Agent Skills `allowed-tools` frontmatter field on commas; the
-specification defines it as **space**-separated. Full analysis in [§2.1](#21-spec-conformance-framework-independent).
+**Status: closed by upstream, 2026-10.** SkillSpector used to split the Agent Skills
+`allowed-tools` field on commas where the specification says spaces, and this section recorded
+that as deliberately unfixed, with "upstream changes the separator — then take theirs and drop
+this note" as one of its reopen triggers. Upstream did, in `1b87593` (#330), and the 2.12.0 sync
+took it. Both parsers now split on whitespace, falling back to commas when the value contains
+one.
 
-**Status: observed, deliberately unfixed.** Correcting the separator changes findings on
-inputs that are scanned today, and preserving current behavior outranks spec fidelity here.
-This is a recorded deviation, not a backlog item — no work is scheduled against it.
-
-**Blast radius if it were changed** (both call sites lack direct test coverage):
-
-| Site | Current |
-|------|---------|
-| `src/skillspector/nodes/build_context.py:297` | `allowed_tools.split(",")` → `manifest["allowed-tools"]` |
-| `src/skillspector/nodes/analyzers/mcp_least_privilege.py:143` | `value.split(",")` in `_normalize_allowed_tools` |
-
-Downstream: `_map_allowed_tools_to_categories` (`mcp_least_privilege.py:190`) and the
-`has_declaration` branch (`mcp_least_privilege.py:334`), which drive LP1, LP3, and LP4.
-
-**Reopen this decision when any of these is observed:**
-
-1. A real scan of a skill whose `allowed-tools` uses the spec-canonical space separator
-   produces a wrong LP1/LP3/LP4 verdict — most likely LP3 suppressed (a declaration is
-   present, so `has_declaration` is `True`) while no capability category was actually
-   derived, so declared-vs-detected reconciliation silently passes.
-2. A user reports a false negative or false positive traceable to `allowed-tools` parsing.
-3. Upstream NVIDIA/SkillSpector changes the separator — then take theirs and drop this note.
-4. Scoped tool syntax (`Bash(git:*)`) needs to map to a capability. That requires extracting
-   the base tool name before the `_TOOL_TO_CAPABILITY` lookup, and is a second, independent
-   defect from the separator: it fails even with correct whitespace splitting.
-
-**If reopened**, the change is not behavior-preserving. It needs a changelog entry, a minor
-version bump, and — because `.skillspector-baseline.example.yaml` shows baselines are in
-use — a note that existing baselines may need regenerating.
-
-A regression test asserting the *current* comma behavior would lock in the deviation and make
-a future fix look like a break. Prefer a test that documents the deviation explicitly (named
-for it, with a comment pointing here) over one that silently ratifies it.
+**What is still open: scoped tool syntax.** `Bash(git:*)` does not map to a capability, because
+the `_TOOL_TO_CAPABILITY` lookup is an exact match on the whole token. Measured after the sync:
+`"Bash(git:*) Read"` derives `{'file_read'}` and no `shell`. Fixing it means extracting the base
+tool name before the lookup. That changes LP1, LP3 and LP4 verdicts on inputs scanned today, so
+it is not behavior-preserving: it needs its own decision, a changelog entry, and a note that
+existing baselines may need regenerating.
 
 ## 6. Fork considerations
 
@@ -1087,7 +1059,7 @@ Recorded so the reasoning is not relitigated. Each links to where it is implemen
 | How far into Java? | **As far as static analysis allows.** Target is production LangChain4j applications, so tree-sitter replaces regex and every definition path is covered, with unresolvable content reported as `L4J-UNRESOLVED` rather than passed over ([§3.6](#36-host-language-parsing-and-definition-path-coverage)) |
 | Directory-level shadowing check? | **Yes**, as SPEC-17, scored by default ([§3.5](#35-spec-conformance-rules-and-scoring)) |
 | Where does the CLI run? | Primary usage is repository-level with codebase access; CI/CD of a Java or Python application is the production target ([§3.7](#37-repository-level-discovery-cicd)) |
-| `allowed-tools` separator | **Keep current behavior.** Recorded as a known deviation with reopen triggers ([§5](#known-deviation-allowed-tools-separator)) |
+| `allowed-tools` separator | **Closed by upstream** (`1b87593`), taken with the 2.12.0 sync. Scoped tool syntax is still unmapped ([§5](#closed-deviation-allowed-tools-separator)) |
 
 ## 8. Open questions
 

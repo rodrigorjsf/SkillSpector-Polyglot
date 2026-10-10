@@ -175,8 +175,9 @@ directory shipping both accepted manifest spellings is **one** skill, not two: `
 `skill.md`, which is the precedence the rest of the scanner already reads them in, so the shadowed
 file raises no rule and `SPEC-17` never reports a directory against itself.
 
-No rule reads `allowed-tools`, whose comma/space handling is a
-[recorded deviation](docs/MULTI_FRAMEWORK_SKILL_ANALYSIS.md#known-deviation-allowed-tools-separator).
+No rule reads `allowed-tools`. Its comma/space handling was a recorded deviation until upstream
+[closed it](docs/MULTI_FRAMEWORK_SKILL_ANALYSIS.md#closed-deviation-allowed-tools-separator);
+scoped syntax such as `Bash(git:*)` is still not mapped to a capability.
 
 **Deep Agents, precisely:** a Deep Agents project is detected and reported as such, and its
 `SKILL.md` files are scanned by the base catalog like any other skill. The `framework_deepagents`

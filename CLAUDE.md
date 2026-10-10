@@ -9,7 +9,8 @@ The GitHub repository is `SkillSpector-Polyglot`; the distribution, the package 
 - Every `make` target assumes a venv is already created **and activated** — `uv venv .venv && source .venv/bin/activate`, then `make install-dev`.
 - Test: `make test-unit` · Lint: `make lint` and `make format-check`.
 - `mypy` is configured in `pyproject.toml` but invoked by nothing — not `make lint`, not CI, not pre-commit. Ruff is the only enforced check.
-- `pytest` `addopts` deselects the `integration` and `provider` markers, so a bare `pytest` silently skips them. Use `make test-integration` / `make test-provider [openai|anthropic|nv_build]`.
+- `pytest` `addopts` deselects the `integration` and `provider` markers, so a bare `pytest` silently skips them. Use `make test-integration` / `make test-provider [openai|anthropic|nv_build|gemini]`.
+- The TypeScript extension tests run in neither pytest nor `make`: `node --test tests/opencode/skillspector_scan_lib.test.ts` and `node --test tests/unit/test_pi_extension.mjs`. They need Node 22.20, which CI pins.
 - On fish, venv activation does not survive between non-interactive commands. Two autoloaded functions in `~/.config/fish/functions/` avoid it entirely — `sspy <args>` runs `.venv/bin/python`, and `sspytest [paths]` runs the unit selection (`pytest -m "not integration and not provider"`). Examples: `sspy -c 'import skillspector'`, `sspytest tests/unit -q`. They are user-local, not checked in; `sspy` exits 127 with the setup command if the venv is missing.
 
 ## Code search
@@ -153,6 +154,7 @@ stretch as a reason to check the Actions tab rather than as evidence there is no
 - Architecture, node and provider walkthroughs, env vars — `docs/DEVELOPMENT.md`
 - Extending the scanner to LangChain4j and to Deep Agents in either language — `docs/MULTI_FRAMEWORK_SKILL_ANALYSIS.md`
 - Captured upstream framework docs — `docs/references/README.md`
+- Pi and OpenCode agent extensions — `docs/PI_EXTENSION.md`, `docs/OPENCODE_EXTENSION.md`
 - Re-measuring a Framework vocabulary's version range, and its trigger — `docs/VOCABULARY_REMEASUREMENT.md`
 - Batch scanner, own runners, excluded from `make test` — `contrib/batch_scan/CLAUDE.md`
 - Vocabulary sweep, own runner, excluded from `make test` — `contrib/vocabulary_sweep/CLAUDE.md`
