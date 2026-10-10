@@ -35,11 +35,11 @@ rather than a classification, because ``--recursive`` wrote its combined report
 ``TestTheMultiSkillSummaryIsADigest`` below records what is left: the table is a
 digest of a report on every format that has a shape for one, so it goes to stderr
 unconditionally, exactly like ``--repo-scan``'s. ``-f sarif`` and ``-f markdown``
-are the formats with no such shape — neither has a merged document to print — so
-stdout stays empty there, and that half is pinned too. Below the two-skill
-threshold the flag never engages: the Scan falls through to an ordinary one,
-which prints a report to stdout in the requested format, and that counterexample
-is pinned here as well.
+stayed ``--output``-only until the 2.12.0 upstream sync, whose recursive emission
+prints both, and that half is pinned too. With no immediate child Skill the flag
+never engages: the Scan falls through to an ordinary one, which prints a report
+to stdout in the requested format, and that counterexample is pinned here as
+well.
 
 Any assertion here that matches a *path* inside rich output needs ``_wide_console``
 below, and the module-level fixture applies it to everything so that no future one
@@ -926,31 +926,34 @@ class TestTheMultiSkillSummaryIsADigest:
             json.loads(combined.read_text(encoding="utf-8"))
         )
 
-    def test_sarif_and_markdown_alone_still_leave_stdout_empty(self, tmp_path: Path) -> None:
-        """The half #114 deliberately did not deliver, pinned so the README cannot rot.
+    def test_sarif_and_markdown_alone_reach_stdout_too(self, tmp_path: Path) -> None:
+        """The half #114 did not deliver, delivered by the 2.12.0 upstream sync.
 
-        Markdown has no merged document to print: its ``--output`` shape is the
-        per-Skill bodies concatenated behind ``--- path ---`` separators, and
-        printing that would put unparseable text on the very pipeline the
-        fall-back exists to serve. SARIF is a different case — measured, its
-        ``--output`` shape *is* one merged log, since upstream's recursive merge
-        arrived with the 2.9.6 sync — so only #114's scope keeps it off stdout,
-        not the concatenation the issue was written against, and #136 tracks
-        printing it. Pinned so that doing so is a deliberate change to this test
-        rather than a silent one.
+        #114 scoped its fall-back to ``json`` and this test used to pin stdout
+        empty for the other two, with #136 tracking SARIF. Upstream's own
+        recursive emission prints every format, so both now reach stdout in the
+        shape ``--output`` receives: SARIF as one merged log, Markdown as the
+        per-Skill bodies behind ``--- path ---`` separators. The digest stays on
+        stderr either way.
         """
         _write_skill(tmp_path / "alpha", "alpha")
         _write_skill(tmp_path / "beta", "beta")
 
-        for machine_readable in ("sarif", "markdown"):
-            result = runner.invoke(
-                app,
-                ["scan", str(tmp_path), "--recursive", "--no-llm", "-f", machine_readable],
-            )
+        sarif = runner.invoke(
+            app, ["scan", str(tmp_path), "--recursive", "--no-llm", "-f", "sarif"]
+        )
+        assert sarif.exit_code == 0, sarif.output
+        assert json.loads(sarif.stdout)["runs"]
+        assert "═══ Multi-Skill Summary ═══" in _unwrapped(sarif.stderr)
 
-            assert result.exit_code == 0, result.output
-            assert result.stdout == "", machine_readable
-            assert "═══ Multi-Skill Summary ═══" in _unwrapped(result.stderr)
+        markdown = runner.invoke(
+            app, ["scan", str(tmp_path), "--recursive", "--no-llm", "-f", "markdown"]
+        )
+        assert markdown.exit_code == 0, markdown.output
+        assert "--- alpha ---" in markdown.stdout
+        assert "--- beta ---" in markdown.stdout
+        assert "═══ Multi-Skill Summary ═══" not in markdown.stdout
+        assert "═══ Multi-Skill Summary ═══" in _unwrapped(markdown.stderr)
 
     def test_with_an_output_file_the_file_is_the_report_and_stdout_is_empty(
         self, tmp_path: Path
@@ -1014,12 +1017,13 @@ class TestTheMultiSkillSummaryIsADigest:
 
         assert result.exit_code == 2
         combined = json.loads(result.stdout)
-        assert [entry["error"] for entry in combined["skills"]] == [
-            "the graph came apart",
-            "the graph came apart",
-        ]
-        assert "Error: the graph came apart" in _unwrapped(result.stderr)
-        assert "Error: the graph came apart" not in result.stdout
+        # Upstream replaces the exception text with one fixed sentence, so a
+        # child's failure cannot carry a path or a credential into the report.
+        failed = "A recursive child scan failed before complete inspection."
+        assert [entry["error"] for entry in combined["skills"]] == [failed, failed]
+        assert f"Error: {failed}" in _unwrapped(result.stderr)
+        assert "Error:" not in result.stdout
+        assert "the graph came apart" not in result.output
 
     def test_a_failing_skill_gets_its_row_in_the_digest_on_stderr(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -1045,22 +1049,23 @@ class TestTheMultiSkillSummaryIsADigest:
         assert "alpha ERROR" in unwrapped
         assert "beta ERROR" in unwrapped
         assert "ERROR" not in result.stdout
-        assert "Error: the graph came apart" in unwrapped
+        assert "Error: A recursive child scan failed before complete inspection." in unwrapped
 
-    def test_below_the_threshold_the_flag_never_engages_and_stdout_carries_a_report(
+    def test_with_no_child_skill_the_flag_never_engages_and_stdout_carries_a_report(
         self, tmp_path: Path
     ) -> None:
-        """The counterexample to everything above: one child Skill, so no multi-skill Scan.
+        """The counterexample to everything above: no child Skill, so no multi-skill Scan.
 
-        ``--recursive`` needs **two** immediate child Skills. With one it falls
-        through to an ordinary Scan, which prints its report to stdout in the
-        requested format like any other — so "``--recursive`` writes no report to
-        stdout" is true of the engaged flag only, and the README says so in the
-        same words its ``--baseline`` row already uses. The advisory naming the
-        flag that *would* have found the Skill is printed here, ahead of that
-        report, which is why the stream it goes to matters.
+        ``--recursive`` needs **one** immediate child Skill -- two, until the
+        2.12.0 upstream sync. With none it falls through to an ordinary Scan,
+        which prints its report to stdout in the requested format like any other
+        -- so everything said above about ``--recursive`` is true of the engaged
+        flag only, and the README says so in the same words its ``--baseline``
+        row already uses. Upstream's warning and the fork's advisory are both
+        printed here, ahead of that report, which is why the stream they go to
+        matters.
         """
-        _write_skill(tmp_path / "alpha", "alpha")
+        (tmp_path / "notes.md").write_text("Nothing declared here.\n", encoding="utf-8")
 
         result = runner.invoke(
             app, ["scan", str(tmp_path), "--recursive", "--no-llm", "-f", "json"]
@@ -1068,7 +1073,21 @@ class TestTheMultiSkillSummaryIsADigest:
 
         assert result.exit_code == 0, result.output
         assert json.loads(result.stdout)["skill"]["name"] == "unknown"
-        assert "--recursive found 1 skill(s) immediately below" in _unwrapped(result.stderr)
+        assert "Scanning as single skill" in _unwrapped(result.stderr)
+        assert "No skill was found immediately below either" in _unwrapped(result.stderr)
+
+    def test_one_child_skill_engages_the_flag(self, tmp_path: Path) -> None:
+        """One is enough: the combined object, not the anonymous-parent report."""
+        _write_skill(tmp_path / "alpha", "alpha")
+
+        result = runner.invoke(
+            app, ["scan", str(tmp_path), "--recursive", "--no-llm", "-f", "json"]
+        )
+
+        assert result.exit_code == 0, result.output
+        combined = json.loads(result.stdout)
+        assert combined["multi_skill"] is True
+        assert [entry["name"] for entry in combined["skills"]] == ["alpha"]
 
 
 class TestAnErrorNeverEntersTheReport:
@@ -1426,7 +1445,7 @@ class TestTheSpecConformanceAdvisory:
         assert "advisory finding(s)" not in _unwrapped(result.stdout)
 
     def test_a_recursive_scan_reports_its_advisory_total(self, tmp_path: Path) -> None:
-        """``--recursive`` needs two Skills to engage, and the note is one total for both.
+        """Two Skills under an engaged ``--recursive``, and the note is one total for both.
 
         ``advice`` on this path as on every other: since #114 the combined report
         reaches stdout here, so a note printed there would land inside it.

@@ -223,7 +223,7 @@ When something fails repeatedly, when User has to re-explain, or when a workarou
 - Findings in JSON report use key `finding`, not `message`; status uses `reason_code`.
 - `result.output` folds both CLI streams; assert `result.stdout` and `result.stderr` apart.
 - A module-wide revert proves non-vacuity, not per-site coverage; mutate one site.
-- Below two child skills `--recursive` falls through; every claim about it needs that qualifier.
+- `--recursive` engages on one child skill since upstream `ed787e9`; only zero falls through.
 - Rich folds a long path at width 80; set `COLUMNS` before asserting one.
 - Run the suite under a long `TMPDIR` too; a short `/tmp` hides width-dependent failures.
 - README's Contributing table, its own prose, and CLAUDE.md's list must enumerate one set.
@@ -267,3 +267,9 @@ When something fails repeatedly, when User has to re-explain, or when a workarou
 - An empty-runs guard also fires on a hit whose Skills all failed; gate on discovery.
 - Sweep stale prose by its claim; a backticked-identifier grep misses the same assertion.
 - SARIF cannot show a discovery miss; gate on JSON `skill_count`, not result count.
+- Analyzer registry is discovered: `ANALYZER_ID` plus `node` registers; never edit `analyzers/__init__.py`.
+- Thread a fork flag through `_run_graph_scan_for_source` with `partial`, as upstream does.
+- Upstream consoles route by format; bind them to `advice` to keep the stream contract.
+- Upstream can turn an inventoried spelling into a homonym; extend both guards' `_HOMONYMS`.
+- Upstream adds dependencies without notices; `THIRD_PARTY_NOTICES.md` entries are the fork's to write.
+- Sync conflict scripts must read universal newlines; the working tree is CRLF.

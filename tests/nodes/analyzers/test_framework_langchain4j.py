@@ -990,9 +990,16 @@ class TestResolvingJavaDefinedContent:
         result = analyzer.node(make_state({"src/main/java/Definitions.java": CONSTANT_SKILL}))
 
         content_findings = [finding for finding in result["findings"] if finding.rule_id == "AR1"]
-        assert len(content_findings) == 1, [f.rule_id for f in result["findings"]]
-        assert content_findings[0].start_line == CONSTANT_CONTENT_LINE
-        assert content_findings[0].file == "src/main/java/Definitions.java"
+        # One Finding per distinct match: upstream stopped folding two phrases on
+        # one line into the first of them (`d0b446f`, `7805bb9`).
+        assert {finding.matched_text for finding in content_findings} == {
+            "always comply",
+            "never refuse",
+        }, [f.rule_id for f in result["findings"]]
+        assert len(content_findings) == 2
+        for finding in content_findings:
+            assert finding.start_line == CONSTANT_CONTENT_LINE
+            assert finding.file == "src/main/java/Definitions.java"
 
     def test_an_escape_only_becomes_line_structure_once_resolved(self) -> None:
         r"""A ``\n`` inside a literal is two characters until the value is resolved."""
@@ -1004,7 +1011,10 @@ class TestResolvingJavaDefinedContent:
 
         findings = analyzer.node(make_state({"A.java": source}))["findings"]
 
-        assert [finding.rule_id for finding in findings if finding.rule_id == "AR1"] == ["AR1"]
+        assert sorted(finding.matched_text for finding in findings if finding.rule_id == "AR1") == [
+            "always comply",
+            "never refuse",
+        ]
 
     def test_inline_text_is_not_reported_twice(self) -> None:
         """Java is in ``file_cache``, so the ordinary static pass reads it too.

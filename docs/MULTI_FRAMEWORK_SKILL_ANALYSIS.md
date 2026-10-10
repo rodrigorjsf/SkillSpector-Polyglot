@@ -270,7 +270,9 @@ the Python Framework's own detection and belongs to that change.
 ### 3.3 Proposed analyzer nodes
 
 Four new nodes, appended to `ANALYZER_NODE_IDS` after `semantic_quality_policy` so existing
-ordering is preserved.
+ordering is preserved. That was the registration contract when they were written; since the
+2.12.0 upstream sync the registry is discovered (`837d100`) — a module exposing `ANALYZER_ID`
+and `node` registers itself, in `pkgutil` order, and nothing is appended by hand.
 
 Two of them now exist. `framework_langchain4j` ships all five of its Rules (#28, #30, #31).
 `framework_deepagents` is wired and reports its status (#70) and carries all four of its Rules:
@@ -977,9 +979,10 @@ Acceptance for any phase claiming to be behavior-preserving:
 
 Two traps worth stating explicitly:
 
-- **`tests/nodes/analyzers/test_registry.py:24` hardcodes `EXPECTED_ANALYZER_NODE_IDS`** as
-  an exact, order-sensitive list and asserts equality. Every new analyzer must be added
-  there, in position, or the suite fails.
+- **`tests/nodes/analyzers/test_registry.py` hardcodes `EXPECTED_ANALYZER_NODE_IDS`** and
+  compares it to the registry as a set. Every new analyzer must be added there or the suite
+  fails. Until the 2.12.0 upstream sync the comparison was order-sensitive; upstream's
+  discovered registry (`837d100`) has no curated order to assert.
 - **`guard_analyzer_node` swallows exceptions** (`inspection_ledger.py:773`). A new analyzer
   that throws on every file is converted to `{"findings": []}` plus a `"failed"` ledger
   status and will *not* fail the run. A green test suite is not evidence a new analyzer
@@ -1064,11 +1067,13 @@ Assuming upstream merges continue:
   `src/skillspector/nodes/analyzers/framework_*.py`, `tests/fixtures/langchain4j_skill/`.
   These never conflict.
 - **Where an existing file must change, keep the diff append-only.** Appending to
-  `ANALYZER_NODE_IDS`, `ANALYZER_NODES`, `_FILE_TYPES`, and `EXPECTED_ANALYZER_NODE_IDS`
-  produces conflicts that resolve by taking both sides. Reordering or reformatting those
-  lists does not.
+  `_FILE_TYPES` and `EXPECTED_ANALYZER_NODE_IDS` produces conflicts that resolve by taking
+  both sides — the two registry dicts left this list at the 2.12.0 sync, when upstream began
+  discovering analyzers and the fork stopped editing `nodes/analyzers/__init__.py` at all.
+  Reordering or reformatting those lists does not.
 - **`test_registry.py` will conflict on every upstream analyzer addition.** Unavoidable —
-  the list is order-sensitive by design. Keep fork-added ids strictly at the end.
+  both sides append to one list. Keep fork-added ids strictly at the end so the conflict
+  stays a take-both.
 - Upstream commit `e8e08c5` ("read exact versions from Python lockfiles for OSV") is the
   closest precedent for the phase-8 supply-chain work; follow its shape.
 

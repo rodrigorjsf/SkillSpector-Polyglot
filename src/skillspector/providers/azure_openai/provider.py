@@ -36,7 +36,12 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_openai import AzureChatOpenAI
 from pydantic import SecretStr
 
+from skillspector.inference_usage import (
+    register_chat_model_controls,
+    retained_chat_model_controls,
+)
 from skillspector.providers import registry
+from skillspector.providers.chat_models import resolve_sampling_parameters
 
 REGISTRY_PATH = str(Path(__file__).with_name("model_registry.yaml"))
 
@@ -71,14 +76,26 @@ class AzureOpenAIProvider:
         deployment = os.environ.get("AZURE_OPENAI_DEPLOYMENT", "").strip() or model
         api_version = os.environ.get("AZURE_OPENAI_API_VERSION", "").strip() or "2024-06-01"
 
-        return AzureChatOpenAI(
-            azure_endpoint=endpoint,
-            azure_deployment=deployment,
-            api_key=SecretStr(api_key),
-            api_version=api_version,
-            max_tokens=max_tokens,
-            timeout=timeout,
+        kwargs = {
+            "azure_endpoint": endpoint,
+            "azure_deployment": deployment,
+            "api_key": SecretStr(api_key),
+            "api_version": api_version,
+            "max_tokens": max_tokens,
+            "timeout": timeout,
+        }
+        sampling_parameters = resolve_sampling_parameters(include_seed=True)
+        kwargs.update(sampling_parameters)
+        chat_model = AzureChatOpenAI(**kwargs)
+        register_chat_model_controls(
+            chat_model,
+            retained_chat_model_controls(chat_model, ("temperature", "seed")),
+            requested_controls={
+                "temperature": sampling_parameters.get("temperature"),
+                "seed": sampling_parameters.get("seed"),
+            },
         )
+        return chat_model
 
     def get_context_length(self, model: str) -> int | None:
         return registry.lookup_context_length(REGISTRY_PATH, model)

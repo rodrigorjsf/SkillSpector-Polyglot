@@ -34,10 +34,12 @@ make install-dev
 
 - **Python**: 3.12+ (see [pyproject.toml](../pyproject.toml)). `make install` and `make install-dev` use **uv** if available (`uv sync` / `uv sync --all-extras`), otherwise **pip** (`pip install -e .` / `pip install -e ".[dev]"`). You must create and activate the virtual environment yourself before running any make target.
 - **Environment**: Optional `.env` in the project root. The LangGraph dev server loads it (see [langgraph.json](../langgraph.json) `"env": ".env"`). Key variables:
-  - **`SKILLSPECTOR_PROVIDER`**: Selects the active LLM provider — `openai`, `anthropic`, or `nv_build`. Defaults to `nv_build` when unset.
-  - **Provider credential**: depends on the active provider — `NVIDIA_INFERENCE_KEY` (NVIDIA), `OPENAI_API_KEY` (OpenAI), or `ANTHROPIC_API_KEY` (Anthropic). See [llm_utils.py](../src/skillspector/llm_utils.py).
+  - **`SKILLSPECTOR_PROVIDER`**: Selects the active LLM provider — `openai`, `anthropic`, `anthropic_proxy`, `bedrock`, `nv_build`, `ollama`, `azure_openai`, `openai_compatible`, `claude_cli`, `gemini_cli`, or `opencode_cli`. Defaults to `nv_build` when unset.
+  - **Provider credential**: depends on the active provider. Hosted providers use the matching variables in [.env.example](../.env.example); Ollama and CLI providers do not require an API key. See [providers/](../src/skillspector/providers/).
   - **`OPENAI_BASE_URL`**: Override the OpenAI endpoint (e.g. point at Ollama).
   - **`SKILLSPECTOR_MODEL`**: Override default model; see [constants.py](../src/skillspector/constants.py).
+  - **`SKILLSPECTOR_TEMPERATURE`**: Optional hosted-provider sampling temperature from `0` to `1`.
+  - **`SKILLSPECTOR_SEED`**: Optional integer seed for OpenAI-compatible and Azure OpenAI providers.
 
 - **Logging**: Internal/operational logging uses the stdlib `logging` module. User-facing output uses Rich, through **two** consoles that [cli.py](../src/skillspector/cli.py) keeps apart: `console` writes to **stdout** and carries the report and `--version`, which is itself the output that was asked for. `advice = Console(stderr=True)` writes to **stderr** and carries everything else — advisories, progress lines, `Report saved to:`, `--repo-scan`'s per-skill digest, `_scan_multi_skill`'s `═══ Multi-Skill Summary ═══` table, errors and tracebacks. A new print site picks its console from that rule, not from its neighbour: the report goes to stdout so `skillspector scan . -f json | jq` is a real pipeline, and anything else printed there lands inside the report and breaks it. The rule is now applied rather than argued — the Multi-Skill Summary table used to be a case that had to be argued, because `--recursive --format terminal` with no `--output` wrote its combined report nowhere else and the table *was* the report, and the `summary = console if … else advice` predicate expressed that. Issue #114 gave the path the stdout fall-back every other one already has, so the table is a digest on every path, the predicate is gone, and the table's prints are plain `advice` calls. Note that the report also reaches stdout through bare `print()` rather than `console` on the machine-readable paths (`_write_result`, the `--mcp-registry` branch, `_scan_repository`, and `_emit_multi_skill_body`), which is deliberate: Rich would re-wrap a document that has to stay byte-exact. The user-facing statement of the same rule is [Which stream carries what](../README.md#which-stream-carries-what).
   - **Env**: `SKILLSPECTOR_LOG_LEVEL` (DEBUG, INFO, WARNING, ERROR). Default is `"WARNING"` (defined in [constants.py](../src/skillspector/constants.py)).
@@ -137,7 +139,7 @@ There are no conditional edges: after `resolve_input` → `build_context`, all a
 |------|------|--------|
 | **resolve_input** | Consumes `input_path` or `skill_path`; resolves URLs/zips/files via InputHandler; sets `skill_path` and (when needed) `temp_dir_for_cleanup` | [resolve_input.py](../src/skillspector/nodes/resolve_input.py) |
 | **build_context** | Reads `skill_path`, populates `components`, `file_cache`, `ast_cache`, `manifest`, `manifest_status`, `framework`, `component_metadata`, `has_executable_scripts` | [build_context.py](../src/skillspector/nodes/build_context.py) |
-| **Analyzers** | 26 nodes; each returns `AnalyzerNodeResponse` (list of `Finding`). State reducer appends to `findings`. | [nodes/analyzers/__init__.py](../src/skillspector/nodes/analyzers/__init__.py) (`ANALYZER_NODE_IDS`, `ANALYZER_NODES`) |
+| **Analyzers** | 31 nodes; each returns `AnalyzerNodeResponse` (list of `Finding`). State reducer appends to `findings`. | [nodes/analyzers/__init__.py](../src/skillspector/nodes/analyzers/__init__.py) (`ANALYZER_NODE_IDS`, `ANALYZER_NODES`) |
 | **meta_analyzer** | Per-file LLM filter/enrich of canonical `findings`; emits ordered `effective_finding_ids` for report selection. One LLM call per file (or per chunk for oversized files); token budgets from `constants.py`; falls back when `use_llm` is False. | [meta_analyzer.py](../src/skillspector/nodes/meta_analyzer.py), [llm_analyzer_base.py](../src/skillspector/nodes/llm_analyzer_base.py) |
 | **report** | Applies baseline suppression (`state["baseline"]`), then builds SARIF 2.1.0, computes `risk_score`, `risk_severity`, `risk_recommendation` from the non-suppressed findings; writes `report_body` from `output_format` (terminal/json/markdown/sarif) | [report.py](../src/skillspector/nodes/report.py) |
 
@@ -390,15 +392,25 @@ Copy [.env.example](../.env.example) to `.env` in the project root and set value
 
 | Variable | Description | Example |
 |----------|-------------|---------|
-| `SKILLSPECTOR_PROVIDER` | Active LLM provider: `openai` \| `anthropic` \| `nv_build` \| `claude_cli` \| `codex_cli`. Defaults to `nv_build`. | `claude_cli` |
+| `SKILLSPECTOR_PROVIDER` | Active LLM provider: `openai` \| `anthropic` \| `anthropic_proxy` \| `bedrock` \| `nv_build` \| `ollama` \| `azure_openai` \| `openai_compatible` \| `claude_cli` \| `gemini_cli` \| `opencode_cli`. Defaults to `nv_build`. | `claude_cli` |
 | `NVIDIA_INFERENCE_KEY` | Credential for `nv_build`. | `nvapi-...` |
 | `OPENAI_API_KEY` | Credential for `SKILLSPECTOR_PROVIDER=openai`. Also tier-2 fallback for non-OpenAI providers. | `sk-...` |
 | `OPENAI_BASE_URL` | Override the OpenAI endpoint (e.g. point at Ollama). | `http://localhost:11434/v1` |
-| `SKILLSPECTOR_REASONING_EFFORT` | Optional provider- and model-dependent reasoning-effort setting. Non-empty values are trimmed and passed through unchanged; unset or blank preserves provider-default behavior. | `high` |
+| `SKILLSPECTOR_REASONING_EFFORT` | Optional provider- and model-dependent reasoning-effort setting. Non-empty values are trimmed and passed through unchanged. When unset or blank, SkillSpector sends `high` for `nv_build` with `z-ai/glm-5.3`; other provider/model combinations keep their endpoint defaults. | `high` |
+| `SKILLSPECTOR_OUTPUT_LANGUAGE` | Optional short, single-line language label (letters, numbers, spaces, `_`, or `-`; maximum 64 characters) for human-readable LLM finding text. Rule IDs, severity values, paths, code, and other machine-readable values remain unchanged. Unset, blank, or invalid values preserve the default output language. | `Japanese` |
+| `SKILLSPECTOR_TEMPERATURE` | Optional sampling temperature from `0` to `1` for hosted providers. Unset or blank preserves provider defaults. Lower values reduce variation but do not guarantee identical output. | `0` |
+| `SKILLSPECTOR_SEED` | Optional integer sampling seed for OpenAI-compatible and Azure OpenAI providers. Provider/model support is best-effort; CLI providers ignore it. | `42` |
 | `ANTHROPIC_API_KEY` | Credential for `SKILLSPECTOR_PROVIDER=anthropic`. | `sk-ant-...` |
-| `SKILLSPECTOR_MODEL` | Override the active provider's bundled default model (see [README.md](../README.md) for per-provider defaults). For `claude_cli`, this is passed as `--model` to the `claude` binary. | `gpt-5.2` |
+| `OLLAMA_BASE_URL` | Optional Ollama endpoint override. | `http://localhost:11434/v1` |
+| `AZURE_OPENAI_API_KEY` | Credential for `SKILLSPECTOR_PROVIDER=azure_openai`. | `...` |
+| `AZURE_OPENAI_ENDPOINT` | Azure resource endpoint. | `https://example.openai.azure.com/` |
+| `SKILLSPECTOR_COMPAT_API_KEY` | Credential for `SKILLSPECTOR_PROVIDER=openai_compatible`. | `...` |
+| `SKILLSPECTOR_COMPAT_BASE_URL` | OpenAI-compatible endpoint base URL. | `https://api.groq.com/openai/v1` |
+| `SKILLSPECTOR_MODEL` | Override the active provider's bundled default model (see [README.md](../README.md) for per-provider defaults). CLI providers forward it as `--model`. | `gpt-5.2` |
 
-> **CLI providers** (`claude_cli`, `codex_cli`): no credential env var is needed. Authentication is managed by the agent CLI's own session (`claude auth login` / `codex login`). The subprocess is heavily sandboxed — see [providers/_agent_cli.py](../src/skillspector/providers/_agent_cli.py).
+> **Disabled provider:** `codex_cli` remains registered for compatibility but refuses inference until a complete no-tools policy is verified.
+
+> **CLI providers** (`claude_cli`, `gemini_cli`, `opencode_cli`): no credential env var is needed. Authentication is managed by the agent CLI's own session. The subprocess is heavily sandboxed — see [providers/_agent_cli.py](../src/skillspector/providers/_agent_cli.py).
 
 ### Live provider tests
 
@@ -409,6 +421,7 @@ The manual `test-provider` CI job and local `make test-provider` target perform 
 | `make test-provider openai` | `OPENAI_API_KEY` | `https://api.openai.com/v1` | `SKILLSPECTOR_OPENAI_TEST_MODEL` |
 | `make test-provider anthropic` | `ANTHROPIC_API_KEY` | `https://api.anthropic.com` | `SKILLSPECTOR_ANTHROPIC_TEST_MODEL` |
 | `make test-provider nv_build` | `NVIDIA_INFERENCE_KEY` | `https://integrate.api.nvidia.com/v1` | `SKILLSPECTOR_NV_BUILD_TEST_MODEL` |
+| `make test-provider gemini` | `GOOGLE_CLOUD_PROJECT` | `https://aiplatform.googleapis.com/v1/...` | `SKILLSPECTOR_GEMINI_TEST_MODEL` |
 | `make test-provider` | Any/all of the provider keys above | All provider default URLs above | Any/all provider model overrides above |
 
 Base URL env vars are not needed for live provider tests; the tests intentionally use provider defaults.
@@ -423,14 +436,22 @@ Base URL env vars are not needed for live provider tests; the tests intentionall
   - `nv_build/` — build.nvidia.com (HTTP, `NVIDIA_INFERENCE_KEY`)
   - `openai/` — api.openai.com or any OpenAI-compatible URL (`OPENAI_API_KEY`)
   - `anthropic/` — api.anthropic.com (`ANTHROPIC_API_KEY`)
+  - `anthropic_proxy/` — Vertex-style proxy (`ANTHROPIC_PROXY_API_KEY`, `ANTHROPIC_PROXY_ENDPOINT_URL`)
+  - `bedrock/` — AWS Bedrock Runtime (standard boto3 credential chain)
+  - `gemini/` — Google Cloud OpenAI-compatible Gemini endpoint (`GOOGLE_CLOUD_PROJECT`, ADC / Workload Identity)
+  - `ollama/` — local Ollama OpenAI-compatible endpoint (no API key)
+  - `azure_openai/` — Azure OpenAI Service (`AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT`)
+  - `openai_compatible/` — generic compatible endpoint (`SKILLSPECTOR_COMPAT_API_KEY`, `SKILLSPECTOR_COMPAT_BASE_URL`)
   - `claude_cli/` — **local `claude` binary; no API key**. Uses the CLI's own auth session (`claude auth login`). Set `SKILLSPECTOR_PROVIDER=claude_cli`.
-  - `codex_cli/` — **local `codex` binary; no API key**. Uses the CLI's own auth session (`codex login`). Set `SKILLSPECTOR_PROVIDER=codex_cli`.
+  - `codex_cli/` — **registered but disabled**. Its read-only sandbox permits host-file reads. Select an HTTP API provider or another supported CLI provider for LLM analysis.
+  - `gemini_cli/` — **local `gemini` binary; no API key**. Uses the CLI's own auth session. Set `SKILLSPECTOR_PROVIDER=gemini_cli`.
+  - `opencode_cli/` — **local `opencode` 1.18.33 binary; no API key**. Uses the CLI's own auth session (`opencode auth login`) and fails closed on every other runtime version because the deny-all policy is verified against that exact release. Set `SKILLSPECTOR_PROVIDER=opencode_cli`.
 
-  CLI providers (`claude_cli`, `codex_cli`) implement the optional `AgentCLICapable` interface (`is_available()` + `complete()`) defined in [providers/base.py](../src/skillspector/providers/base.py). `has_cli_capability(provider)` detects this at runtime.  All subprocess calls go through the hardened helper [providers/_agent_cli.py](../src/skillspector/providers/_agent_cli.py) which enforces: no shell (`shell=False`), untrusted content via stdin only, capability stripping (tools disabled / sandboxed), environment scrubbing (no API keys forwarded), per-call timeout, and fail-closed error handling.
+  CLI providers (`claude_cli`, `gemini_cli`, `opencode_cli`) implement the optional `AgentCLICapable` interface (`is_available()` + `complete()`) defined in [providers/base.py](../src/skillspector/providers/base.py). `has_cli_capability(provider)` detects this at runtime. All subprocess calls go through the hardened helper [providers/_agent_cli.py](../src/skillspector/providers/_agent_cli.py) which enforces: no shell (`shell=False`), untrusted content via stdin only, capability stripping (tools disabled / sandboxed), environment scrubbing (no API keys forwarded), per-call timeout, and fail-closed error handling.
 
 - **LLM calls** ([llm_utils.py](../src/skillspector/llm_utils.py)): **`get_chat_model()`** and **`chat_completion()`** dispatch based on the active provider:
   - **HTTP providers**: resolve credentials in two tiers — active provider (`NVIDIA_INFERENCE_KEY` / `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` → endpoint) — against any OpenAI-compatible endpoint. `max_tokens` is auto-bound to `get_max_output_tokens(model)` from `model_info`.
-  - **CLI providers** (`claude_cli`, `codex_cli`): `get_chat_model()` returns an `AgentCLIChatModel` adapter backed by `provider.complete()`, so the analyzers' `.invoke()` / `.with_structured_output(schema).invoke()` calls work with no API key (structured output is produced by prompting for JSON, then Pydantic-validating). `chat_completion()` routes through `get_chat_model()` as well. `is_llm_available()` calls `provider.is_available()` instead of credential resolution.
+  - **CLI providers** (`claude_cli`, `gemini_cli`, `opencode_cli`): `get_chat_model()` returns an `AgentCLIChatModel` adapter backed by `provider.complete()`, so the analyzers' `.invoke()` / `.with_structured_output(schema).invoke()` calls work with no API key (structured output is produced by prompting for JSON, then Pydantic-validating). `chat_completion()` routes through `get_chat_model()` as well. `is_llm_available()` calls `provider.is_available()` instead of credential resolution.
 - **LLM analyzer base** ([llm_analyzer_base.py](../src/skillspector/nodes/llm_analyzer_base.py)): `LLMAnalyzerBase` provides per-file/per-chunk batching, token-budget-aware chunking, and a run loop for all LLM-based analyzers. `LLMMetaAnalyzer` extends it for filter/enrich (meta_analyzer node). Future semantic analyzers extend `LLMAnalyzerBase` for discovery mode.
 
 ---

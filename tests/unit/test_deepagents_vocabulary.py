@@ -144,9 +144,12 @@ _EXPECTED_SPELLINGS = {
     "write",
 }
 
-# The four homonyms. Owned by the inventory, and skipped by the sweep everywhere
+# The homonyms. Owned by the inventory, and skipped by the sweep everywhere
 # except the modules below. See the module docstring.
-_HOMONYMS = {"skills", "permissions", "mode", "write"}
+# ``paths`` and ``deny`` joined at the 2.12.0 upstream sync: upstream's OpenCode
+# provider and its bundled-permission Analyzer write both as their own
+# configuration keys, which is what a homonym is.
+_HOMONYMS = {"skills", "permissions", "mode", "write", "paths", "deny"}
 
 # Where a homonym is not a homonym: the package that reads Deep Agents
 # configuration and the Analyzer that drives it. A ``"skills"`` written inline in

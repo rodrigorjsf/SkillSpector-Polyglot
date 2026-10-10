@@ -389,6 +389,18 @@ CORPUS_NAMES: tuple[str, ...] = (
     "ssd/ssd3_nl_exfiltration",
     "ssd/ssd4_narrative_deception",
     "ssd/ssd_clean",
+    # Arrived with the 2.12.0 upstream sync, each beside the upstream fix it
+    # regression-tests. Appended rather than sorted in, so the next sync's own
+    # additions conflict as a take-both.
+    "as3_self_reference",
+    "pe3_bare_keyring",
+    "tp4_markdown_fenced_code",
+    "sqp/sqp2_tool_catalog_clean",
+    "sqp/sqp2_tool_descriptive_step",
+    "sqp/sqp2_tool_instructed",
+    "sqp/sqp3_forced_language",
+    "sqp/sqp3_plain_english_clean",
+    "sqp/sqp3_plain_english_override",
 )
 
 # The fixture family parents, excluded from the corpus by the rule above. Named

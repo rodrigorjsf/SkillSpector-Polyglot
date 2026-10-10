@@ -32,6 +32,18 @@
         "unaccounted": 0
       },
       {
+        "analyzer_id": "bundled_execution_surface",
+        "completed": 0,
+        "failed": 0,
+        "message": "No files matched this analyzer's applicability contract.",
+        "partial": 0,
+        "planned_work": 0,
+        "reason_code": "no_applicable_files",
+        "skipped": 0,
+        "status": "not_applicable",
+        "unaccounted": 0
+      },
+      {
         "analyzer_id": "mcp_least_privilege",
         "completed": 2,
         "failed": 0,
@@ -308,23 +320,25 @@
       "code_snippet": null,
       "confidence": 0.7,
       "context": null,
+      "end_column": null,
       "end_line": null,
       "evidence": {},
       "explanation": "Without declared permissions the skill's intent is opaque and cannot be validated.",
       "file": "SKILL.md",
-      "finding": null,
+      "finding": "Skill declares no tool scope ('permissions' or 'allowed-tools') but code capabilities were detected: shell.",
       "intent": null,
       "match_fingerprint": null,
       "matched_text": null,
       "message": "Skill declares no tool scope ('permissions' or 'allowed-tools') but code capabilities were detected: shell.",
       "occurrences": [],
-      "pattern": null,
-      "remediation": "Declare the skill's tool scope: for Claude Code / Agent Skills SKILL.md, list the tools the skill may invoke in the 'allowed-tools' frontmatter field; for MCP server manifests, add a 'permissions' list naming the required capabilities.",
+      "pattern": "Skill declares no tool scope ('permissions' or 'allowed-tools') but code capabilities were detected: shell.",
+      "remediation": "Clarify the skill's intended tool scope and review how the host runtime enforces it; runtime permissions are unknown unless separately verified. For Claude Code / Agent Skills SKILL.md, 'allowed-tools' records preapproved tools, not a permission ceiling; add a tool only when it is independently approved as necessary, not to silence this finding. For MCP server manifests, use a 'permissions' list naming the required capabilities.",
       "rule_id": "LP3",
       "severity": "MEDIUM",
       "source_digest": null,
       "source_identity": null,
       "source_url": null,
+      "start_column": null,
       "start_line": 1,
       "tags": [
         "ASI02"
@@ -333,16 +347,17 @@
     },
     {
       "category": "Tool Misuse",
-      "code_snippet": "        print(\"Deployment cancelled.\")\n        return\n\n    result = subprocess.run(script, shell=True, capture_output=True, text=True)\n    print(f\"Exit code: {result.returncode}\")\n    if result.stdout:\n        print(result.stdout)",
+      "code_snippet": "\"\"\"Deployment helper — runs shell commands with user confirmation.\"\"\"\n\nimport subprocess\n\n\ndef deploy(service: str, env: str) -> None:\n    \"\"\"Deploy a service to the given environment.\"\"\"\n    script = f\"kubectl rollout restart deployment/{service} -n {env}\"\n\n    print(f\"About to run: {script}\")\n    confirm = input(f\"Deploy {service} to {env}? [y/N] \")\n    if confirm.strip().lower() != \"y\":\n        print(\"Deployment cancelled.\")\n        return\n\n    result = subprocess.run(script, shell=True, capture_output=True, text=True)\n    print(f\"Exit code: {result.returncode}\")\n    if result.stdout:\n        print(result.stdout)\n    if result.stderr:\n        print(result.stderr)",
       "confidence": 0.9,
-      "context": "        print(\"Deployment cancelled.\")\n        return\n\n    result = subprocess.run(script, shell=True, capture_output=True, text=True)\n    print(f\"Exit code: {result.returncode}\")\n    if result.stdout:\n        print(result.stdout)",
+      "context": "\"\"\"Deployment helper — runs shell commands with user confirmation.\"\"\"\n\nimport subprocess\n\n\ndef deploy(service: str, env: str) -> None:\n    \"\"\"Deploy a service to the given environment.\"\"\"\n    script = f\"kubectl rollout restart deployment/{service} -n {env}\"\n\n    print(f\"About to run: {script}\")\n    confirm = input(f\"Deploy {service} to {env}? [y/N] \")\n    if confirm.strip().lower() != \"y\":\n        print(\"Deployment cancelled.\")\n        return\n\n    result = subprocess.run(script, shell=True, capture_output=True, text=True)\n    print(f\"Exit code: {result.returncode}\")\n    if result.stdout:\n        print(result.stdout)\n    if result.stderr:\n        print(result.stderr)",
+      "end_column": null,
       "end_line": null,
       "evidence": {},
       "explanation": "Tool parameters are crafted to achieve unintended or unsafe behavior. Parameter abuse can bypass intended safety checks (e.g. shell=True, --force, dangerous glob patterns).",
       "file": "deploy.py",
       "finding": "subprocess.run(script, shell=True",
       "intent": null,
-      "match_fingerprint": null,
+      "match_fingerprint": "c4657f48a8b7b6c9d2eb2e2c18efd5130786205bfef9bfd45ff69aba9a74df07",
       "matched_text": "subprocess.run(script, shell=True",
       "message": "Tool Parameter Abuse",
       "occurrences": [],
@@ -353,6 +368,7 @@
       "source_digest": null,
       "source_identity": null,
       "source_url": null,
+      "start_column": 13,
       "start_line": 16,
       "tags": [
         "Tool Misuse"
@@ -364,14 +380,15 @@
       "code_snippet": "        print(\"Deployment cancelled.\")\n        return\n\n    result = subprocess.run(script, shell=True, capture_output=True, text=True)\n    print(f\"Exit code: {result.returncode}\")\n    if result.stdout:\n        print(result.stdout)",
       "confidence": 0.7,
       "context": "        print(\"Deployment cancelled.\")\n        return\n\n    result = subprocess.run(script, shell=True, capture_output=True, text=True)\n    print(f\"Exit code: {result.returncode}\")\n    if result.stdout:\n        print(result.stdout)",
+      "end_column": 79,
       "end_line": 16,
       "evidence": {},
       "explanation": "subprocess module calls execute external commands. Without careful input validation, this enables command injection.",
       "file": "deploy.py",
-      "finding": "    result = subprocess.run(script, shell=True, capture_output=True, text=True)",
+      "finding": "subprocess.run(script, shell=True, capture_output=True, text=True)",
       "intent": null,
-      "match_fingerprint": null,
-      "matched_text": "    result = subprocess.run(script, shell=True, capture_output=True, text=True)",
+      "match_fingerprint": "e6f5c1d54991991b08364f336a0c56df7acc8f2350a06d45ebcd8526c3453344",
+      "matched_text": "subprocess.run(script, shell=True, capture_output=True, text=True)",
       "message": "subprocess module call",
       "occurrences": [],
       "pattern": "subprocess module call",
@@ -381,6 +398,7 @@
       "source_digest": null,
       "source_identity": null,
       "source_url": null,
+      "start_column": 13,
       "start_line": 16,
       "tags": [
         "Dangerous Code Execution"
@@ -404,6 +422,7 @@
     "$schema": "https://schemastore.azurewebsites.net/schemas/json/sarif-2.1.0-rtm.4.json",
     "runs": [
       {
+        "columnKind": "unicodeCodePoints",
         "invocations": [
           {
             "executionSuccessful": true,
@@ -448,7 +467,10 @@
               "confidence": 0.7,
               "evidence": {},
               "explanation": "Without declared permissions the skill's intent is opaque and cannot be validated.",
-              "remediation": "Declare the skill's tool scope: for Claude Code / Agent Skills SKILL.md, list the tools the skill may invoke in the 'allowed-tools' frontmatter field; for MCP server manifests, add a 'permissions' list naming the required capabilities.",
+              "finding": "Skill declares no tool scope ('permissions' or 'allowed-tools') but code capabilities were detected: shell.",
+              "pattern": "Skill declares no tool scope ('permissions' or 'allowed-tools') but code capabilities were detected: shell.",
+              "remediation": "Clarify the skill's intended tool scope and review how the host runtime enforces it; runtime permissions are unknown unless separately verified. For Claude Code / Agent Skills SKILL.md, 'allowed-tools' records preapproved tools, not a permission ceiling; add a tool only when it is independently approved as necessary, not to silence this finding. For MCP server manifests, use a 'permissions' list naming the required capabilities.",
+              "security-severity": "5.5",
               "severity": "MEDIUM",
               "tags": [
                 "ASI02"
@@ -465,6 +487,7 @@
                     "uri": "deploy.py"
                   },
                   "region": {
+                    "startColumn": 14,
                     "startLine": 16
                   }
                 }
@@ -475,13 +498,14 @@
             },
             "properties": {
               "category": "Tool Misuse",
-              "code_snippet": "        print(\"Deployment cancelled.\")\n        return\n\n    result = subprocess.run(script, shell=True, capture_output=True, text=True)\n    print(f\"Exit code: {result.returncode}\")\n    if result.stdout:\n        print(result.stdout)",
+              "code_snippet": "\"\"\"Deployment helper — runs shell commands with user confirmation.\"\"\"\n\nimport subprocess\n\n\ndef deploy(service: str, env: str) -> None:\n    \"\"\"Deploy a service to the given environment.\"\"\"\n    script = f\"kubectl rollout restart deployment/{service} -n {env}\"\n\n    print(f\"About to run: {script}\")\n    confirm = input(f\"Deploy {service} to {env}? [y/N] \")\n    if confirm.strip().lower() != \"y\":\n        print(\"Deployment cancelled.\")\n        return\n\n    result = subprocess.run(script, shell=True, capture_output=True, text=True)\n    print(f\"Exit code: {result.returncode}\")\n    if result.stdout:\n        print(result.stdout)\n    if result.stderr:\n        print(result.stderr)",
               "confidence": 0.9,
               "evidence": {},
               "explanation": "Tool parameters are crafted to achieve unintended or unsafe behavior. Parameter abuse can bypass intended safety checks (e.g. shell=True, --force, dangerous glob patterns).",
               "finding": "subprocess.run(script, shell=True",
               "pattern": "Tool Parameter Abuse",
               "remediation": "Validate all tool parameters against an allowlist. Reject dangerous parameter values (shell=True, --force, -rf /) and use safe defaults.",
+              "security-severity": "8.0",
               "severity": "HIGH",
               "tags": [
                 "Tool Misuse"
@@ -498,7 +522,9 @@
                     "uri": "deploy.py"
                   },
                   "region": {
+                    "endColumn": 80,
                     "endLine": 16,
+                    "startColumn": 14,
                     "startLine": 16
                   }
                 }
@@ -513,9 +539,10 @@
               "confidence": 0.7,
               "evidence": {},
               "explanation": "subprocess module calls execute external commands. Without careful input validation, this enables command injection.",
-              "finding": "    result = subprocess.run(script, shell=True, capture_output=True, text=True)",
+              "finding": "subprocess.run(script, shell=True, capture_output=True, text=True)",
               "pattern": "subprocess module call",
               "remediation": "Use subprocess.run() with shell=False and an explicit argument list. Validate all inputs and avoid passing user-controlled data to commands.",
+              "security-severity": "5.5",
               "severity": "MEDIUM",
               "tags": [
                 "Dangerous Code Execution"
@@ -530,18 +557,27 @@
             "rules": [
               {
                 "id": "AST4",
+                "properties": {
+                  "security-severity": "5.5"
+                },
                 "shortDescription": {
                   "text": "subprocess module call"
                 }
               },
               {
                 "id": "LP3",
+                "properties": {
+                  "security-severity": "5.5"
+                },
                 "shortDescription": {
                   "text": "Skill declares no tool scope ('permissions' or 'allowed-tools') but code capabilities were detected: shell."
                 }
               },
               {
                 "id": "TM1",
+                "properties": {
+                  "security-severity": "8.0"
+                },
                 "shortDescription": {
                   "text": "Tool Parameter Abuse"
                 }

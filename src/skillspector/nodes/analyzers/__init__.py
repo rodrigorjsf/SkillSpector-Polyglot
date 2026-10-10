@@ -1,5 +1,4 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
-# SPDX-FileCopyrightText: Copyright (c) 2026 SkillSpector-Polyglot contributors
 # SPDX-License-Identifier: Apache-2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,153 +17,50 @@
 
 from __future__ import annotations
 
-from skillspector.nodes.analyzers.artifact_integrity import node as artifact_integrity_node
-from skillspector.nodes.analyzers.behavioral_ast import node as behavioral_ast_node
-from skillspector.nodes.analyzers.behavioral_taint_tracking import (
-    node as behavioral_taint_tracking_node,
-)
-from skillspector.nodes.analyzers.framework_deepagents import (
-    node as framework_deepagents_node,
-)
-from skillspector.nodes.analyzers.framework_deepagents_js import (
-    node as framework_deepagents_js_node,
-)
-from skillspector.nodes.analyzers.framework_langchain4j import (
-    node as framework_langchain4j_node,
-)
-from skillspector.nodes.analyzers.mcp_least_privilege import node as mcp_least_privilege_node
-from skillspector.nodes.analyzers.mcp_rug_pull import node as mcp_rug_pull_node
-from skillspector.nodes.analyzers.mcp_tool_poisoning import node as mcp_tool_poisoning_node
-from skillspector.nodes.analyzers.semantic_developer_intent import (
-    node as semantic_developer_intent_node,
-)
-from skillspector.nodes.analyzers.semantic_quality_policy import (
-    node as semantic_quality_policy_node,
-)
-from skillspector.nodes.analyzers.semantic_security_discovery import (
-    node as semantic_security_discovery_node,
-)
-from skillspector.nodes.analyzers.static_patterns_agent_snooping import (
-    node as static_patterns_agent_snooping_node,
-)
-from skillspector.nodes.analyzers.static_patterns_anti_refusal import (
-    node as static_patterns_anti_refusal_node,
-)
-from skillspector.nodes.analyzers.static_patterns_data_exfiltration import (
-    node as static_patterns_data_exfiltration_node,
-)
-from skillspector.nodes.analyzers.static_patterns_deserialization import (
-    node as static_patterns_deserialization_node,
-)
-from skillspector.nodes.analyzers.static_patterns_excessive_agency import (
-    node as static_patterns_excessive_agency_node,
-)
-from skillspector.nodes.analyzers.static_patterns_harmful_content import (
-    node as static_patterns_harmful_content_node,
-)
-from skillspector.nodes.analyzers.static_patterns_memory_poisoning import (
-    node as static_patterns_memory_poisoning_node,
-)
-from skillspector.nodes.analyzers.static_patterns_output_handling import (
-    node as static_patterns_output_handling_node,
-)
-from skillspector.nodes.analyzers.static_patterns_privilege_escalation import (
-    node as static_patterns_privilege_escalation_node,
-)
-from skillspector.nodes.analyzers.static_patterns_prompt_injection import (
-    node as static_patterns_prompt_injection_node,
-)
-from skillspector.nodes.analyzers.static_patterns_rogue_agent import (
-    node as static_patterns_rogue_agent_node,
-)
-from skillspector.nodes.analyzers.static_patterns_ssrf import (
-    node as static_patterns_ssrf_node,
-)
-from skillspector.nodes.analyzers.static_patterns_supply_chain import (
-    node as static_patterns_supply_chain_node,
-)
-from skillspector.nodes.analyzers.static_patterns_system_prompt_leakage import (
-    node as static_patterns_system_prompt_leakage_node,
-)
-from skillspector.nodes.analyzers.static_patterns_tool_misuse import (
-    node as static_patterns_tool_misuse_node,
-)
-from skillspector.nodes.analyzers.static_yara import node as static_yara_node
-from skillspector.nodes.analyzers.structure_agent_skills_spec import (
-    node as structure_agent_skills_spec_node,
-)
-from skillspector.nodes.analyzers.structured_skill_roles import (
-    node as structured_skill_roles_node,
-)
+import importlib
+import pkgutil
+from typing import Any
 
-ANALYZER_NODE_IDS: list[str] = [
-    "artifact_integrity",
-    "static_patterns_prompt_injection",
-    "static_patterns_data_exfiltration",
-    "static_patterns_privilege_escalation",
-    "static_patterns_supply_chain",
-    "static_patterns_harmful_content",
-    "static_patterns_excessive_agency",
-    "static_patterns_output_handling",
-    "static_patterns_system_prompt_leakage",
-    "static_patterns_memory_poisoning",
-    "static_patterns_tool_misuse",
-    "static_patterns_rogue_agent",
-    "static_patterns_agent_snooping",
-    "static_patterns_anti_refusal",
-    "static_patterns_ssrf",
-    "static_patterns_deserialization",
-    "static_yara",
-    "behavioral_ast",
-    "behavioral_taint_tracking",
-    "mcp_least_privilege",
-    "mcp_tool_poisoning",
-    "mcp_rug_pull",
-    "structured_skill_roles",
-    "semantic_security_discovery",
-    "semantic_developer_intent",
-    "semantic_quality_policy",
-    # Fork-added Analyzers keep to the end of the list, so an upstream merge that
-    # appends its own id does not have to reorder this one. The three Framework
-    # Analyzers first, one per Framework that has one, then the conformance one,
-    # which is gated on a flag rather than on a Framework.
-    "framework_langchain4j",
-    "framework_deepagents",
-    "framework_deepagents_js",
-    "structure_agent_skills_spec",
-]
+from skillspector.logging_config import get_logger
 
-ANALYZER_NODES = {
-    "artifact_integrity": artifact_integrity_node,
-    "static_patterns_prompt_injection": static_patterns_prompt_injection_node,
-    "static_patterns_data_exfiltration": static_patterns_data_exfiltration_node,
-    "static_patterns_privilege_escalation": static_patterns_privilege_escalation_node,
-    "static_patterns_supply_chain": static_patterns_supply_chain_node,
-    "static_patterns_harmful_content": static_patterns_harmful_content_node,
-    "static_patterns_excessive_agency": static_patterns_excessive_agency_node,
-    "static_patterns_output_handling": static_patterns_output_handling_node,
-    "static_patterns_system_prompt_leakage": static_patterns_system_prompt_leakage_node,
-    "static_patterns_memory_poisoning": static_patterns_memory_poisoning_node,
-    "static_patterns_tool_misuse": static_patterns_tool_misuse_node,
-    "static_patterns_rogue_agent": static_patterns_rogue_agent_node,
-    "static_patterns_agent_snooping": static_patterns_agent_snooping_node,
-    "static_patterns_anti_refusal": static_patterns_anti_refusal_node,
-    "static_patterns_ssrf": static_patterns_ssrf_node,
-    "static_patterns_deserialization": static_patterns_deserialization_node,
-    "static_yara": static_yara_node,
-    "behavioral_ast": behavioral_ast_node,
-    "behavioral_taint_tracking": behavioral_taint_tracking_node,
-    "mcp_least_privilege": mcp_least_privilege_node,
-    "mcp_tool_poisoning": mcp_tool_poisoning_node,
-    "mcp_rug_pull": mcp_rug_pull_node,
-    "structured_skill_roles": structured_skill_roles_node,
-    "semantic_security_discovery": semantic_security_discovery_node,
-    "semantic_developer_intent": semantic_developer_intent_node,
-    "semantic_quality_policy": semantic_quality_policy_node,
-    "framework_langchain4j": framework_langchain4j_node,
-    "framework_deepagents": framework_deepagents_node,
-    "framework_deepagents_js": framework_deepagents_js_node,
-    "structure_agent_skills_spec": structure_agent_skills_spec_node,
-}
+logger = get_logger(__name__)
 
-__all__ = ["ANALYZER_NODE_IDS", "ANALYZER_NODES"]
+ANALYZER_NODE_IDS: list[str] = []
+ANALYZER_NODES: dict[str, Any] = {}
+ANALYZER_MODULES: dict[str, Any] = {}
+ANALYZER_LOAD_ERRORS: dict[str, str] = {}
+
+
+def _discover_analyzers() -> None:
+    """Dynamically discover and register analyzer modules in this package."""
+    if ANALYZER_NODE_IDS:
+        return
+
+    for _, module_name, is_pkg in pkgutil.iter_modules(__path__):
+        if is_pkg:
+            continue
+
+        full_module_name = f"{__name__}.{module_name}"
+        try:
+            mod = importlib.import_module(full_module_name)
+        except ImportError as exc:
+            logger.error("Failed to import analyzer module %s: %s", module_name, exc)
+            ANALYZER_LOAD_ERRORS[module_name] = str(exc)
+            continue
+        except Exception as exc:
+            logger.error("Error loading analyzer module %s: %s", module_name, exc)
+            ANALYZER_LOAD_ERRORS[module_name] = str(exc)
+            continue
+
+        analyzer_id = getattr(mod, "ANALYZER_ID", None)
+        node_func = getattr(mod, "node", None)
+
+        if analyzer_id and callable(node_func):
+            ANALYZER_NODE_IDS.append(analyzer_id)
+            ANALYZER_NODES[analyzer_id] = node_func
+            ANALYZER_MODULES[analyzer_id] = mod
+
+
+_discover_analyzers()
+
+__all__ = ["ANALYZER_LOAD_ERRORS", "ANALYZER_MODULES", "ANALYZER_NODE_IDS", "ANALYZER_NODES"]

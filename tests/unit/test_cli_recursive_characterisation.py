@@ -23,8 +23,8 @@ one that breaks it outright.
 
 These tests are therefore not assertions that the recorded behavior is *right*.
 Several of them record shapes that read as defects and are decisions -- the
-two-Skill threshold, the root short-circuit, an ``--output`` that is not valid
-SARIF. Issue #39 exists to decide what to do about them; the point of recording
+root short-circuit, an ``--output`` that is not valid SARIF, and until upstream
+lowered it to one at the 2.12.0 sync, a two-Skill threshold. Issue #39 exists to decide what to do about them; the point of recording
 them first is that any of its three paths then becomes reviewable as a diff of
 observed behavior rather than an argument about what the flag used to do.
 
@@ -88,20 +88,15 @@ class TestWhenRecursiveEngagesAtAll:
         combined = json.loads(output.read_text(encoding="utf-8"))
         assert [entry["name"] for entry in combined["skills"]] == ["alpha", "beta"]
 
-    def test_one_child_skill_is_below_the_threshold(self, tmp_path: Path) -> None:
-        """``detect_skills`` requires two, so a lone child Skill does not engage.
+    def test_one_child_skill_engages_the_flag(self, tmp_path: Path) -> None:
+        """One immediate child Skill is enough, since the 2.12.0 upstream sync.
 
-        It falls through to Scanning *the parent* as one anonymous Skill: the
-        parent holds no ``SKILL.md``, so the Manifest is ``absent``, the name is
-        ``unknown``, and the Risk Score is computed over the child's files as
-        though they were the parent's own. Under ``--repo-scan`` the same tree
-        reports the one Skill it holds. The fall-through itself is unchanged --
-        the threshold is a decision, not a defect.
-
-        What changed with #39 is that it is no longer *silent*. The advisory used
-        to be guarded on ``len(detection.skills) == 0``, false here because one
-        Skill was found and merely fell short of two, so the case the warning
-        exists for was the one case it never covered.
+        Upstream ``ed787e9`` moved the recursive branch from ``is_multi_skill``
+        to ``detection.skills``. Until then a lone child fell through to a Scan
+        of *the parent* as one anonymous Skill -- Manifest ``absent``, name
+        ``unknown``, a Risk Score over the child's files as though they were the
+        parent's own -- and #39 added the advisory that at least said so. The
+        child is now Scanned as itself, so there is nothing left to advise.
         """
         _write_skill(tmp_path / "only", "only")
         output = tmp_path / "report.json"
@@ -112,13 +107,10 @@ class TestWhenRecursiveEngagesAtAll:
         )
 
         assert result.exit_code == 0, result.output
-        # A lone child under no conventional root: --repo-scan finds nothing here
-        # either, so the advice is to point the scan at the skill itself.
-        assert "--recursive found 1 skill(s) immediately below" in _unwrapped(result.output)
-        assert "--repo-scan finds none" in _unwrapped(result.output)
+        assert "this scans the whole tree as one unnamed skill" not in _unwrapped(result.output)
         report = json.loads(output.read_text(encoding="utf-8"))
-        assert report["skill"]["name"] == "unknown"
-        assert report["skill"]["manifest_status"] == "absent"
+        assert report["multi_skill"] is True
+        assert [entry["name"] for entry in report["skills"]] == ["only"]
 
     def test_a_root_skill_short_circuits_every_nested_one(self, tmp_path: Path) -> None:
         """A ``SKILL.md`` at the root wins, and the nested Skills are not reported.
@@ -157,12 +149,11 @@ class TestWhenRecursiveEngagesAtAll:
         assert "--repo-scan finds 2 skill(s) here" in _unwrapped(result.output)
 
     def test_a_jvm_build_directory_is_not_skipped(self, tmp_path: Path) -> None:
-        """``target/`` holding a ``SKILL.md`` counts toward the threshold.
+        """``target/`` holding a ``SKILL.md`` counts as a child Skill.
 
         ``JVM_BUILD_DIRECTORIES`` is a Repository Scan concept. ``detect_skills``
         walks ``iterdir()`` with no skip set at all, so a Skill copied into build
-        output is reported as a Skill -- and, with one real sibling, is what
-        pushes the directory over the two-Skill threshold in the first place.
+        output is reported as a Skill, beside its one real sibling.
         """
         _write_skill(tmp_path / "alpha", "alpha")
         _write_skill(tmp_path / "target", "alpha-copy")

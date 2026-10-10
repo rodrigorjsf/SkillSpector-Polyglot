@@ -47,6 +47,7 @@ from skillspector.state import (
 )
 
 ANALYZER_ID = "semantic_developer_intent"
+requires_api_key = True
 logger = get_logger(__name__)
 
 

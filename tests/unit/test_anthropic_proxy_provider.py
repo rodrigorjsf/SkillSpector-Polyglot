@@ -43,6 +43,8 @@ def _clean_env(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.delenv("SKILLSPECTOR_PROVIDER", raising=False)
     monkeypatch.delenv("SKILLSPECTOR_SSL_VERIFY", raising=False)
     monkeypatch.delenv("SKILLSPECTOR_REASONING_EFFORT", raising=False)
+    monkeypatch.delenv("SKILLSPECTOR_TEMPERATURE", raising=False)
+    monkeypatch.delenv("SKILLSPECTOR_SEED", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.delenv("NVIDIA_INFERENCE_KEY", raising=False)
@@ -133,6 +135,24 @@ class TestAnthropicProxyProviderChatModel:
         AnthropicProxyProvider().create_chat_model("claude-sonnet-4-6", max_tokens=4096)
 
         assert "effort" not in captured
+
+    def test_temperature_is_forwarded(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        captured: dict[str, object] = {}
+
+        def fake_proxy(**kwargs: object) -> dict[str, object]:
+            captured.update(kwargs)
+            return kwargs
+
+        monkeypatch.setattr(
+            "skillspector.providers.anthropic_proxy.provider._ChatAnthropicProxy", fake_proxy
+        )
+        monkeypatch.setenv("ANTHROPIC_PROXY_API_KEY", "bearer-tok")
+        monkeypatch.setenv("ANTHROPIC_PROXY_ENDPOINT_URL", "https://proxy.example.com/predict")
+        monkeypatch.setenv("SKILLSPECTOR_TEMPERATURE", "0.1")
+
+        AnthropicProxyProvider().create_chat_model("claude-sonnet-4-6", max_tokens=4096)
+
+        assert captured["temperature"] == 0.1
 
 
 class TestAnthropicProxyProviderMetadata:
@@ -307,3 +327,19 @@ class TestProviderSelection:
         monkeypatch.setenv("OPENAI_API_KEY", "sk-fallback")
         llm = create_chat_model("gpt-5.4", max_tokens=1024)
         assert isinstance(llm, ChatOpenAI)
+
+
+class TestAnthropicProxyProviderStructuredOutput:
+    """Proxy provider mirrors the native provider's structured-output hint."""
+
+    def test_json_schema_for_models_that_reject_forced_tool_calls(self) -> None:
+        assert (
+            AnthropicProxyProvider().structured_output_method("claude-fable-5-1") == "json_schema"
+        )
+        assert (
+            AnthropicProxyProvider().structured_output_method("claude-mythos-5-1") == "json_schema"
+        )
+
+    def test_default_for_other_models(self) -> None:
+        assert AnthropicProxyProvider().structured_output_method("claude-sonnet-4-6") is None
+        assert AnthropicProxyProvider().structured_output_method("claude-fable-5") is None

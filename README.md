@@ -44,7 +44,7 @@ What SkillSpector-Polyglot does with a scanned tree depends on the framework it 
 
 | Framework | Language | Detection | Framework-specific rules | Status |
 |---|---|---|---|---|
-| **Agent Skills** (Claude Code, Codex CLI, Gemini CLI, …) | any | default | — (the full base catalog applies: 86 patterns, the 95 tabled rows minus the 9 framework rules) | **Shipped** — upstream behavior, unchanged |
+| **Agent Skills** (Claude Code, Codex CLI, Gemini CLI, …) | any | default | — (the full base catalog applies: 88 patterns, the 97 tabled rows minus the 9 framework rules) | **Shipped** — upstream behavior, unchanged |
 | **LangChain4j** | Java / Kotlin | `langchain4j` Maven coordinate, `dev.langchain4j` import, or `src/main/resources/skills/` layout | 5 rules — `L4J-SHELL`, `L4J-UNRESOLVED`, `L4J-TOOL-DESC`, `L4J-MCP-FILTER`, `L4J-WORKDIR` | **Shipped** |
 | **Deep Agents** (Python) | Python | `deepagents` distribution, `import deepagents`, or `create_deep_agent(` | 4 rules — `DA-SKILL-WRITABLE`, `DA-SHADOW`, `DA-SUBAGENT-SKILLS`, `DA-UNRESOLVED` | **Shipped** — `framework_deepagents` reads the host-side `create_deep_agent(...)` configuration, says per skill source path whether the agent can rewrite it, reports a skill in a later source that silently replaces a same-named one in an earlier source, reports a custom subagent defined without skills of its own, and reports where resolution stopped ([design](docs/MULTI_FRAMEWORK_SKILL_ANALYSIS.md), [shape](docs/adr/0008-deepagents-analyzer-resolves-one-module-deep.md)) |
 | **Deep Agents** (JavaScript) | TypeScript / JavaScript | `"deepagents"` in a `package.json` `dependencies`, `devDependencies`, `peerDependencies` or `optionalDependencies` block — read out of the parsed manifest, so a key of that name elsewhere in the file is not a signal — plus `import`/`require` of `deepagents`, or `createDeepAgent(` where a statement could start, so a help string, a `//` line or a JSDoc line quoting the SDK is not a signal, while a template literal quoting it still is, because its contents are whole lines ([#127](https://github.com/rodrigorjsf/SkillSpector-Polyglot/issues/127)) — every signal gated on a `.ts`/`.tsx`/`.mts`/`.cts`/`.js`/`.mjs`/`.cjs` file or a `package.json`, because the npm and PyPI distribution names are identical | the **same 4 rules** — `DA-SKILL-WRITABLE`, `DA-SHADOW`, `DA-SUBAGENT-SKILLS`, `DA-UNRESOLVED` | **Shipped** — `framework_deepagents_js` asks the same four questions of the host-side `createDeepAgent({...})` options object, parsed with `tree-sitter-typescript`. The rule ids are reused rather than duplicated: it is the same upstream framework in a second language, so a glob suppression rule keyed on `rule_id` covers both tracks and the catalogue stays one entry per question. What differs is the shapes read — an options object rather than keyword arguments, a plain object literal rather than `FilesystemPermission(...)`, a positional route map rather than `routes=`, and `interruptOn` rather than `interrupt_on`. The four rules mean the same thing in both tracks and are asked over the same two write tools, so a configuration reported one way in Python is reported the same way in TypeScript ([design](docs/MULTI_FRAMEWORK_SKILL_ANALYSIS.md), [shape](docs/adr/0009-tree-sitter-for-typescript-parsing.md), [capture](docs/references/deepagents-js-skills.md)) |
@@ -456,8 +456,8 @@ Static analysis needs no credentials at all; only the optional LLM stage does.
 | What you want | How |
 |---|---|
 | No credentials, no network egress to an LLM | `--no-llm` |
-| Choose an LLM provider | `SKILLSPECTOR_PROVIDER` — `openai`, `anthropic`, `anthropic_proxy`, `bedrock`, `nv_build`, `claude_cli`, `codex_cli`, `gemini_cli` |
-| Use a local agent CLI session instead of an API key | `SKILLSPECTOR_PROVIDER=claude_cli` (or `codex_cli`) |
+| Choose an LLM provider | `SKILLSPECTOR_PROVIDER` — `openai`, `anthropic`, `anthropic_proxy`, `bedrock`, `nv_build`, `gemini`, `ollama`, `azure_openai`, `openai_compatible`, `claude_cli`, `gemini_cli`, `opencode_cli` |
+| Use a local agent CLI session instead of an API key | `SKILLSPECTOR_PROVIDER=claude_cli` (or `gemini_cli`, `opencode_cli`; `codex_cli` is still registered but upstream disabled it) |
 | Override the model | `SKILLSPECTOR_MODEL` |
 | Debug a scan | `SKILLSPECTOR_LOG_LEVEL=DEBUG`, or `-V` |
 | Report Agent Skills specification conformance | `--spec-checks advisory` (reported, unscored) or `--spec-checks strict` (scored) |
@@ -537,11 +537,10 @@ the **per-category counts in the `###` headings**. Upstream's numbers were alrea
 fork before they were ever conflicted — the fork ships rules upstream does not, and the counts are
 defined as the number of rows the tables carry. Everything else below is upstream's to own.
 
-[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/NVIDIA/SkillSpector/badge)](https://scorecard.dev/viewer/?uri=github.com/NVIDIA/SkillSpector)
 
 ## Overview
 
-AI agent skills (used by Claude Code, Codex CLI, Gemini CLI, etc.) execute with implicit trust and minimal vetting. Research shows that **26.1% of skills contain vulnerabilities** and **5.2% show likely malicious intent**.
+AI agent skills (used by Claude Code, Codex CLI, Gemini CLI, etc.) execute with implicit trust and minimal vetting. In the 31,132-skill analyzed subset of the research dataset, **26.1% of skills contain vulnerabilities** and **5.2% show likely malicious intent**.
 
 SkillSpector helps you answer: **"Is this skill safe to install?"**
 
@@ -553,11 +552,12 @@ SkillSpector is part of the [NVIDIA Verified Skills pipeline](https://docs.nvidi
 - **[Development guide](docs/DEVELOPMENT.md)** — Architecture, package layout, and how to extend the analyzer pipeline.
 - **[Analysis resource bounds](docs/ANALYSIS_RESOURCE_BOUNDS.md)** — Fail-closed bundle, parser, nested-artifact, ledger, and finding ceilings.
 - **[Pi extension](docs/PI_EXTENSION.md)** — Install SkillSpector as a Pi tool for scanning skills from inside agent sessions.
+- **[OpenCode extension](docs/OPENCODE_EXTENSION.md)** — Install SkillSpector as an OpenCode tool and `/skillspector` command for scanning skills from inside agent sessions.
 
 ## Features
 
 - **Multi-format input**: Scan Git repos, URLs, zip files, directories, or single files
-- **95 vulnerability patterns** across 22 categories: prompt injection, data exfiltration, privilege escalation, supply chain, excessive agency, output handling, system prompt leakage, memory poisoning, tool misuse, rogue agent, anti-refusal, trigger abuse, agent snooping, server-side request forgery, dangerous code (AST), taint tracking, insecure deserialization, YARA signatures, MCP least privilege, MCP tool poisoning, LangChain4j framework, and Deep Agents framework
+- **97 vulnerability patterns** across 22 categories: prompt injection, data exfiltration, privilege escalation, supply chain, excessive agency, output handling, system prompt leakage, memory poisoning, tool misuse, rogue agent, anti-refusal, trigger abuse, agent snooping, server-side request forgery, dangerous code (AST), taint tracking, insecure deserialization, YARA signatures, MCP least privilege, MCP tool poisoning, LangChain4j framework, and Deep Agents framework
 - **17 Agent Skills conformance rules** — 15 from the specification, 2 from loader behavior (`SPEC-14`, `SPEC-17`) — counted apart from the patterns above because they assess conformance rather than risk, and off unless `--spec-checks` asks for them ([Specification conformance](#specification-conformance----spec-checks))
 - **Two-stage analysis**: Fast static analysis + optional LLM semantic evaluation
 - **Live vulnerability lookups**: SC4 queries [OSV.dev](https://osv.dev) for real-time CVE data with automatic offline fallback
@@ -793,15 +793,15 @@ and not helpfully so: it walks build output that `--repo-scan` skips.
 | Minimum to engage | one skill | **two** — one child skill is not enough |
 | A `SKILL.md` at the path itself | irrelevant | short-circuits: the tree is scanned as that one skill |
 | `target/`, `build/`, `.gradle/` | skipped | walked, and a skill inside one counts |
-| `--baseline` | threaded through every skill, and it suppresses — but only for a baseline taken *per skill directory*: `skillspector baseline .` has no repo-scan mode and writes repo-root-relative paths this scan never emits | rejected, exit `2` — but **only** once the flag engages. Below the two-skill threshold it falls through to an ordinary scan and the baseline applies |
-| `--format sarif --output` | one valid SARIF log, one run per skill | one valid SARIF log, one run per skill — upstream's own recursive SARIF merge arrived with the 2.9.6 sync and replaced the `--- path ---` concatenation this row used to describe, so anything splitting the file on that separator has to stop |
+| `--baseline` | threaded through every skill, and it suppresses — but only for a baseline taken *per skill directory*: `skillspector baseline .` has no repo-scan mode and writes repo-root-relative paths this scan never emits | rejected, exit `2` — but **only** once the flag engages, which since the 2.12.0 upstream sync takes one immediate child skill rather than two. With none it falls through to an ordinary scan and the baseline applies |
+| `--format sarif --output` | one valid SARIF log, one run per skill | one valid SARIF log, one run per skill plus a final aggregate run that carries the scan's completeness and no results — upstream's own recursive SARIF merge arrived with the 2.9.6 sync and replaced the `--- path ---` concatenation this row used to describe, so anything splitting the file on that separator has to stop |
 | `--format json --output` | one object: `multi_skill`, `skill_count`, `max_risk_score`, `execution_successful`, `skills` — the *same* object `--recursive` builds, so a consumer tells the two modes apart by the flag it ran rather than by the body it parses | one object: `multi_skill`, `skill_count`, `max_risk_score`, `execution_successful`, `skills` |
 | `--format markdown --output` | per-skill bodies concatenated behind `--- <path> ---` — merging Markdown has no shape to reuse and was left alone | per-skill bodies concatenated behind `--- <path> ---` |
-| **No** `--output` | the report is written to stdout, in every format; `sarif` and `json` are each one merged document, `markdown` and `terminal` are the `--- path ---` concatenation of the rows above. A **discovery miss** is the exception in two of the four: `terminal` writes nothing at all, and `markdown` writes one document naming the miss rather than a concatenation — [Which stream carries what](#which-stream-carries-what) states it in full | `json` and `terminal` write to stdout the same body `--output` would have received; `sarif` and `markdown` write **nothing** there and still need `--output`. Markdown has no merged document to print; SARIF has one, and is pending only because [#114](https://github.com/rodrigorjsf/SkillSpector-Polyglot/issues/114) scoped itself to `json` ([#136](https://github.com/rodrigorjsf/SkillSpector-Polyglot/issues/136)). As with `--baseline`, all of this describes the flag **once it engages**: below the two-skill threshold it falls through to an ordinary scan, which writes a report to stdout in the requested format |
+| **No** `--output` | the report is written to stdout, in every format; `sarif` and `json` are each one merged document, `markdown` and `terminal` are the `--- path ---` concatenation of the rows above. A **discovery miss** is the exception in two of the four: `terminal` writes nothing at all, and `markdown` writes one document naming the miss rather than a concatenation — [Which stream carries what](#which-stream-carries-what) states it in full | every format writes to stdout the same body `--output` would have received. `sarif` and `markdown` joined `json` and `terminal` with the 2.12.0 upstream sync, whose own recursive emission prints all four and so closed [#136](https://github.com/rodrigorjsf/SkillSpector-Polyglot/issues/136): `sarif` is the one merged log, `markdown` the `--- path ---` concatenation. As with `--baseline`, all of this describes the flag **once it engages**: with no immediate child skill it falls through to an ordinary scan, which writes a report to stdout in the requested format |
 | Discovery roots | `--repo-scan-root`, repeatable | not configurable |
 
 Use `--recursive` only for the shape it was built for: a flat directory whose immediate children are
-two or more skills, consumed through its combined-JSON contract. Anything else — a repository, a
+skills, consumed through its combined-JSON contract. Anything else — a repository, a
 monorepo, one skill under `skills/`, a build tree, a shared baseline, SARIF for code scanning — is
 `--repo-scan`.
 
@@ -875,6 +875,29 @@ directory, SkillSpector excludes that exact file from content analysis so its
 suppression text cannot create findings or enter regenerated fingerprints;
 sibling files remain in normal scan scope.
 
+### Explicit scan scope
+
+For a local directory containing one `SKILL.md` or `skill.md`, repeat `--exclude` to omit
+selected files before content analysis:
+
+```bash
+skillspector scan ./my-skill --exclude 'tests/*' --exclude 'fixtures/*.json'
+```
+
+Patterns are case-sensitive globs matched against the entire relative POSIX path;
+`*` also matches `/`. Quote patterns so your shell does not expand them. This is
+an explicit caller option, not an author-controlled ignore file. Patterns matching
+either manifest name (`SKILL.md` or `skill.md`) are rejected, as are recursive, multi-skill, transitive, registry, and
+non-directory inputs. No-match patterns are still recorded in the report.
+
+Files already outside the scan inventory, such as policy-excluded dependencies,
+retain their existing policy handling and are not counted as caller exclusions.
+Explicitly excluded inventory files remain in the coverage denominator as entirely uninspected. The
+report lists the applied patterns, excluded count and individual skipped paths;
+any matched exclusion makes coverage partial and prevents a `SAFE` recommendation.
+Use `--fail-on-incomplete` when partial scope should fail CI. These exclusions do
+not suppress findings in included files or override existing safety limits.
+
 ### LLM Analysis
 
 For the best results, configure an OpenAI-compatible LLM endpoint for
@@ -888,9 +911,45 @@ inference gateways.
 | `anthropic` | `ANTHROPIC_API_KEY` | api.anthropic.com | `claude-opus-4-6` |
 | `anthropic_proxy` | `ANTHROPIC_PROXY_API_KEY` + `ANTHROPIC_PROXY_ENDPOINT_URL` | Any Vertex-style raw-predict proxy | `claude-sonnet-4-6` |
 | `bedrock` | `AWS_PROFILE` (optional) + `AWS_REGION` — SigV4 via boto3 | AWS Bedrock Runtime | `us.anthropic.claude-sonnet-4-6-20250915-v1:0` |
-| `nv_build` | `NVIDIA_INFERENCE_KEY` | build.nvidia.com | `deepseek-ai/deepseek-v4-flash` |
+| `nv_build` | `NVIDIA_INFERENCE_KEY` | build.nvidia.com | `z-ai/glm-5.3` |
+| `gemini` | `GOOGLE_CLOUD_PROJECT` (+ optional `GOOGLE_CLOUD_LOCATION`) via ADC | Google Cloud OpenAI-compatible Gemini endpoint | `gemini-3.8-flash` |
+| `ollama` | _(none)_ | `OLLAMA_BASE_URL` (default `http://localhost:11434/v1`) | `llama3.1:8b` |
+| `azure_openai` | `AZURE_OPENAI_API_KEY` + `AZURE_OPENAI_ENDPOINT` | Azure OpenAI Service | `gpt-4o` (deployment defaults to the model label) |
+| `openai_compatible` | `SKILLSPECTOR_COMPAT_API_KEY` + `SKILLSPECTOR_COMPAT_BASE_URL` | Any OpenAI-compatible endpoint | `llama-3.1-70b-versatile` |
 | `claude_cli` | _(none — uses local CLI auth)_ | local `claude` binary | local Claude runtime fallback, or `SKILLSPECTOR_MODEL` |
-| `codex_cli` | _(none — uses local CLI auth)_ | local `codex` binary | local Codex runtime fallback, or `SKILLSPECTOR_MODEL` |
+| `codex_cli` | Disabled | Registered for compatibility; its read-only sandbox permits host-file reads | Use an HTTP API provider or another supported CLI provider |
+| `gemini_cli` | _(none — uses local CLI auth)_ | local `gemini` binary | local Gemini runtime fallback, or `SKILLSPECTOR_MODEL` |
+| `opencode_cli` | _(none — uses local CLI auth)_ | local `opencode` 1.18.33 binary | local OpenCode runtime fallback, or `SKILLSPECTOR_MODEL` |
+
+For NVIDIA Build's `z-ai/glm-5.3`, SkillSpector requests `high` reasoning effort.
+Set `SKILLSPECTOR_REASONING_EFFORT` to override it with `low`, `high`, or `max`.
+The bundled 128,000-token context and 32,000-token output budgets are conservative
+application limits; they do not claim the hosted endpoint's maximum capacity.
+
+Structured output is requested through LangChain's `with_structured_output`.
+The default is client-specific: `ChatOpenAI` uses `json_schema`, while other
+clients may use tool calling. Some models reject a forced tool call with
+HTTP 400 (`tool_choice: type "tool" and "any" are not supported for this
+model`). The `anthropic` and `anthropic_proxy` providers route those models
+(`claude-fable-5-1`, `claude-mythos-5-1`, or any registry entry with
+`structured_output: json_schema`) to the native JSON-schema response format.
+Bedrock has no JSON-schema output for them, so the `bedrock` provider leaves
+`toolChoice` at `auto`, asks for the tool call in the prompt, and retries a
+prose answer; it recognises the model from the model ID, a geo/global
+inference-profile ID, or a foundation-model / inference-profile ARN. An
+application-inference-profile ARN hides the model, so add that ARN to the
+registry (`SKILLSPECTOR_MODEL_REGISTRY`) with `tool_choice: auto`.
+The `openai_compatible` provider honours the same `tool_choice: auto` entry
+for endpoints that ignore both `response_format` and a forced `tool_choice`
+and answer in prose (for example iFlytek's `spark-x2.5`, which is bundled).
+`SKILLSPECTOR_STRUCTURED_OUTPUT_METHOD=json_schema|function_calling`
+overrides the method for any provider.
+The method precedence is `SKILLSPECTOR_STRUCTURED_OUTPUT_METHOD`, the provider's
+method hint, an analyzer preference, then the client default. TP4 prefers
+`function_calling` only for provider `openai` and the exact model label
+`azure/anthropic/claude-opus-5`, with reasoning/thinking controls unset; dated
+or suffixed labels and other providers keep their existing behavior. An explicit
+environment override or provider hint still wins when reasoning is configured.
 
 ```bash
 # Stock OpenAI
@@ -927,6 +986,31 @@ export SKILLSPECTOR_PROVIDER=nv_build
 export NVIDIA_INFERENCE_KEY=nvapi-...
 skillspector scan ./my-skill/
 
+# Gemini on Google Cloud (Application Default Credentials / Workload Identity)
+# Prerequisites:
+#   1. Google Cloud project with billing enabled.
+#   2. Enable Gemini Enterprise Agent Platform / Vertex AI API: `aiplatform.googleapis.com`.
+#   3. IAM permission: grant `roles/aiplatform.user` (or at minimum `aiplatform.endpoints.predict`)
+#      to your user account or Kubernetes service account.
+#   4. Local authentication: run `gcloud auth application-default login`.
+#      Configure a quota project if needed: `gcloud auth application-default set-quota-project PROJECT_ID`.
+#   5. Kubernetes / GKE: configure Workload Identity and leave GOOGLE_APPLICATION_CREDENTIALS unset
+#      rather than exporting service account keys.
+# Note on Data Residency:
+#   The default `global` endpoint does not support data-residency requirements. While you can target
+#   `us`, `eu`, or regional endpoints (e.g. `us-central1`), endpoint selection alone does not guarantee
+#   data residency or in-region processing without appropriate organizational policies. Always verify
+#   that your selected model is supported in your target location.
+# Optional credentials:
+#   GOOGLE_APPLICATION_CREDENTIALS is optional and can reference Workload or Workforce Identity Federation
+#   configuration files; exporting long-lived service account keys is discouraged.
+export SKILLSPECTOR_PROVIDER=gemini
+export GOOGLE_CLOUD_PROJECT=my-project-id
+# export GOOGLE_CLOUD_LOCATION=global  # default is global; or us, eu, or specific region (e.g. us-central1)
+# Default model: gemini-3.8-flash
+# export SKILLSPECTOR_MODEL=gemini-3.7-flash
+skillspector scan ./my-skill/
+
 # Local Claude CLI — no API key; uses your existing `claude auth login` session
 # Requires: claude CLI installed and authenticated (claude auth login)
 export SKILLSPECTOR_PROVIDER=claude_cli
@@ -934,16 +1018,31 @@ export SKILLSPECTOR_PROVIDER=claude_cli
 # export SKILLSPECTOR_MODEL=claude-sonnet-4-6
 skillspector scan ./my-skill/
 
-# Local Codex CLI — no API key; uses your existing `codex login` session
-# Requires: codex CLI installed and authenticated
-export SKILLSPECTOR_PROVIDER=codex_cli
+# Gemini (via OpenAI compatibility layer)
+export SKILLSPECTOR_PROVIDER=openai
+export OPENAI_API_KEY="YOUR_GEMINI_API_KEY"
+export OPENAI_BASE_URL="https://generativelanguage.googleapis.com/v1beta/openai/"
+export SKILLSPECTOR_MODEL=gemini-3.5-flash
 skillspector scan ./my-skill/
 
-# Local Ollama or any OpenAI-compatible endpoint
-export SKILLSPECTOR_PROVIDER=openai
-export OPENAI_API_KEY=ollama
-export OPENAI_BASE_URL=http://localhost:11434/v1
+# Local Ollama — no API key
+export SKILLSPECTOR_PROVIDER=ollama
+# export OLLAMA_BASE_URL=http://localhost:11434/v1  # shown default
 export SKILLSPECTOR_MODEL=llama3.1:8b
+skillspector scan ./my-skill/
+
+# Azure OpenAI
+export SKILLSPECTOR_PROVIDER=azure_openai
+export AZURE_OPENAI_API_KEY=...
+export AZURE_OPENAI_ENDPOINT=https://example.openai.azure.com/
+export AZURE_OPENAI_DEPLOYMENT=my-deployment
+skillspector scan ./my-skill/
+
+# Any other OpenAI-compatible endpoint
+export SKILLSPECTOR_PROVIDER=openai_compatible
+export SKILLSPECTOR_COMPAT_API_KEY=...
+export SKILLSPECTOR_COMPAT_BASE_URL=https://api.groq.com/openai/v1
+export SKILLSPECTOR_MODEL=llama-3.1-70b-versatile
 skillspector scan ./my-skill/
 
 # Override the provider's default model
@@ -957,8 +1056,8 @@ skillspector scan ./my-skill/ --no-llm
 ### MCP Server
 
 Run SkillSpector as a [Model Context Protocol](https://modelcontextprotocol.io)
-server so any MCP-capable agent (Claude Code, Codex CLI, Gemini CLI) or remote
-runtime can call scanning as a tool and **gate skill/MCP installs on the
+server so local MCP-capable agents (Claude Code, Codex CLI, Gemini CLI)
+can call scanning as a tool and **gate skill/MCP installs on the
 result** — turning SkillSpector into a runtime guardrail instead of an
 out-of-band audit step.
 
@@ -971,7 +1070,7 @@ uv tool install --force 'skillspector[mcp] @ git+https://github.com/NVIDIA/skill
 # FastMCP stdio transport for local CLI agents
 skillspector mcp
 
-# streamable HTTP/SSE transport for remote / A2A callers
+# Streamable HTTP transport on a local loopback interface
 skillspector mcp --transport http --host 127.0.0.1 --port 8000
 ```
 
@@ -996,18 +1095,25 @@ claude mcp add skillspector -- skillspector mcp
 > **Security — HTTP transport trust model**
 >
 > The HTTP transport ships **without authentication**. Any caller that can
-> reach the port can invoke `scan_skill`. Over stdio or `127.0.0.1` this is
-> the same trust boundary as the CLI. If you bind to a routable interface:
+> reach the port can invoke `scan_skill`. HTTP bindings are restricted to
+> loopback IPs (`127.0.0.1` or `::1`); `localhost` binds to `127.0.0.1` without
+> DNS resolution. Wildcard, routable and other hostname bindings are rejected.
 >
-> - Sit the server behind an authenticating reverse proxy (e.g. nginx + mTLS)
->   before exposing it externally.
+> - For remote access, put an authenticating reverse proxy (e.g. nginx + mTLS)
+>   in front of the loopback listener.
 > - Local paths and `file://` URLs are **automatically rejected** over HTTP to
 >   prevent unauthenticated callers from reading arbitrary host files. Only
 >   remote Git and `.zip` URLs are accepted.
+>
+> HTTP scans accept only credential-free `https://` targets. Git scans never use
+> the server's Git login or Git config. If a proxy or custom CA is needed, set
+> `HTTPS_PROXY`, `NO_PROXY` or `GIT_SSL_CAINFO` in the server environment.
+> Use stdio or the CLI for private repositories. Git redirects are rejected;
+> use the current repository URL after a rename or transfer.
 
 ## Vulnerability Patterns
 
-SkillSpector detects **95 vulnerability patterns** across 22 categories, plus **17 specification
+SkillSpector detects **97 vulnerability patterns** across 22 categories, plus **17 specification
 conformance rules** that are counted separately and run only under `--spec-checks` — see
 [Specification Conformance](#specification-conformance-17-rules-opt-in) at the end of this section:
 
@@ -1048,7 +1154,7 @@ conformance rules** that are counted separately and run only under `--spec-check
 | PE2 | Sudo/Root Execution | MEDIUM | Invoking elevated system privileges |
 | PE3 | Credential Access | HIGH | Reading SSH keys, tokens, passwords |
 
-### Supply Chain (9 patterns)
+### Supply Chain (10 patterns)
 
 | ID | Pattern | Severity | Description |
 |----|---------|----------|-------------|
@@ -1061,8 +1167,9 @@ conformance rules** that are counted separately and run only under `--spec-check
 | SC7 | Untrusted Container Image | HIGH | Container image pulled with signature or registry verification disabled (`--disable-content-trust`, `--insecure-registry`) |
 | SC8 | Shipped Python Bytecode | HIGH | `__pycache__` / `.pyc` present (discovery skips; malicious bytecode bypass) |
 | SC9 | Concealed Executable Artifact | HIGH | Executable nested in a document container or hidden/disguised artifact |
+| SC10 | Dependency Source Redirection | HIGH | Package-manager source added, replaced, or unresolved |
 
-### Excessive Agency (4 patterns)
+### Excessive Agency (5 patterns)
 
 | ID | Pattern | Severity | Description |
 |----|---------|----------|-------------|
@@ -1070,6 +1177,7 @@ conformance rules** that are counted separately and run only under `--spec-check
 | EA2 | Autonomous Decision Making | HIGH | High-impact decisions without human-in-the-loop |
 | EA3 | Scope Creep | MEDIUM | Capabilities extending beyond stated purpose |
 | EA4 | Unbounded Resource Access | MEDIUM | No rate limits or quotas on resource consumption |
+| EA5 | External Model or Provider Selection | MEDIUM/HIGH | Model/provider pins or coding-CLI shell-outs that can switch billing accounts |
 
 ### Output Handling (3 patterns)
 
@@ -1251,7 +1359,7 @@ subagent without its own skills as a bug its documentation calls out, not as a r
 
 ### Specification Conformance (17 rules, opt-in)
 
-Counted apart from the 95 patterns above, because a conformance rule states that a declaration
+Counted apart from the 97 patterns above, because a conformance rule states that a declaration
 disagrees with the [Agent Skills specification](docs/references/agent-skills-specification.md), not
 that a risk category applies — which is also why these findings carry no OWASP tag. They run only
 under `--spec-checks`; see
@@ -1345,30 +1453,43 @@ Issues (2)
 
 | Variable | Description | Required |
 |----------|-------------|----------|
-| `SKILLSPECTOR_PROVIDER` | Active LLM provider: `openai`, `anthropic`, `anthropic_proxy`, `bedrock`, `nv_build`, `ollama`, `azure_openai`, `openai_compatible`, `claude_cli`, `codex_cli`, or `gemini_cli`. Hosted providers use bundled `model_registry.yaml` defaults; `claude_cli` and `codex_cli` fall back to the local CLI runtime's default model unless `SKILLSPECTOR_MODEL` is set. Defaults to `nv_build`. | Optional |
+| `SKILLSPECTOR_PROVIDER` | Active LLM provider: `openai`, `anthropic`, `anthropic_proxy`, `bedrock`, `nv_build`, `gemini`, `ollama`, `azure_openai`, `openai_compatible`, `claude_cli`, `gemini_cli`, or `opencode_cli`. Hosted providers use bundled `model_registry.yaml` defaults; CLI providers fall back to the local runtime's default model unless `SKILLSPECTOR_MODEL` is set. Defaults to `nv_build`. | Optional |
+| `GOOGLE_CLOUD_PROJECT` | Google Cloud project ID for the `gemini` provider. Authenticates via Google Cloud Application Default Credentials (ADC) or GKE Workload Identity. | Required for LLM analysis when `SKILLSPECTOR_PROVIDER=gemini` |
+| `GOOGLE_CLOUD_LOCATION` | Google Cloud location for the `gemini` provider endpoint (e.g. `global`, `us`, `eu`, `us-central1`). Defaults to `global`. | Optional (used when `SKILLSPECTOR_PROVIDER=gemini`) |
+| `GOOGLE_APPLICATION_CREDENTIALS` | Optional path to ADC credential/config file (e.g. Workload or Workforce Identity Federation config; exported service account keys are discouraged). For local development, use `gcloud auth application-default login`; for GKE, use Workload Identity. | Optional (used when `SKILLSPECTOR_PROVIDER=gemini`) |
 | `NVIDIA_INFERENCE_KEY` | Credential for the `nv_build` provider (build.nvidia.com). | Required for LLM analysis when `SKILLSPECTOR_PROVIDER=nv_build` |
 | `OPENAI_API_KEY` | Credential for the OpenAI provider (`SKILLSPECTOR_PROVIDER=openai`). Also serves as the tier-2 fallback in the credential waterfall when the active provider returns no credentials. | Required for LLM analysis when `SKILLSPECTOR_PROVIDER=openai` |
 | `OPENAI_BASE_URL` | Override the OpenAI endpoint (e.g. point at Ollama). | Optional |
-| `SKILLSPECTOR_REASONING_EFFORT` | Optional provider- and model-dependent reasoning-effort setting. Non-empty values are trimmed and passed through unchanged; unset or blank preserves provider-default behavior. | Optional |
+| `SKILLSPECTOR_REASONING_EFFORT` | Optional provider- and model-dependent reasoning-effort setting. Non-empty values are trimmed and passed through unchanged. When unset or blank, SkillSpector sends `high` for `nv_build` with `z-ai/glm-5.3`; other provider/model combinations keep their endpoint defaults. | Optional |
+| `SKILLSPECTOR_OUTPUT_LANGUAGE` | Short, single-line language label (letters, numbers, spaces, `_`, or `-`; maximum 64 characters) for human-readable LLM finding text such as messages, explanations, and remediation. Rule IDs, severity values, paths, code, and other machine-readable values remain unchanged. Unset, blank, or invalid values preserve the default output language. | Optional |
+| `SKILLSPECTOR_TEMPERATURE` | Optional sampling temperature from `0` to `1` for hosted providers. Unset or blank preserves the provider default. Lower values can reduce run-to-run variation but do not guarantee identical output. | Optional |
+| `SKILLSPECTOR_SEED` | Optional integer sampling seed for OpenAI-compatible and Azure OpenAI providers. Other hosted providers and CLI providers do not receive it. Provider support remains model-dependent. | Optional |
+| `SKILLSPECTOR_COMPACT_PROMPTS` | Opt-in compact line numbering in LLM prompts: numbered lines render as `L1:`, `L2:` instead of zero-padded `L01:`, `L02:`. Accepted truthy values are `1`, `true`, and `yes` (case-insensitive; surrounding whitespace is trimmed). Unset or any other value keeps the default zero-padded format. | Optional |
 | `ANTHROPIC_API_KEY` | Credential for the Anthropic provider (`SKILLSPECTOR_PROVIDER=anthropic`). | Required for LLM analysis when `SKILLSPECTOR_PROVIDER=anthropic` |
 | `ANTHROPIC_BASE_URL` | Override the native Anthropic endpoint (default: `https://api.anthropic.com`). | Optional |
+| `ANTHROPIC_AUTH_SCHEME` | Set to `bearer` to send `ANTHROPIC_API_KEY` as `Authorization: Bearer` instead of `x-api-key`, for gateways exposing the Messages API. | Optional |
 | `ANTHROPIC_PROXY_ENDPOINT_URL` | Full endpoint URL for the Anthropic proxy provider (Vertex-style raw-predict). | Required when `SKILLSPECTOR_PROVIDER=anthropic_proxy` |
 | `ANTHROPIC_PROXY_API_KEY` | Bearer token for the Anthropic proxy provider. | Required when `SKILLSPECTOR_PROVIDER=anthropic_proxy` |
 | `ANTHROPIC_PROXY_API_VERSION` | `anthropic_version` value sent in the request body (default: `vertex-2023-10-16`). | Optional |
 | `AWS_PROFILE` | Named AWS profile for the Bedrock provider — authenticates via SigV4 through boto3. When unset, the standard boto3 credential chain (env vars, instance metadata, SSO, etc.) resolves. | Optional (used when `SKILLSPECTOR_PROVIDER=bedrock`) |
 | `AWS_REGION` | AWS region for the Bedrock Runtime endpoint. Defaults to `us-west-2`. | Optional (used when `SKILLSPECTOR_PROVIDER=bedrock`) |
-| `OLLAMA_BASE_URL` | Endpoint for the `ollama` provider (default: `http://localhost:11434`). No credential is involved — the server is local. | Optional (used when `SKILLSPECTOR_PROVIDER=ollama`) |
-| `AZURE_OPENAI_ENDPOINT` | Resource endpoint for the `azure_openai` provider. | Required when `SKILLSPECTOR_PROVIDER=azure_openai` |
-| `AZURE_OPENAI_API_KEY` | Credential for the `azure_openai` provider. | Required when `SKILLSPECTOR_PROVIDER=azure_openai` |
-| `AZURE_OPENAI_DEPLOYMENT` | Deployment name to call on that resource. | Required when `SKILLSPECTOR_PROVIDER=azure_openai` |
-| `AZURE_OPENAI_API_VERSION` | API version sent with the request. | Optional (used when `SKILLSPECTOR_PROVIDER=azure_openai`) |
-| `SKILLSPECTOR_COMPAT_BASE_URL` | Endpoint for the `openai_compatible` provider — any server speaking the OpenAI chat-completions API. | Required when `SKILLSPECTOR_PROVIDER=openai_compatible` |
-| `SKILLSPECTOR_COMPAT_API_KEY` | Credential for that endpoint. | Optional (used when `SKILLSPECTOR_PROVIDER=openai_compatible`) |
-| `SKILLSPECTOR_MODEL` | Override the active provider model. For hosted providers, this replaces the bundled default from the LLM Analysis table. For `claude_cli` and `codex_cli`, this is forwarded as `--model` instead of using the local CLI runtime fallback. | Optional |
+| `OLLAMA_BASE_URL` | Ollama OpenAI-compatible endpoint. Defaults to `http://localhost:11434/v1`. | Optional (used when `SKILLSPECTOR_PROVIDER=ollama`) |
+| `AZURE_OPENAI_API_KEY` | API key for the Azure OpenAI provider. | Required when `SKILLSPECTOR_PROVIDER=azure_openai` |
+| `AZURE_OPENAI_ENDPOINT` | Azure resource endpoint for the Azure OpenAI provider. | Required when `SKILLSPECTOR_PROVIDER=azure_openai` |
+| `AZURE_OPENAI_DEPLOYMENT` | Azure deployment name. Defaults to the selected model label. | Optional |
+| `AZURE_OPENAI_API_VERSION` | Azure OpenAI API version. Defaults to `2024-06-01`. | Optional |
+| `SKILLSPECTOR_COMPAT_API_KEY` | API key for a generic OpenAI-compatible provider. | Required when `SKILLSPECTOR_PROVIDER=openai_compatible` |
+| `SKILLSPECTOR_COMPAT_BASE_URL` | Base URL for a generic OpenAI-compatible provider. | Required when `SKILLSPECTOR_PROVIDER=openai_compatible` |
+| `SKILLSPECTOR_MODEL` | Override the active provider model. For hosted providers, this replaces the bundled default from the LLM Analysis table. For CLI providers, this is forwarded as `--model` instead of using the local runtime fallback. | Optional |
 | `SKILLSPECTOR_MODEL_REGISTRY` | Override the bundled per-provider YAML registry (`src/skillspector/providers/<provider>/model_registry.yaml`) with a custom path. | Optional |
 | `SKILLSPECTOR_LOG_LEVEL` | Log level: `DEBUG`, `INFO`, `WARNING`, `ERROR` (default: `WARNING`). | Optional |
+| `SKILLSPECTOR_MAX_DEPENDENCY_SOURCE_ANALYSIS_SECONDS` | Ceiling for the dependency-source analysis pass, in seconds. Defaults to `5.0`, which is the historical value. Raise it on slow or heavily loaded machines so the same unchanged tree does not come back partially inspected, which would set `safe_to_install` to false and record `runtime_limit`. The remaining aggregate workflow time (`SKILLSPECTOR_MAX_WORKFLOW_SECONDS`, 600 seconds by default) still caps the effective value; values above that remaining time have no effect. Invalid, zero, negative, infinite, and NaN values keep the 5-second default. The setting is resolved when the module is imported, so a new process is required after changing it. See [analysis resource bounds](docs/ANALYSIS_RESOURCE_BOUNDS.md#configuring-the-dependency-source-deadline). | Optional |
 
-> **CLI providers** (`claude_cli`, `codex_cli`): No API key is needed. Authentication is managed entirely by the agent CLI's own login session (`claude auth login` / `codex login`). SkillSpector never reads or forwards API keys when these providers are active. The subprocess is run in a hardened sandbox: tools disabled, no MCP, read-only sandbox mode (codex), and untrusted skill content is delivered only via stdin.
+> **Disabled provider:** `codex_cli` remains registered but cannot run LLM analysis because its read-only sandbox allows host-file reads. Existing users should select an HTTP API provider or another supported CLI provider.
+
+> **CLI providers** (`claude_cli`, `gemini_cli`, `opencode_cli`): No API key is needed. Authentication is managed entirely by the agent CLI's own login session. SkillSpector never reads or forwards API keys when these providers are active. The subprocess is run with capabilities restricted, and untrusted skill content is delivered only via stdin.
+>
+> `opencode_cli` currently fails closed unless the installed OpenCode version is exactly `1.18.33`, the version whose configuration precedence and deny-all semantics are verified by this release.
 
 ### CLI Options
 
@@ -1423,11 +1544,11 @@ SkillSpector is built to be driven by other tools (CI pipelines, install gates, 
 
 | Code | Meaning |
 |------|---------|
-| `0` | Scan completed, `risk_score` ≤ 50 (recommendation `SAFE` or `CAUTION`) |
-| `1` | Scan completed, `risk_score` > 50 (recommendation `DO_NOT_INSTALL`) |
+| `0` | Scan completed, `risk_score` ≤ 50 (recommendation `SAFE` or `CAUTION`), and no enabled strict gate fired |
+| `1` | Scan completed and either `risk_score` > 50, `--fail-on-findings` found an active finding, `--fail-on-incomplete` found partial/incomplete analysis, or `--min-coverage` found coverage below its threshold |
 | `2` | Error (bad input, unreadable source, internal failure) |
 
-> The exit code collapses `SAFE` and `CAUTION` into `0`. To act differently on them (e.g. *warn* on `CAUTION` but *block* on `DO_NOT_INSTALL`), read the `recommendation` field from the JSON output rather than relying on the exit code.
+> By default, the exit code collapses `SAFE` and `CAUTION` into `0`. Use `--fail-on-findings` to gate on any active finding, `--fail-on-incomplete` to gate on incomplete coverage, `--min-coverage PERCENT` to gate on a coverage floor, or read the JSON `recommendation` field for custom policy.
 
 ### Machine-readable output
 
@@ -1476,6 +1597,12 @@ The top-level shape is (this example shows a full LLM-backed scan; with `--no-ll
   normalized: a single HIGH finding in a large skill can land under the threshold and
   read as `SAFE`. A gate that must not miss one reads this field rather than the score.
 - `metadata.llm_error` appears only when LLM analysis was requested but unavailable.
+- AE1 findings use **Incomplete referenced artifact analysis**. Their source
+  location identifies the reference; `evidence` identifies the affected target,
+  analyzer reasons, and available bounds. Review the target's completeness
+  ledger when `reasons_truncated` is true. See
+  [referenced-artifact diagnostics and Perl help text](docs/ANALYSIS_RESOURCE_BOUNDS.md#diagnosing-incomplete-referenced-artifacts)
+  for interpretation and corrective actions.
 - `metadata.inference_usage` contains one sanitized record per LLM response when the
   provider exposes token counters. It is an empty list when usage is unavailable;
   SkillSpector never estimates missing tokens. Prompt totals are inclusive of cache
@@ -1491,7 +1618,13 @@ The top-level shape is (this example shows a full LLM-backed scan; with `--no-ll
   pricing contract.
 - The full per-issue shape is defined by `Finding.to_dict()` in [models.py](src/skillspector/models.py); rely on the fields above and treat any additional fields as best-effort.
 
-For CI/IDE tooling, `--format sarif` emits SARIF 2.1.0.
+For CI/IDE tooling, `--format sarif` emits SARIF 2.1.0. Each result carries its
+security severity; rule descriptors carry a score only when all of their results
+share that severity. Mixed-severity rules remain unannotated, so consumers that
+read only rule-level severity cannot distinguish their result severities.
+Recursive scans chain each percent-encoded skill-directory URI through an
+absolute scan-root file URI. External dependency locations retain their source
+provenance instead of being rebased into the local skill directory.
 
 ### Which stream carries what
 
@@ -1535,17 +1668,15 @@ so it goes to **stderr** on every path, and stdout carries the report:
 skillspector scan ./skills --recursive --format json | jq '.max_risk_score'
 ```
 
-Two formats are still `--output`-only under `--recursive`: `--format markdown`, which has no merged
-document to print, and `--format sarif`, which has one — the combined log described in the table
-above — and is pending only because #114 scoped its fall-back to `json`
-([#136](https://github.com/rodrigorjsf/SkillSpector-Polyglot/issues/136)). For those two, stdout is
-empty and the file is the report.
+No format is `--output`-only under `--recursive` any more. #114 scoped its fall-back to `json`;
+the 2.12.0 upstream sync brought upstream's own recursive emission, which prints `--format sarif`
+— the combined log described in the table above — and `--format markdown` to stdout as well, and
+that closed [#136](https://github.com/rodrigorjsf/SkillSpector-Polyglot/issues/136).
 
 All of that describes `--recursive` **once it engages**, exactly as the comparison table's
-`--baseline` row does. The flag needs two or more immediate child skills; below that threshold it
-never engages at all, and the scan that runs instead is an ordinary one that prints its report to
-stdout in whatever format was asked for — so `--format sarif` and `--format markdown` do reach
-stdout there. The difference is the threshold, not the flag.
+`--baseline` row does. The flag needs one immediate child skill — two, until the 2.12.0 upstream
+sync lowered it. With none it never engages at all, and the scan that runs instead is an ordinary
+one that prints its report to stdout in whatever format was asked for.
 
 #### What moved, and what that costs
 
@@ -1600,10 +1731,9 @@ something:
   a parse error and its own exit `5` — the scanner exited `0` throughout. Moving those notes to
   stderr then left stdout empty, so `jq` succeeded on nothing and the pipeline exited `0` silently.
   [#114](https://github.com/rodrigorjsf/SkillSpector-Polyglot/issues/114) closed it: stdout now
-  carries the combined object, and that pipeline works. `--format sarif` and `--format markdown` are
-  still `--output`-only under an engaged `--recursive` — for those two, pass `--output` and read the
-  file; [#136](https://github.com/rodrigorjsf/SkillSpector-Polyglot/issues/136) tracks the SARIF
-  half.
+  carries the combined object, and that pipeline works. `--format sarif` and `--format markdown`
+  stayed `--output`-only under an engaged `--recursive` until the 2.12.0 upstream sync, which prints
+  both to stdout ([#136](https://github.com/rodrigorjsf/SkillSpector-Polyglot/issues/136)).
 - **`skillspector scan ./skills --recursive | less`** shows the combined terminal report, where it
   used to show the detection banner, the per-skill progress and score lines, and the summary table.
   The table is still printed, on stderr, so a terminal shows it and a pipe does not.
@@ -1669,9 +1799,12 @@ files are scanned normally.
 
 ### Stage 2: LLM Semantic Analysis (Optional)
 - Evaluates context and intent
-- Filters false positives
-- Provides human-readable explanations
-- Improves precision to ~87%
+- Confirmed findings may gain an explanation and higher confidence, never lower
+- Every deterministic finding stays in the report whether the model confirms it, disputes it, or does not address it
+- Findings the model reviews but does not confirm (disputed, low-confidence, or unaddressed) are tagged `llm-unconfirmed` in JSON and SARIF output
+- Findings whose review fails are kept without that tag; `evidence.llm_review_outcome` distinguishes `confirmed`, `disagreed`, `low-confidence`, `missing`, and `failed` in JSON and SARIF output
+- Results depend on the configured model and prompt context; Stage 2 does not replace
+  deterministic findings or guarantee a particular precision rate
 
 The LLM prompt includes anti-jailbreak protections to prevent malicious skills from manipulating the analysis.
 
@@ -1707,9 +1840,9 @@ SkillSpector is defense-in-depth, not a sandbox. Know what it does and does not 
 
 Based on research from "Agent Skills in the Wild: An Empirical Study of Security Vulnerabilities at Scale" (Liu et al., 2026):
 
-- **Dataset**: 42,447 skills from major marketplaces
-- **Vulnerable**: 26.1% contain at least one vulnerability
-- **High-severity**: 5.2% show likely malicious intent
+- **Dataset**: 42,447 skills from major marketplaces; 31,132 were analyzed for the following rates
+- **Vulnerable**: 26.1% of the analyzed subset contain at least one vulnerability
+- **High-severity**: 5.2% of the analyzed subset show likely malicious intent
 - **Key finding**: Skills with executable scripts are 2.12x more likely to be vulnerable
 
 ## Python API Integration

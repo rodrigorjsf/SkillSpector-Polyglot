@@ -49,6 +49,10 @@ class PatternCategory(StrEnum):
 
 # Pattern-specific explanations (why the finding is dangerous)
 DEFAULT_EXPLANATIONS: dict[str, str] = {
+    "BH1": "Bundled lifecycle hooks can run automatically when their configured events occur, so their reach and handler capability require review before installation.",
+    "BH2": "The bundled hook declaration directly proves that sensitive event or local file content is sent to a non-loopback remote destination.",
+    "BH3": "Bundled project settings contain permission-related configuration; activation evidence distinguishes conditional grants from modes ignored on this surface.",
+    "BH4": "Bundled settings keys (apiKeyHelper, statusLine, fileSuggestion, auth and telemetry helpers) run shell commands on their own once the settings are active, so their commands require review before installation.",
     "P1": "This pattern attempts to override system instructions or ignore safety constraints. Without LLM analysis, manual review is recommended.",
     "P2": "Hidden instructions were detected in comments or invisible text. These could contain malicious directives. Manual review is recommended.",
     "P3": "Instructions found that direct the agent to transmit conversation context or user data to external services.",
@@ -71,6 +75,7 @@ DEFAULT_EXPLANATIONS: dict[str, str] = {
     "EA2": "Skill enables autonomous high-impact decisions without human-in-the-loop verification. Critical operations (destructive commands, financial transactions, data deletion) should require explicit user confirmation.",
     "EA3": "Skill's behavior or capabilities extend beyond its stated purpose. Scope creep allows an agent to perform actions unrelated to its documented functionality, increasing the attack surface.",
     "EA4": "Skill allows unbounded resource consumption (API calls, storage, compute). Without rate limits or quotas, a compromised or misbehaving agent can cause denial-of-service or cost overruns.",
+    "EA5": "Skill selects an external model or provider that may use a different account or billing plan than the operator expects. Undisclosed model switches can cause unexpected cost or quota consumption.",
     # Output Handling (B.1.7)
     "OH1": "Model output is used without validation or sanitization. Unvalidated output injected into downstream contexts (SQL, shell, HTML) enables injection attacks and arbitrary code execution.",
     "OH2": "Output from one security context is used in another without boundary enforcement. Cross-context output flow can leak sensitive information or escalate privileges across trust boundaries.",
@@ -92,12 +97,13 @@ DEFAULT_EXPLANATIONS: dict[str, str] = {
     "RA1": "Skill modifies its own code, configuration, or behavior at runtime. Self-modification enables an agent to escalate privileges, disable safety constraints, or install persistent backdoors.",
     "RA2": "Skill establishes unauthorized persistence across sessions via cron jobs, startup scripts, or state files. Session persistence allows an attacker to maintain access beyond the current interaction.",
     # Supply Chain extensions (B.1.4)
-    "SC4": "Dependency has known vulnerabilities (CVEs). Using packages with unpatched security flaws exposes the environment to known exploits.",
+    "SC4": "Dependency vulnerability evidence requires review. This finding does not by itself confirm that the installed release is affected; check the resolved version, advisory applicability, and lookup coverage.",
     "SC5": "Dependency appears abandoned or unmaintained. Abandoned packages no longer receive security patches, leaving known and future vulnerabilities unaddressed.",
     "SC6": "Package name closely resembles a popular package, suggesting possible typosquatting. Attackers publish malicious packages with similar names to trick developers into installing them.",
     "SC7": "Code pulls a container image with signature or registry verification disabled (--disable-content-trust, DOCKER_CONTENT_TRUST=0, --insecure-registry). This accepts tampered or unverified images and is a container supply-chain risk.",
     "SC8": "Skill ships Python bytecode (__pycache__/ or .pyc/.pyo). Discovery skips these paths, so malicious bytecode can score SAFE while decoy sources look clean.",
     "SC9": "Executable content is concealed inside a document container or hidden/disguised artifact, where extension-based review can miss it.",
+    "SC10": "Package-manager configuration redirects dependency resolution away from a canonical default, adds another source, or uses an unresolved destination.",
     # Trigger Abuse
     "TR1": "Skill uses overly broad trigger patterns that match common words or phrases, causing it to activate in unintended contexts and potentially shadow other skills.",
     "TR2": "Skill trigger shadows a common built-in command or another skill's trigger, potentially intercepting requests meant for trusted functionality.",
@@ -191,6 +197,7 @@ RULE_ID_TO_CATEGORY: dict[str, str] = {
     "EA2": PatternCategory.EXCESSIVE_AGENCY.value,
     "EA3": PatternCategory.EXCESSIVE_AGENCY.value,
     "EA4": PatternCategory.EXCESSIVE_AGENCY.value,
+    "EA5": PatternCategory.EXCESSIVE_AGENCY.value,
     "OH1": PatternCategory.OUTPUT_HANDLING.value,
     "OH2": PatternCategory.OUTPUT_HANDLING.value,
     "OH3": PatternCategory.OUTPUT_HANDLING.value,
@@ -209,6 +216,7 @@ RULE_ID_TO_CATEGORY: dict[str, str] = {
     "SC7": PatternCategory.SUPPLY_CHAIN.value,
     "SC8": PatternCategory.SUPPLY_CHAIN.value,
     "SC9": PatternCategory.SUPPLY_CHAIN.value,
+    "SC10": PatternCategory.SUPPLY_CHAIN.value,
     "TR1": PatternCategory.TRIGGER_ABUSE.value,
     "TR2": PatternCategory.TRIGGER_ABUSE.value,
     "TR3": PatternCategory.TRIGGER_ABUSE.value,
@@ -250,6 +258,18 @@ RULE_ID_TO_CATEGORY: dict[str, str] = {
     "DS2": PatternCategory.DESERIALIZATION.value,
     "DS3": PatternCategory.DESERIALIZATION.value,
     "DS4": PatternCategory.DESERIALIZATION.value,
+    # Semantic LLM analyzers
+    "SSD-1": PatternCategory.PROMPT_INJECTION.value,
+    "SSD-2": PatternCategory.PROMPT_INJECTION.value,
+    "SSD-3": PatternCategory.DATA_EXFILTRATION.value,
+    "SSD-4": PatternCategory.PROMPT_INJECTION.value,
+    "SDI-1": PatternCategory.EXCESSIVE_AGENCY.value,
+    "SDI-2": PatternCategory.EXCESSIVE_AGENCY.value,
+    "SDI-3": PatternCategory.EXCESSIVE_AGENCY.value,
+    "SDI-4": PatternCategory.EXCESSIVE_AGENCY.value,
+    "SQP-1": PatternCategory.TRIGGER_ABUSE.value,
+    "SQP-2": PatternCategory.OUTPUT_HANDLING.value,
+    "SQP-3": PatternCategory.OUTPUT_HANDLING.value,
     # LangChain4j Framework
     "L4J-SHELL": PatternCategory.LANGCHAIN4J_FRAMEWORK.value,
     "L4J-UNRESOLVED": PatternCategory.LANGCHAIN4J_FRAMEWORK.value,
@@ -289,6 +309,7 @@ PATTERN_NAMES: dict[str, str] = {
     "EA2": "Autonomous Decision Making",
     "EA3": "Scope Creep",
     "EA4": "Unbounded Resource Access",
+    "EA5": "External Model or Provider Selection",
     "OH1": "Unvalidated Output Injection",
     "OH2": "Cross-Context Output",
     "OH3": "Unbounded Output",
@@ -307,6 +328,7 @@ PATTERN_NAMES: dict[str, str] = {
     "SC7": "Untrusted Container Image",
     "SC8": "Shipped Python Bytecode",
     "SC9": "Concealed Executable Artifact",
+    "SC10": "Dependency Source Redirection",
     "TR1": "Overly Broad Trigger",
     "TR2": "Shadow Command Trigger",
     "TR3": "Keyword Baiting Trigger",
@@ -350,6 +372,18 @@ PATTERN_NAMES: dict[str, str] = {
     "DS2": "Ruby Marshal Deserialization",
     "DS3": "Unsafe Ruby YAML Deserialization",
     "DS4": "Unsafe JavaScript Deserialization",
+    # Semantic LLM analyzers
+    "SSD-1": "Semantic Prompt Injection",
+    "SSD-2": "Novel Attack Phrasing",
+    "SSD-3": "Natural-Language Data Exfiltration",
+    "SSD-4": "Narrative Deception",
+    "SDI-1": "Description-Behavior Mismatch",
+    "SDI-2": "Context-Inappropriate Capability",
+    "SDI-3": "Permission Scope Creep",
+    "SDI-4": "Intent-Code Divergence",
+    "SQP-1": "Vague Trigger",
+    "SQP-2": "Missing User Warning",
+    "SQP-3": "Natural-Language Policy Violation",
     # LangChain4j Framework
     "L4J-SHELL": "Unsandboxed Shell Mode",
     "L4J-UNRESOLVED": "Unresolvable Skill Content",
@@ -387,6 +421,7 @@ DEFAULT_REMEDIATIONS: dict[str, str] = {
     "EA2": "Add human-in-the-loop confirmation for destructive, irreversible, or high-impact operations. Never auto-execute commands that modify files, send data, or alter system state.",
     "EA3": "Limit the skill's scope to its documented purpose. Remove instructions that enable the agent to perform actions outside its stated functionality.",
     "EA4": "Set explicit rate limits, timeouts, and resource quotas for API calls, file operations, and compute. Implement circuit breakers for runaway loops.",
+    "EA5": "Remove the model/provider override or disclose it prominently and require explicit operator approval before invoking an external coding CLI or billed model.",
     # Output Handling (B.1.7)
     "OH1": "Validate and sanitize all model output before using it in downstream contexts. Use parameterized queries for SQL, shell quoting for commands, and HTML encoding for web output.",
     "OH2": "Enforce strict context boundaries. Do not pass output from one security domain into another without explicit validation and redaction of sensitive content.",
@@ -408,12 +443,13 @@ DEFAULT_REMEDIATIONS: dict[str, str] = {
     "RA1": "Prevent the skill from modifying its own code, SKILL.md, or configuration files. Treat skill files as read-only at runtime.",
     "RA2": "Remove any persistence mechanisms (cron jobs, startup scripts, state files). Skills should not maintain state across sessions without explicit user consent.",
     # Supply Chain extensions (B.1.4)
-    "SC4": "Update the dependency to a patched version that addresses the known CVE. Check OSV (osv.dev) or NVD for details on the vulnerability.",
+    "SC4": "Determine the dependency's resolved version and verify the advisory evidence and lookup coverage in OSV (osv.dev) or NVD. If the resolved release is affected, update to a verified fixed release when available, or remove or replace the affected dependency when no fix exists. Retry incomplete lookups before relying on their results.",
     "SC5": "Replace the abandoned dependency with an actively maintained alternative. Check the package's repository for last commit date and open issues.",
     "SC6": "Verify the package name is correct and not a typosquatting variant. Compare against the official package name on PyPI or npm.",
     "SC7": "Keep image signature verification (Docker Content Trust / cosign) and registry TLS enabled. Pull only signed images from trusted registries; never disable content-trust or use insecure registries in skill code.",
     "SC8": "Do not ship __pycache__/ or .pyc/.pyo in skills. Delete bytecode before packaging; if presence is intentional for a lab fixture, quarantine it outside the skill install path.",
     "SC9": "Keep executable files explicit and directly reviewable. Review the artifact provenance and why executable content is packaged inside a document, hidden file, or disguised container.",
+    "SC10": "Review the destination and configuration scope as a dependency trust-boundary change, and keep the intended package source explicit and reviewable.",
     # Trigger Abuse
     "TR1": "Use specific, narrow trigger patterns that match only the skill's intended use case. Avoid single-word or common-phrase triggers.",
     "TR2": "Choose triggers that do not conflict with built-in commands or other skills. Prefix with a unique namespace if necessary.",
@@ -442,9 +478,9 @@ DEFAULT_REMEDIATIONS: dict[str, str] = {
     "YR3": "Remove all cryptocurrency mining code, pool references, and miner binaries. Mining in agent skills is unauthorized resource abuse. Report the skill as malicious.",
     "YR4": "Remove offensive tool references and exploit code. Legitimate agent skills should not contain penetration testing tools, exploit frameworks, or reconnaissance utilities.",
     # MCP Least Privilege (B.3.1)
-    "LP1": "Declare the missing capability in the manifest type being scanned: for Agent Skills SKILL.md, add a covering tool to the 'allowed-tools' frontmatter field; for MCP server manifests, add the capability to the 'permissions' list. Otherwise, remove the code that requires it.",
+    "LP1": "Review whether the capability is required and how the host runtime enforces it; runtime permissions are unknown unless separately verified. Remove code that does not need it. For Agent Skills, do not broaden 'allowed-tools' preapproval solely to silence this finding; change preapproval only after reviewing the actual host policy. For MCP server manifests, add the required capability to 'permissions' only after that review.",
     "LP2": "Replace wildcard permissions ('*', 'all', 'full', 'any') with an explicit list of required permissions.",
-    "LP3": "Declare the skill's tool scope: for Claude Code / Agent Skills SKILL.md, list the tools the skill may invoke in the 'allowed-tools' frontmatter field; for MCP server manifests, add a 'permissions' list naming the required capabilities.",
+    "LP3": "Clarify the skill's intended tool scope and review how the host runtime enforces it; runtime permissions are unknown unless separately verified. For Claude Code / Agent Skills SKILL.md, 'allowed-tools' records preapproved tools, not a permission ceiling; add tools only when independently approved as necessary, not to silence this finding. For MCP server manifests, use a 'permissions' list naming the required capabilities.",
     "LP4": "Remove the declared permission if the corresponding capability is no longer used.",
     # MCP Tool Poisoning (B.3.2)
     "TP1": "Remove hidden content (HTML comments, markdown comments, zero-width characters, base64 blobs) from metadata fields. Metadata should contain plain, visible text only.",

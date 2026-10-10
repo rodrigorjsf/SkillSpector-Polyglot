@@ -115,6 +115,28 @@ and project URL.
 - **Copyright:** Copyright (c) 2007-2022 The YARA Authors
 - **URL:** https://github.com/VirusTotal/yara-python
 
+### google-auth
+
+- **License:** Apache-2.0
+- **Copyright:** Copyright 2014 Google Inc.
+- **URL:** https://github.com/googleapis/google-auth-library-python
+
+### pywhatwgurl
+
+- **License:** MIT
+- **Copyright:** Copyright (c) 2026 pywhatwgurl contributors
+- **URL:** https://github.com/pywhatwgurl/pywhatwgurl
+
+### regex
+
+- **License:** Apache-2.0 AND CNRI-Python — the Apache-2.0 text is reproduced
+  below; the CNRI-Python terms cover the portion derived from Secret Labs' `sre`
+  and ship in the distribution's own `LICENSE.txt`
+- **Copyright:** copyright (c) 1998-2001 by Secret Labs AB — the only copyright
+  line `LICENSE.txt` carries; it licenses "all additions and alterations" under
+  Apache-2.0 without naming a holder for them
+- **URL:** https://github.com/mrabarnett/mrab-regex
+
 ## Optional Dependencies (mcp extra)
 
 Installed when a consumer asks for the `mcp` extra — `pip install

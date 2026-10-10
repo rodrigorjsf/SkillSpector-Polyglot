@@ -218,6 +218,8 @@ class _LeastPrivilegeBudget:
                 },
                 path=finding.file,
             )
+        finding.pattern = finding.pattern or finding.message
+        finding.finding = (finding.finding or finding.matched_text or finding.message)[:200]
         self.findings.append(finding)
         self.artifact_findings[finding.file] = artifact_observed
 
@@ -248,16 +250,20 @@ def _normalize_allowed_tools(
 ) -> list[str]:
     """Coerce a manifest ``allowed-tools`` value into a list of tool names.
 
-    Accepts the list form (``[Bash, Read]``) and the comma-separated string
-    form (``"Bash, Read"``). Anything else yields an empty list.
+    Accepts the list form (``[Bash, Read]``), the comma-separated string
+    form (``"Bash, Read"``), and the space-separated string form
+    (``"Bash Read"``). Anything else yields an empty list.
     """
     tools: list[str] = []
     if isinstance(value, list):
         candidates = iter(value)
     elif isinstance(value, str):
-        # A bounded split prevents a comma-dense declaration from creating an
-        # arbitrarily large temporary list before the analyzer can stop it.
-        candidates = iter(value.split(",", _MAX_DECLARATION_VALUES))
+        if "," in value:
+            # A bounded split prevents a comma-dense declaration from creating an
+            # arbitrarily large temporary list before the analyzer can stop it.
+            candidates = iter(value.split(",", _MAX_DECLARATION_VALUES))
+        else:
+            candidates = iter(value.split(None, _MAX_DECLARATION_VALUES))
     else:
         return tools
 
@@ -575,10 +581,13 @@ def node(state: SkillspectorState) -> AnalyzerNodeResponse:
                         "Without declared permissions the skill's intent is opaque and cannot be validated."
                     ),
                     remediation=(
-                        "Declare the skill's tool scope: for Claude Code / Agent Skills "
-                        "SKILL.md, list the tools the skill may invoke in the "
-                        "'allowed-tools' frontmatter field; for MCP server manifests, "
-                        "add a 'permissions' list naming the required capabilities."
+                        "Clarify the skill's intended tool scope and review how the host "
+                        "runtime enforces it; runtime permissions are unknown unless "
+                        "separately verified. For Claude Code / Agent Skills SKILL.md, "
+                        "'allowed-tools' records preapproved tools, not a permission ceiling; "
+                        "add a tool only when it is independently approved as necessary, "
+                        "not to silence this finding. For MCP server manifests, use a "
+                        "'permissions' list naming the required capabilities."
                     ),
                 )
             )
@@ -614,12 +623,26 @@ def node(state: SkillspectorState) -> AnalyzerNodeResponse:
                             break
                     confidence = _clamp(0.55 if capability in test_only_caps else 0.75)
                     remediation = (
-                        f"Add a tool that covers the '{capability}' capability to the "
-                        "'allowed-tools' frontmatter field in SKILL.md, or remove "
-                        "the code that requires it."
+                        f"Review whether the '{capability}' capability is required and "
+                        "whether the host runtime policy permits it; runtime permissions "
+                        "are unknown unless separately verified. Remove code that "
+                        "does not need the capability; do not broaden 'allowed-tools' "
+                        "preapproval solely to silence this finding."
                         if allowed_tools
                         else f"Add the '{capability}' capability to the MCP server manifest's "
                         "'permissions' list, or remove the code that requires it."
+                    )
+                    explanation = (
+                        f"The skill uses '{capability}' capability that is not covered by "
+                        "the declared 'allowed-tools' preapproval. Review the host runtime's "
+                        "actual enforcement policy; runtime permissions are unknown unless "
+                        "separately verified, and this declaration alone does not establish "
+                        "a permission ceiling."
+                        if allowed_tools
+                        else f"The skill uses '{capability}' capability that is not covered by "
+                        "the declared MCP 'permissions' list. Review the server's actual "
+                        "authorization policy; runtime permissions are unknown unless "
+                        "separately verified."
                     )
                     budget.emit(
                         Finding(
@@ -633,11 +656,7 @@ def node(state: SkillspectorState) -> AnalyzerNodeResponse:
                             file=primary_file,
                             category=_CATEGORY,
                             tags=list(_TAGS),
-                            explanation=(
-                                f"The skill uses '{capability}' capability that is not listed in "
-                                "its permissions. This may indicate deceptive intent or missing "
-                                "permission declarations."
-                            ),
+                            explanation=explanation,
                             remediation=remediation,
                         )
                     )

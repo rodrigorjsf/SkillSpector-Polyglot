@@ -32,6 +32,18 @@
         "unaccounted": 0
       },
       {
+        "analyzer_id": "bundled_execution_surface",
+        "completed": 0,
+        "failed": 0,
+        "message": "No files matched this analyzer's applicability contract.",
+        "partial": 0,
+        "planned_work": 0,
+        "reason_code": "no_applicable_files",
+        "skipped": 0,
+        "status": "not_applicable",
+        "unaccounted": 0
+      },
+      {
         "analyzer_id": "framework_deepagents",
         "completed": 4,
         "failed": 0,
@@ -336,6 +348,7 @@
       "code_snippet": null,
       "confidence": 0.9,
       "context": null,
+      "end_column": null,
       "end_line": null,
       "evidence": {},
       "explanation": "A Deep Agents application defines a custom subagent without Skills of its own. Upstream states that only the general-purpose subagent inherits the main agent's Skills and that every custom subagent needs its own skills parameter, so this subagent runs without the Skills the application around it was given. Nothing at runtime reports it: the subagent answers, and it answers without the procedure it was supposed to follow.",
@@ -353,6 +366,7 @@
       "source_digest": null,
       "source_identity": null,
       "source_url": null,
+      "start_column": null,
       "start_line": 38,
       "tags": [
         "ASI02"
@@ -371,6 +385,7 @@
     "$schema": "https://schemastore.azurewebsites.net/schemas/json/sarif-2.1.0-rtm.4.json",
     "runs": [
       {
+        "columnKind": "unicodeCodePoints",
         "invocations": [
           {
             "executionSuccessful": true,
@@ -417,6 +432,7 @@
               "explanation": "A Deep Agents application defines a custom subagent without Skills of its own. Upstream states that only the general-purpose subagent inherits the main agent's Skills and that every custom subagent needs its own skills parameter, so this subagent runs without the Skills the application around it was given. Nothing at runtime reports it: the subagent answers, and it answers without the procedure it was supposed to follow.",
               "pattern": "Subagent Without Skills",
               "remediation": "Pass the subagent the Skills it needs by adding a skills entry to its own definition, naming the same sources the main agent is given where the subagent is meant to share them. Where the subagent is deliberately meant to run without Skills, say so beside the definition -- there is nothing at runtime that distinguishes the two.",
+              "security-severity": "3.0",
               "severity": "LOW",
               "tags": [
                 "ASI02"
@@ -431,6 +447,9 @@
             "rules": [
               {
                 "id": "DA-SUBAGENT-SKILLS",
+                "properties": {
+                  "security-severity": "3.0"
+                },
                 "shortDescription": {
                   "text": "This custom subagent is defined without Skills of its own. A custom subagent does not inherit the main agent's Skills, so it runs without the Skills the application around it was given."
                 }

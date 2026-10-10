@@ -49,6 +49,11 @@ def _clean_provider_env(monkeypatch: pytest.MonkeyPatch):
         "AZURE_OPENAI_API_VERSION",
         "SKILLSPECTOR_COMPAT_API_KEY",
         "SKILLSPECTOR_COMPAT_BASE_URL",
+        "SKILLSPECTOR_TEMPERATURE",
+        "SKILLSPECTOR_SEED",
+        "GOOGLE_CLOUD_PROJECT",
+        "GOOGLE_CLOUD_LOCATION",
+        "GOOGLE_APPLICATION_CREDENTIALS",
     ):
         monkeypatch.delenv(key, raising=False)
     registry._load.cache_clear()
@@ -170,6 +175,27 @@ class TestAzureOpenAIProvider:
         assert isinstance(llm, AzureChatOpenAI)
         assert llm.openai_api_version == "2025-01-01"
 
+    def test_sampling_controls_are_forwarded(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        captured: dict[str, object] = {}
+
+        def fake_azure_chat_openai(**kwargs: object) -> dict[str, object]:
+            captured.update(kwargs)
+            return kwargs
+
+        monkeypatch.setattr(
+            "skillspector.providers.azure_openai.provider.AzureChatOpenAI",
+            fake_azure_chat_openai,
+        )
+        monkeypatch.setenv("AZURE_OPENAI_API_KEY", "azure-key")
+        monkeypatch.setenv("AZURE_OPENAI_ENDPOINT", "https://myorg.openai.azure.com/")
+        monkeypatch.setenv("SKILLSPECTOR_TEMPERATURE", "0.2")
+        monkeypatch.setenv("SKILLSPECTOR_SEED", "7")
+
+        AzureOpenAIProvider().create_chat_model("gpt-4o", max_tokens=1024)
+
+        assert captured["temperature"] == 0.2
+        assert captured["seed"] == 7
+
     def test_default_model(self) -> None:
         assert AzureOpenAIProvider().resolve_model() == "gpt-4o"
 
@@ -177,6 +203,37 @@ class TestAzureOpenAIProvider:
         provider = AzureOpenAIProvider()
         assert provider.get_context_length("gpt-4o") == 128000
         assert provider.get_max_output_tokens("gpt-4o") == 16384
+
+    def test_metadata_flagship_generation(self) -> None:
+        provider = AzureOpenAIProvider()
+        for model in (
+            "gpt-5.4",
+            "gpt-5.5",
+            "gpt-5.6-luna",
+            "gpt-5.6-terra",
+            "gpt-5.6-sol",
+            "gpt-5.6",
+            "gpt-6-astra",
+            "gpt-6-sol",
+            "gpt-6-luna",
+            "gpt-6.1-sol",
+        ):
+            assert provider.get_context_length(model) == 1050000
+            assert provider.get_max_output_tokens(model) == 128000
+
+    def test_metadata_gpt5_generation(self) -> None:
+        provider = AzureOpenAIProvider()
+        for model in (
+            "gpt-5",
+            "gpt-5-mini",
+            "gpt-5-nano",
+            "gpt-5.1",
+            "gpt-5.1-codex",
+            "gpt-5.1-codex-max",
+            "gpt-5.2",
+        ):
+            assert provider.get_context_length(model) == 400000
+            assert provider.get_max_output_tokens(model) == 128000
 
     def test_create_returns_none_without_credentials(self) -> None:
         assert AzureOpenAIProvider().create_chat_model("gpt-4o", max_tokens=1024) is None
@@ -247,6 +304,56 @@ class TestOpenAICompatibleProvider:
             OpenAICompatibleProvider().create_chat_model("llama-3.1-70b-versatile", max_tokens=1024)
             is None
         )
+
+    def test_forced_tool_choice_is_kept_by_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("SKILLSPECTOR_COMPAT_API_KEY", "gsk_abc")
+        monkeypatch.setenv("SKILLSPECTOR_COMPAT_BASE_URL", "https://api.groq.com/openai/v1")
+        provider = OpenAICompatibleProvider()
+        llm = provider.create_chat_model("llama-3.1-70b-versatile", max_tokens=1024)
+        assert isinstance(llm, ChatOpenAI)
+        assert llm.disabled_params is None
+        assert provider.forced_tool_choice_supported("llama-3.1-70b-versatile")
+        assert provider.structured_output_method("llama-3.1-70b-versatile") is None
+
+    def test_tool_choice_auto_entry_disables_forced_tool_choice(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("SKILLSPECTOR_COMPAT_API_KEY", "sk-abc")
+        monkeypatch.setenv(
+            "SKILLSPECTOR_COMPAT_BASE_URL", "https://maas-token-api.cn-huabei-1.xf-yun.com/v2"
+        )
+        provider = OpenAICompatibleProvider()
+        llm = provider.create_chat_model("spark-x2.5", max_tokens=1024)
+        assert isinstance(llm, ChatOpenAI)
+        assert llm.disabled_params == {"tool_choice": None}
+        assert not provider.forced_tool_choice_supported("spark-x2.5")
+        assert provider.structured_output_method("spark-x2.5") == "function_calling"
+        assert provider.get_context_length("spark-x2.5") == 262144
+
+    def test_registry_override_can_declare_tool_choice_auto(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path
+    ) -> None:
+        override = tmp_path / "registry.yaml"
+        override.write_text(
+            "models:\n  my-model:\n    context_length: 32768\n    tool_choice: auto\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("SKILLSPECTOR_MODEL_REGISTRY", str(override))
+        provider = OpenAICompatibleProvider()
+        assert not provider.forced_tool_choice_supported("my-model")
+        assert provider.structured_output_method("my-model") == "function_calling"
+
+    def test_declared_structured_output_method_wins(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path
+    ) -> None:
+        override = tmp_path / "registry.yaml"
+        override.write_text(
+            "models:\n  my-model:\n    context_length: 32768\n"
+            "    tool_choice: auto\n    structured_output: json_schema\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("SKILLSPECTOR_MODEL_REGISTRY", str(override))
+        assert OpenAICompatibleProvider().structured_output_method("my-model") == "json_schema"
 
 
 class TestOpenAICompatibleProviderSelection:
