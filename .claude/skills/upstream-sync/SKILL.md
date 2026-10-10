@@ -40,6 +40,13 @@ backlog rather than by someone noticing. **This section is the authority**: the 
 spelling of these commands, and if the two ever disagree, the workflow is the bug. It stops here —
 steps 2 through 6 are the judgment it exists to hand to a human, not work to automate later.
 
+The schedule needs a human twice, not once. Like every workflow on this fork it stays dormant until
+someone clicks the Actions-tab enable button — and on a public repository GitHub disables a schedule
+again after 60 days with no repository activity, emailing the maintainer to re-enable it. That
+second one withdraws the cadence in exactly the circumstance `#105` describes, so treat a long quiet
+stretch as a reason to check the Actions tab rather than as evidence there is no drift.
+`workflow_dispatch` is the manual fallback.
+
 ## 2. Read the commits, not the diff
 
 An upstream commit that changes a Rule's behavior is the reason snapshots will move in step 5, and its

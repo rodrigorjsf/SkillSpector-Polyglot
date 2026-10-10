@@ -10,3 +10,11 @@ paths:
 - Use the module-level form for explicit marking: `pytestmark = [pytest.mark.provider]` (see `tests/provider/test_provider_endpoint.py`). Existing examples outside the marker directories: `tests/nodes/analyzers/test_semantic_developer_intent.py`, `tests/test_mcp_tool_poisoning.py`.
 - `asyncio_mode = "auto"` — `async def test_*` needs no `@pytest.mark.asyncio`.
 - `testpaths = ["tests"]`, so nothing under `contrib/` runs in the default suite.
+
+# CLI and fake traps
+
+- `result.output` folds both CLI streams; assert `result.stdout` and `result.stderr` apart.
+- Rich folds a long path at width 80; set `COLUMNS` before asserting one.
+- Run the suite under a long `TMPDIR` too; a short `/tmp` hides width-dependent failures.
+- Faking an absent module needs `delattr` on the package, not just `sys.modules`.
+- Upstream test fakes need `**kwargs` when the fork threads a new parameter through.
